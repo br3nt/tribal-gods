@@ -1,0 +1,10 @@
+# Dependencies and build output
+node_modules/
+dist/
+
+# Browser-automation scratch from development
+.playwright-mcp/
+
+# Test screenshots captured at the repo root during development.
+# Scoped to the root so intentional images elsewhere (docs/, etc.) commit fine.
+/*.png
