@@ -27,7 +27,7 @@ import { activityText, buildingName, fmtSeconds } from './format';
 import { orderVerb } from './hotkeys';
 import { spellIcon } from './icons';
 import { settings } from './settings';
-import { ritualAt, ritualSeconds, stoneBlocked, stoneName, stoneTerms, tribeLabelOf } from './stones';
+import { ritualAt, ritualSeconds, stoneBlocked, stoneGuards, stoneName, stoneTerms, tribeLabelOf } from './stones';
 import { toolState } from './tools';
 
 const HOVER_DELAY = 0.45;
@@ -48,6 +48,7 @@ export class WorldHover {
   private readonly ring: Drape;
   private readonly tag: HTMLDivElement;
   private key = '';
+  private tagHtml = '';
   private rest = 0;
 
   /** Set by game-ui: the units a drag would select (ui/orders.ts preview). */
@@ -77,12 +78,12 @@ export class WorldHover {
       }
       if (selection.inspect !== null) {
         const u = world.unitById(selection.inspect);
-        if (u) unitRing(u, this.colorOf(u.tribe), 0.85, 1.08);
+        if (u) unitRing(u, this.colorOf(u.tribe, u), 0.85, 1.08);
       }
       const hu = hover.unit !== null ? world.unitById(hover.unit) : undefined;
       const hb = hover.building !== null ? world.getBuilding(hover.building) : undefined;
       const hm = hover.monument !== null ? world.monuments[hover.monument] : undefined;
-      if (hu) unitRing(hu, this.colorOf(hu.tribe), 0.95, 1.25);
+      if (hu) unitRing(hu, this.colorOf(hu.tribe, hu), 0.95, 1.25);
       else if (hb) {
         this.ring.color(this.colorOf(hb.tribe));
         const r = hb.size / 2 + 0.6;
@@ -110,14 +111,18 @@ export class WorldHover {
     this.rest += dt;
     if (this.rest < HOVER_DELAY) return;
     const html = this.describe();
-    if (this.tag.innerHTML !== html) this.tag.innerHTML = html;
+    if (this.tagHtml !== html) {
+      this.tagHtml = html; // compare with what we wrote, not the re-serialised DOM
+      this.tag.innerHTML = html;
+    }
     this.tag.style.left = `${Math.min(pointer.x, innerWidth - 300)}px`;
     this.tag.style.top = `${Math.min(pointer.y, innerHeight - 160)}px`;
     this.tag.classList.add('show');
   }
 
-  private colorOf(tribe: string): number {
+  private colorOf(tribe: string, u?: Unit): number {
     if (tribe === 'player') return OWN;
+    if (u && this.ctx.world.foeOfTribe('player', u)) return FOE;
     if (tribe === 'wild') return WILD;
     return this.ctx.world.hostile('player', tribe as never) ? FOE : WILD;
   }
@@ -157,6 +162,14 @@ export class WorldHover {
     if (u.tribe === 'player') {
       return `<h4>${escapeHtml(def.name)}</h4><p>${escapeHtml(activityText(u))}</p><div class="act">Click to select</div>`;
     }
+    if (u.tribe === 'wild' && u.joins) {
+      return `<div class="sub">Stranded · ${escapeHtml(tribeLabelOf(w, u.joins))}</div><h4>${escapeHtml(def.name)}</h4>` +
+        `<p>Cut off from home. They join the moment a walking route links them to your home — raise land to reach them.</p>`;
+    }
+    if (u.tribe === 'wild' && (u.guardOf ?? -1) >= 0) {
+      const act = w.foeOfTribe('player', u) ? (this.haveOwnPeople() ? `${Verb} to attack` : 'Awake and fighting') : 'Wakes when a ritual begins at its stone';
+      return `<div class="sub">Guardian of a stone</div><h4>${escapeHtml(def.name)}</h4><div class="act">${act}</div>`;
+    }
     if (u.tribe === 'wild') {
       return `<div class="sub">Wanderer · no tribe</div><h4>${escapeHtml(def.name)}</h4><p>${escapeHtml(def.blurb)}</p>` +
         `<div class="act">Kindle converts wanderers to your tribe</div>`;
@@ -188,7 +201,14 @@ export class WorldHover {
     let html = `<div class="sub">Standing stone · tier ${s.tier}</div><h4>${escapeHtml(stoneName(m))}</h4>` +
       `<div class="spell">${spellIcon(m.spell, 22)}<span>${escapeHtml(stoneTerms(m))}</span></div>` +
       `<p>A ritual of ${fmtSeconds(ritualSeconds(m))}. Damage to the leader breaks it — bring an escort.</p>`;
-    if (ritual) html += `<p>${escapeHtml(tribeLabelOf(w, ritual.tribe))} ${ritual.tribe === 'player' ? 'is' : 'are'} communing: ${Math.round(ritual.progress * 100)}%</p>`;
+    const guards = stoneGuards(m);
+    if (guards) html += `<div class="why">${escapeHtml(guards)}</div>`;
+    if (ritual) {
+      const who = escapeHtml(tribeLabelOf(w, ritual.tribe));
+      html += ritual.communing
+        ? `<p><b>${who}</b> ${ritual.tribe === 'player' ? 'is' : 'are'} communing: ${Math.round(ritual.progress * 100)}%${ritual.contested ? ' — <b>contested</b>, held still by enemies in the ring' : ''}</p>`
+        : `<p>A broken ritual (${who}) — ${Math.round(ritual.progress * 100)}%, fading.</p>`;
+    }
     if (blocked) html += `<div class="why">${escapeHtml(blocked)}</div>`;
     else if (this.leaderSelected()) html += `<div class="act">${Verb} to send your leader to commune</div>`;
     else html += `<div class="act">Select your leader, then ${Verb.toLowerCase()} the stone</div>`;

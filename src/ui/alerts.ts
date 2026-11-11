@@ -15,7 +15,7 @@
 import { alertSound } from '../core/audio';
 import { SPELLS } from '../sim/catalog';
 import type { World } from '../sim/world-state';
-import { Alert, AlertMemory, castsBetween, deriveAlerts, Snapshot } from './alert-rules';
+import { Alert, AlertMemory, castsBetween, deriveAlerts, ritualBrokenAlert, Snapshot } from './alert-rules';
 import { UiContext } from './context';
 import { css, escapeHtml, h } from './dom';
 import { icon, UiIconName } from './icons';
@@ -83,7 +83,7 @@ export function snapshot(w: World): Snapshot {
     population: w.tribePopulation('player'),
     rituals: w.monuments.flatMap((m, index) => {
       const r = ritualAt(w, index);
-      return r ? [{ index, tribe: r.tribe, who: tribeLabelOf(w, r.tribe), spell: m.spell, x: m.x, z: m.z }] : [];
+      return r && r.communing ? [{ index, tribe: r.tribe, who: tribeLabelOf(w, r.tribe), spell: m.spell, x: m.x, z: m.z }] : [];
     }),
   };
 }
@@ -109,6 +109,25 @@ export class AlertFeed {
 
   update(): void {
     const w = this.ctx.world;
+    // Events live for one frame (render/effects.ts drains them after the UI), so read them every frame.
+    let rescued = null as { n: number; x: number; z: number } | null;
+    for (const e of w.events) {
+      const stone = w.monuments.find((m) => Math.abs(m.x - e.x) < 3 && Math.abs(m.z - e.z) < 3);
+      const a = ritualBrokenAlert(e, stone?.spell ?? null);
+      if (a) {
+        this.push(a);
+        alertSound('attack');
+      } else if (e.type === 'landing' && e.tribe && e.tribe !== 'player' && e.tribe !== 'wild' && w.hostile('player', e.tribe as never)) {
+        this.push({ kind: 'attack', text: `${(e.magnitude ?? 0) > 1 ? `${e.magnitude} raiders` : 'A raider'} came ashore`, tone: 'bad', x: e.x, z: e.z });
+        alertSound('attack');
+      } else if (e.type === 'rescued' && e.tribe === 'player') {
+        rescued = { n: (rescued?.n ?? 0) + 1, x: e.x, z: e.z };
+      }
+    }
+    if (rescued) {
+      this.push({ kind: 'leaderBack', text: rescued.n > 1 ? `${rescued.n} of your stranded people are home` : 'One of your stranded people is home', tone: 'good', x: rescued.x, z: rescued.z });
+      alertSound('good');
+    }
     if (this.prev && w.elapsed < this.prev.t) this.reset(); // world was reset under us
     if (this.prev && w.elapsed - this.prev.t < 0.25) return;
     const next = snapshot(w);

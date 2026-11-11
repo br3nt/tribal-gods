@@ -124,13 +124,8 @@ export function deriveAlerts(a: Snapshot, b: Snapshot, mem: AlertMemory): Alert[
     const who = r.who.charAt(0).toUpperCase() + r.who.slice(1);
     out.push({ kind: 'ritual', text: `${who} ${r.who.startsWith('the ') ? 'are' : 'is'} communing at the ${name} stone`, tone: 'bad', x: r.x, z: r.z });
   }
-  for (const r of ra) {
-    if (r.tribe !== 'player' || rb.some((x) => x.index === r.index && x.tribe === 'player')) continue;
-    // Gone without a reward: the ritual was broken.
-    const learned = b.known.includes(r.spell) && !a.known.includes(r.spell);
-    const lent = (b.gifted[r.spell] ?? 0) > (a.gifted[r.spell] ?? 0);
-    if (!learned && !lent) out.push({ kind: 'ritualBroken', text: `Your leader's ritual at the ${spellDef(r.spell).name} stone was broken`, tone: 'bad', x: r.x, z: r.z });
-  }
+  // (Your OWN ritual breaking is the sim's 'communeInterrupted' event — see ritualBrokenAlert —
+  // because a diff can't tell a broken ritual from a finished one at a stone whose spell you knew.)
 
   // --- Objectives ---
   b.objectives.forEach((o, i) => {
@@ -138,6 +133,14 @@ export function deriveAlerts(a: Snapshot, b: Snapshot, mem: AlertMemory): Alert[
   });
 
   return out;
+}
+
+/** The alert for the sim's `communeInterrupted` event when it is the player's ritual (else null). */
+export function ritualBrokenAlert(e: { type: string; tribe?: string; x: number; z: number; magnitude?: number }, spell: SpellId | null): Alert | null {
+  if (e.type !== 'communeInterrupted' || e.tribe !== 'player') return null;
+  const pct = e.magnitude !== undefined ? ` at ${Math.round(e.magnitude * 100)}%` : '';
+  const where = spell ? ` at the ${spellDef(spell).name} stone` : '';
+  return { kind: 'ritualBroken', text: `Your leader's ritual${where} was broken${pct}`, tone: 'bad', x: e.x, z: e.z };
 }
 
 /** How many casts happened between snapshots (charges + gifts that went down). */

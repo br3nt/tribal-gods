@@ -7,6 +7,10 @@
  * disappears by itself. Dismissed or completed hints are remembered in
  * localStorage, so nobody is taught the same thing twice. Settings can turn
  * them off altogether.
+ *
+ * In a story chapter (scripted events) the generic onboarding chips stand
+ * aside — the narrator is already saying what to do — and the chip instead
+ * says HOW to do the current objective (ui/objective-advice.ts).
  */
 
 import { BUILD_ORDER, BUILDINGS, SPELLS } from '../sim/catalog';
@@ -15,6 +19,7 @@ import { css, h } from './dom';
 import { labelFor, orderVerb } from './hotkeys';
 import { icon, UiIconName } from './icons';
 import { settings } from './settings';
+import { currentObjective, isGuided, objectiveAdvice } from './objective-advice';
 import { ritualOf } from './stones';
 import { activeSpell } from './tools';
 
@@ -29,6 +34,7 @@ interface Hint {
 }
 
 const KEY = 'tg.hints.v1';
+const OBJECTIVE_HINT = 'objective';
 
 css('hints', `
 /* A tag of hide, its icon painted in an ochre ring. */
@@ -53,6 +59,9 @@ export class Hints {
   private readonly hints: Hint[];
   private el: HTMLDivElement | null = null;
   private textEl: HTMLSpanElement | null = null;
+  private textHtml = '';
+  /** Objectives whose advice chip the player closed (this game only). */
+  private readonly dismissedObjectives = new Set<number>();
   private showing: string | null = null;
   private startCam = { x: 0, z: 0 };
   private armedOnce = false;
@@ -95,7 +104,7 @@ export class Hints {
           }
           return `Build a ${name}: pick it in the Build panel ${k(`build:${dwelling}`)} and click open ground. Homes breed villagers and feed your spells.`;
         },
-        when: (_c, t) => t > 4 && w().buildState('player', dwelling).allowed && w().buildState('player', dwelling).unlocked, done: ownHut,
+        when: (_c, t) => t > 4 && !isGuided(w()) && w().buildState('player', dwelling).allowed && w().buildState('player', dwelling).unlocked, done: ownHut,
       },
       {
         id: 'spells', icon: 'book',
@@ -109,13 +118,28 @@ export class Hints {
           if (!st.charging) return `${s.name} is not charging. Right-click its stone in the spell book to pour mana into it.`;
           return `${s.name} is gathering power — its stones fill as your people pray${Number.isFinite(st.eta) ? ` (about ${Math.ceil(st.eta)}s)` : ''}. When it glows, press ${key} and click the world.`;
         },
-        when: (_c, t) => (t > 30 || ownHut()) && !!teachSpell(), done: () => this.armedOnce,
+        when: (_c, t) => (t > 30 || ownHut()) && !isGuided(w()) && !!teachSpell(), done: () => this.armedOnce,
       },
       {
         id: 'stones', icon: 'stone',
         html: () => `Standing stones teach spells — the marker above each shows which. Select your leader ${k('select-leader')} and ${verb()} a stone to commune. The ritual takes a while and damage breaks it: bring an escort.`,
-        when: (c, t) => t > 90 && !!leader() && c.world.monuments.some((m) => c.world.monumentAvailable(m)),
+        when: (c, t) => t > 90 && !isGuided(c.world) && !!leader() && c.world.monuments.some((m) => c.world.monumentAvailable(m)),
         done: (c) => (c.world.tribes.player?.known.size ?? 0) > this.learnedFrom || c.world.units.some((u) => u.tribe === 'player' && u.task === 'worship'),
+      },
+      {
+        // In a story chapter: how to do the objective in front of you (ui/objective-advice.ts).
+        // Never "seen" for good — it follows the story; dismissing it hides it for that objective.
+        id: OBJECTIVE_HINT, icon: 'objective',
+        html: () => {
+          const cur = currentObjective(w());
+          return (cur && objectiveAdvice(w(), cur.objective, settings.leftClickOrders)) ?? '';
+        },
+        when: (_c, t) => {
+          if (t < 2 || !isGuided(w())) return false;
+          const cur = currentObjective(w());
+          return !!cur && !this.dismissedObjectives.has(cur.index) && !!objectiveAdvice(w(), cur.objective, settings.leftClickOrders);
+        },
+        done: () => false,
       },
       {
         id: 'ritual', icon: 'shield',
@@ -127,7 +151,7 @@ export class Hints {
         html: () => settings.leftClickOrders
           ? `Drag on the ground to select your people, then click where they should go. The cursor shows what a click will do.`
           : `Drag on the ground to select your people; right-click to send them. The cursor shows what a right-click will do.`,
-        when: (c, t) => t > 60 && c.world.units.filter((u) => u.tribe === 'player' && !u.hidden).length > 1, done: (c) => c.selection.units.size > 1,
+        when: (c, t) => t > 60 && !isGuided(c.world) && c.world.units.filter((u) => u.tribe === 'player' && !u.hidden).length > 1, done: (c) => c.selection.units.size > 1,
       },
     ];
   }
@@ -135,6 +159,7 @@ export class Hints {
   /** New game: restart the clock (completed hints stay completed). */
   reset(): void {
     this.sinceStart = 0;
+    this.dismissedObjectives.clear();
     this.startCam = { x: this.ctx.view.target.x, z: this.ctx.view.target.z };
     this.learnedFrom = this.ctx.world.tribes.player?.known.size ?? 0;
     this.hide();
@@ -171,7 +196,7 @@ export class Hints {
     if (!settings.hints) return this.hide();
     // Retire the one showing if it's done.
     for (const hint of this.hints) {
-      if (!this.seen.has(hint.id) && hint.done(this.ctx)) {
+      if (hint.id !== OBJECTIVE_HINT && !this.seen.has(hint.id) && hint.done(this.ctx)) {
         this.remember(hint.id);
         if (this.showing === hint.id) this.hide();
       }
@@ -182,18 +207,25 @@ export class Hints {
       // withdraw it if it no longer applies — a hint never asks for something impossible.
       if (!cur.when(this.ctx, this.sinceStart)) return this.hide();
       const html = cur.html();
-      if (this.textEl && this.textEl.innerHTML !== html) this.textEl.innerHTML = html;
+      if (this.textEl && this.textHtml !== html) {
+        this.textHtml = html;
+        this.textEl.innerHTML = html;
+      }
       return;
     }
-    const next = this.hints.find((x) => !this.seen.has(x.id) && x.when(this.ctx, this.sinceStart));
+    const next = this.hints.find((x) => (x.id === OBJECTIVE_HINT || !this.seen.has(x.id)) && x.when(this.ctx, this.sinceStart));
     if (!next) return;
     this.showing = next.id;
     const close = h('button.tg-btn.icon-only', { type: 'button', 'aria-label': 'Dismiss hint', html: icon('close', 14) });
     close.addEventListener('click', () => {
-      this.remember(next.id);
+      if (next.id === OBJECTIVE_HINT) {
+        const cur = currentObjective(this.ctx.world);
+        if (cur) this.dismissedObjectives.add(cur.index);
+      } else this.remember(next.id);
       this.hide();
     });
-    this.textEl = h('span.txt', { html: next.html() });
+    this.textHtml = next.html();
+    this.textEl = h('span.txt', { html: this.textHtml });
     this.el = h('div.hint-chip.tg-panel.mat-hide', { role: 'status' }, h('span.ic', { html: icon(next.icon, 16) }), this.textEl, close);
     this.column.appendChild(this.el); // below the narrator line (ui/narrator.ts)
   }

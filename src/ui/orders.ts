@@ -49,7 +49,7 @@ import { UiContext } from './context';
 import { css, h, worldLayer } from './dom';
 import { Drape } from './drape';
 import { iconMarkup, UI_ICONS } from './icons';
-import { GroundMarquee, inGroundQuad, quadArea } from './marquee';
+import { GroundMarquee, inGroundQuad, pickSurfaceClamped, quadArea } from './marquee';
 import { monumentAtScreen, pickAtScreen } from './picking';
 import { tileDist, toScreen } from './project';
 import { mergeIds } from './selection';
@@ -62,8 +62,6 @@ const CLICK_SLOP = 5;
 /** Click-select forgiveness, in tiles. */
 const PICK_RADIUS = 1.6;
 const DOUBLE_CLICK_MS = 380;
-/** A contextmenu this soon after a right-press we already handled is the same click. */
-const CONTEXT_DEDUPE_MS = 400;
 
 export type OrderKind = 'move' | 'attack' | 'attackBuilding' | 'garrison' | 'worship' | 'rally' | 'none';
 
@@ -129,7 +127,16 @@ export class OrderControl {
   private lastClick: { t: number; kind: string; tribe: string } | null = null;
   private hoverTimer = 0;
   private marks: Mark[] = [];
-  private lastRightPress = 0;
+  /**
+   * A secondary press (button 2, or Ctrl+click) was handled on pointerdown;
+   * the browser's `contextmenu` for the SAME click (sent on press on macOS,
+   * on release on Windows) must not order again. A flag, not a time window:
+   * holding the button any length of time is still one click.
+   */
+  private pendingSecondary = false;
+  /** The drag's start, laid on the ground once (the box stays put if the camera moves). */
+  private dragGround: { x: number; z: number } | null = null;
+  private lastPointer = { x: 0, y: 0 };
   /** Your people inside the area being dragged (the overlay rings them). */
   readonly preview = new Set<number>();
 
@@ -141,28 +148,35 @@ export class OrderControl {
     // The browser's context menu never opens over the game (canvas or HUD).
     addEventListener('contextmenu', (e) => {
       const t = e.target as HTMLElement;
+      if (t.closest?.('input, textarea')) return; // a text field keeps its paste menu
       if (t === canvas || t.closest?.('#ui, .menu, .tgc-overlay, .lib')) e.preventDefault();
     });
     canvas.addEventListener('contextmenu', (e) => {
       e.preventDefault();
-      // A two-finger tap (or Ctrl+click) that never sent a button-2 press.
-      if (appState.mode !== 'game' || performance.now() - this.lastRightPress < CONTEXT_DEDUPE_MS) return;
+      const handled = this.pendingSecondary;
+      this.pendingSecondary = false;
+      // A two-finger tap that never sent a button-2 press is a right-click of its own.
+      if (appState.mode !== 'game' || handled) return;
       this.rightClick(e.clientX, e.clientY);
     });
     canvas.addEventListener('pointerdown', (e) => {
+      this.pendingSecondary = false;
       if (appState.mode !== 'game') return;
       const secondary = e.button === 2 || (e.button === 0 && e.ctrlKey && !e.metaKey);
       if (secondary) {
-        this.lastRightPress = performance.now();
+        this.pendingSecondary = true;
         this.rightClick(e.clientX, e.clientY);
       } else if (e.button === 0 && toolState.tool === 'select') {
         this.dragStart = { x: e.clientX, y: e.clientY };
+        this.dragGround = null;
         this.dragging = false;
       }
     });
 
     addEventListener('pointermove', (e) => {
+      this.lastPointer = { x: e.clientX, y: e.clientY };
       if (!this.dragStart) return;
+      if ((e.buttons & 1) === 0) return this.endDrag(); // released outside the window
       if (!this.dragging && Math.hypot(e.clientX - this.dragStart.x, e.clientY - this.dragStart.y) > CLICK_SLOP) this.dragging = true;
       if (this.dragging) this.drawDrag(e.clientX, e.clientY);
     });
@@ -171,19 +185,34 @@ export class OrderControl {
     addEventListener('pointerup', (e) => {
       if (e.button !== 0 || !this.dragStart) return;
       const wasDrag = this.dragging;
+      const start = this.dragStart;
       const q = wasDrag ? this.marquee.quad : null;
       this.endDrag();
       if (!wasDrag) this.clickSelect(e.clientX, e.clientY, e.shiftKey);
       else if (q && quadArea(q) > 0.5) this.boxSelect(q, e.shiftKey);
-      else this.clickSelect(e.clientX, e.clientY, e.shiftKey);
+      // A drag that found no ground area is never an order: at most a select where it began.
+      else this.clickSelect(start.x, start.y, e.shiftKey, false);
     });
   }
 
-  private endDrag(): void {
+  /** True while the player is dragging out a selection (camera drifts wait). */
+  get busy(): boolean {
+    return this.dragStart !== null;
+  }
+
+  /** Drop any drag and hide the ground marks (leaving play). */
+  endDrag(): void {
     this.dragStart = null;
+    this.dragGround = null;
     this.dragging = false;
     this.marquee.hide();
     this.preview.clear();
+  }
+
+  /** Hide everything drawn on the ground (the menu opened over the game). */
+  hideMarks(): void {
+    this.endDrag();
+    this.markDrape.hide();
   }
 
   private rightClick(px: number, py: number): void {
@@ -268,14 +297,14 @@ export class OrderControl {
     return [...this.ctx.selection.units].filter((id) => w.unitById(id)?.tribe === 'player');
   }
 
-  private clickSelect(px: number, py: number, shift: boolean): void {
+  private clickSelect(px: number, py: number, shift: boolean, allowOrders = true): void {
     const sel = this.ctx.selection;
     const w = this.ctx.world;
     const tile = this.groundTile(px, py);
     if (tile && this.intercept?.(tile.x, tile.z)) return;
     // With your people selected, a plain click on anything that isn't yours
     // is an order (the setting can turn this off).
-    const orders = settings.leftClickOrders && !shift && this.ownSelected().length > 0;
+    const orders = allowOrders && settings.leftClickOrders && !shift && this.ownSelected().length > 0;
     // Screen-space picks first (a roof against the sky has no ground tile behind it).
     // Your own people win over anyone else's under the same pixel.
     const hit = this.pickAt(px, py, tile, (u) => u.tribe === 'player');
@@ -286,8 +315,9 @@ export class OrderControl {
     if (any) {
       if (any.tribe !== 'player') {
         this.lastClick = null;
-        if (orders) return void this.orderAt(any.x, any.z, { px, py });
-        sel.inspectUnit(any.id); // wanderers & rivals: a read-only card, never a selection
+        // A foe (a rival, an awake guardian) is a target; a wanderer never is — clicking one looks at it.
+        if (orders && w.foeOfTribe('player', any)) return void this.orderAt(any.x, any.z, { px, py });
+        sel.inspectUnit(any.id); // read-only card, never a selection
         return;
       }
       // Double-click: everyone of that kind (yours) on screen.
@@ -314,7 +344,8 @@ export class OrderControl {
       return sel.setMonument(m);
     }
     if (!tile) {
-      // Sky: nothing sensible to do there.
+      // Sky: with people selected and orders on, say so; otherwise there is nothing there to keep.
+      if (orders) return this.refuse('Can\u2019t go there', px, py, null);
       if (!shift) sel.clear();
       return;
     }
@@ -339,7 +370,8 @@ export class OrderControl {
   }
 
   private drawDrag(px: number, py: number): void {
-    const q = this.marquee.update(this.ctx.view, this.dragStart!, { x: px, y: py }, 0xf2d27a);
+    if (!this.dragGround) this.dragGround = pickSurfaceClamped(this.dragStart!.x, this.dragStart!.y, this.ctx.view);
+    const q = this.marquee.update(this.ctx.view, this.dragGround, { x: px, y: py }, 0xf2d27a);
     this.preview.clear();
     for (const u of this.unitsInQuad(q)) this.preview.add(u.id);
   }
@@ -370,7 +402,7 @@ export class OrderControl {
     const mine = this.ownSelected().map((id) => w.unitById(id)!);
     if (mine.length === 0) return { kind: 'none', x, z };
 
-    const enemy = this.unitNear(x, z, ATTACK_PICK_RADIUS, (u) => w.hostile('player', u.tribe));
+    const enemy = this.unitNear(x, z, ATTACK_PICK_RADIUS, (u) => w.foeOfTribe('player', u)); // rivals, and a stone's guardians once awake
     if (enemy) return { kind: 'attack', unit: enemy, x, z };
     const b = this.buildingAt(x, z);
     if (b) {
@@ -389,7 +421,7 @@ export class OrderControl {
     const tile = this.groundTile(px, py);
     const w = this.ctx.world;
     // Aim at what is drawn under the cursor: an enemy's body, a roof, a stone.
-    const hit = pickAtScreen(this.ctx.view, w.units, w.buildings, px, py, (u) => w.hostile('player', u.tribe));
+    const hit = pickAtScreen(this.ctx.view, w.units, w.buildings, px, py, (u) => w.foeOfTribe('player', u));
     if (hit.unit) return void this.orderAt(hit.unit.x, hit.unit.z, { px, py });
     if (hit.building) return void this.orderAt(hit.building.x, hit.building.z, { px, py });
     const m = monumentAtScreen(this.ctx.view, w.monuments, px, py);
@@ -473,6 +505,8 @@ export class OrderControl {
 
   /** Per frame: ground markers, and (throttled) what's under the cursor. */
   update(dt: number): void {
+    // The camera may move during a drag (keys, edge pan): keep the box on its ground start.
+    if (this.dragging && this.dragStart) this.drawDrag(this.lastPointer.x, this.lastPointer.y);
     const now = performance.now();
     const view = this.ctx.view;
     this.marks = this.marks.filter((m) => {

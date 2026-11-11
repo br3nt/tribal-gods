@@ -266,6 +266,25 @@ export function failText(f: FailCondition): string | null {
   }
 }
 
+/**
+ * Defeats written as story beats (a scripted event whose actions include
+ * `defeat`) — e.g. chapter 1's "ten of your people dead". They aren't fail
+ * conditions, so failText() never sees them; the briefing lists them too.
+ */
+export function scriptedDefeats(rules: ScenarioRules): string[] {
+  const out: string[] = [];
+  for (const e of rules.events ?? []) {
+    const defeat = e.actions.find((a): a is Extract<typeof a, { type: 'defeat' }> => a.type === 'defeat');
+    if (!defeat) continue;
+    const t = e.when;
+    if (t.type === 'killed' && t.tribe === 'player') {
+      const who = t.kind ? `${t.count} ${UNITS[t.kind].name}${t.count === 1 ? '' : 's'}` : `${t.count} of your people`;
+      out.push(`If ${who} ${t.count === 1 ? 'dies' : 'die'}, it is over.`);
+    } else out.push(defeat.reason);
+  }
+  return out;
+}
+
 export interface BriefingData {
   chapter: number;
   rules: ScenarioRules;
@@ -319,12 +338,12 @@ export class BriefingScreen extends Overlay {
     story.appendChild(tips);
 
     story.appendChild(el('div', 'tgc-h', 'Objectives'));
-    for (const o of d.rules.objectives) {
+    for (const o of d.rules.objectives.filter((x) => x.after === undefined)) { // later steps of the story arrive in play
       const row = el('div', `tgc-obj${o.optional ? ' optional' : ''}`);
       row.append(el('span', 'mark', o.optional ? '☆' : '◆'), el('span', undefined, o.text + (o.optional ? ' (optional)' : '')));
       story.appendChild(row);
     }
-    const fails = (d.rules.fail ?? []).map((f) => failText(f)).filter((x): x is string => !!x);
+    const fails = [...(d.rules.fail ?? []).map((f) => failText(f)).filter((x): x is string => !!x), ...scriptedDefeats(d.rules)];
     if (fails.length) {
       story.appendChild(el('div', 'tgc-h', 'Beware'));
       for (const f of fails) {

@@ -22,6 +22,8 @@
 import * as THREE from 'three';
 import type { LoopStats } from '../core/loop';
 import { setHighlight } from '../render/highlight';
+import { TILE, WORLD_SIZE } from '../config';
+import { wrapDelta } from '../core/util';
 import { BuildingKind, SpellId, UNITS } from '../sim/catalog';
 import type { World } from '../sim/world-state';
 import { AlertFeed } from './alerts';
@@ -157,6 +159,8 @@ export class GameUi {
     this.gameOver = new GameOverScreen({ onRestart: () => hooks.restart(), onMenu: () => hooks.quitToMenu() });
 
     addEventListener('keydown', (e) => this.onKey(e));
+    // The player taking the camera cancels a narrated drift.
+    for (const ev of ['keydown', 'wheel', 'pointerdown'] as const) addEventListener(ev, () => (this.panTo = null), { capture: true, passive: true });
     // A mouse click on a HUD button must not leave it focused (Space would
     // then also "click" it). Keyboard users still Tab to buttons normally.
     this.root.addEventListener('mousedown', (e) => {
@@ -306,6 +310,7 @@ export class GameUi {
     this.objectives.reset();
     this.hints.reset();
     this.narrator.reset();
+    this.panTo = null;
     this.heardMessages = this.ctx.world.messageSeq;
     this.gameOver.hide();
     this.shownGameOver = false;
@@ -323,6 +328,7 @@ export class GameUi {
     if (!inGame) {
       if (activeSpell() || activeBuilding()) resetTool();
       setHighlight(null);
+      this.orders.hideMarks();
       this.ctx.hover.unit = this.ctx.hover.building = this.ctx.hover.monument = null;
       this.worldHover.update(dt);
       this.aim.update();
@@ -339,6 +345,7 @@ export class GameUi {
     this.hints.update(dt);
     this.alerts.update();
     this.hearScenario();
+    this.drift(dt);
     this.narrator.update(dt);
 
     this.slow -= dt;
@@ -374,8 +381,37 @@ export class GameUi {
     if (w.messageSeq < this.heardMessages) this.heardMessages = 0; // a new world
     if (w.messageSeq === this.heardMessages) return;
     const fresh = w.messages.slice(-Math.min(w.messages.length, w.messageSeq - this.heardMessages));
-    for (const m of fresh) this.narrator.say(m.text);
+    for (const m of fresh) {
+      this.narrator.say(m.text);
+      if (m.focus) {
+        // The line is about a place: ping it, and drift the camera there unless the player is busy.
+        this.minimap.ping(m.focus.x, m.focus.z, 'info');
+        this.panTo = { x: m.focus.x, z: m.focus.z };
+      }
+    }
     this.heardMessages = w.messageSeq;
+  }
+
+  /**
+   * A gentle camera drift toward a narrated place (world.messages[].focus).
+   * Never while aiming, placing or dragging, and any key, click or wheel
+   * from the player cancels it — the camera is theirs.
+   */
+  private panTo: { x: number; z: number } | null = null;
+  private drift(dt: number): void {
+    if (!this.panTo) return;
+    if (activeSpell() || activeBuilding() || this.orders.busy) return; // wait: don't move the ground under the cursor
+    const t = this.ctx.view.target;
+    const dx = wrapDelta(this.panTo.x * TILE - t.x, WORLD_SIZE * TILE);
+    const dz = wrapDelta(this.panTo.z * TILE - t.z, WORLD_SIZE * TILE);
+    const d = Math.hypot(dx, dz);
+    if (d < 0.5) {
+      this.panTo = null;
+      return;
+    }
+    const k = 1 - Math.exp(-dt * 1.6); // ~1.5 s to settle, eases out
+    t.x += dx * k;
+    t.z += dz * k;
   }
 
   /** The world overlay runs after the renderers have moved everyone. */

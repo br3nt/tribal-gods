@@ -64,6 +64,12 @@ css('world-overlay', `
 .stone-mk .ritual { position: absolute; inset: -0.05rem; border-radius: 50%;
   background: conic-gradient(var(--rc) calc(var(--p) * 1turn), rgba(0,0,0,0.45) 0);
   -webkit-mask: radial-gradient(circle, transparent 62%, #000 64%); mask: radial-gradient(circle, transparent 62%, #000 64%); }
+.stone-mk .ritual.idle { opacity: 0.45; }
+.stone-mk .ritual.contested { animation: stone-contested 0.8s ease-in-out infinite alternate; }
+@keyframes stone-contested { from { filter: drop-shadow(0 0 0 #ff5a3a); } to { filter: drop-shadow(0 0 0.35rem #ff5a3a); } }
+.stone-mk .flag { position: absolute; top: -0.75rem; left: 50%; transform: translateX(-50%); white-space: nowrap; padding: 0.05rem 0.3rem; border-radius: 0.15rem 0.25rem;
+  font: 800 0.5625rem/1.2 var(--font); letter-spacing: 0.06em; text-transform: uppercase; background: #6a1b0e; color: #ffe0d6; box-shadow: 0 0 0 1px #1a0904; }
+.stone-mk .flag:empty { display: none; }
 .stone-mk.dim { opacity: 0.55; filter: grayscale(0.8); }
 .stone-mk.dim svg { filter: none; }
 .stone-mk::after { content: ''; position: absolute; bottom: -0.35rem; left: 50%; width: 2px; height: 0.4rem; margin-left: -1px; background: linear-gradient(var(--tier), transparent); }
@@ -90,6 +96,7 @@ interface Item {
 interface StoneMark {
   el: HTMLDivElement;
   ritual: HTMLDivElement;
+  flag: HTMLDivElement;
   spell: string;
 }
 
@@ -249,9 +256,10 @@ export class WorldOverlay {
     const { world, view } = this.ctx;
     while (this.stones.length < world.monuments.length) {
       const ritual = h('div.ritual');
-      const el = h('div.stone-mk', {}, h('div.disc'), ritual);
+      const flag = h('div.flag');
+      const el = h('div.stone-mk', {}, h('div.disc'), ritual, flag);
       worldLayer().appendChild(el);
-      this.stones.push({ el, ritual, spell: '' });
+      this.stones.push({ el, ritual, flag, spell: '' });
     }
     this.stones.forEach((s, i) => {
       const m = world.monuments[i];
@@ -274,7 +282,11 @@ export class WorldOverlay {
       if (r) {
         s.ritual.style.setProperty('--p', String(Math.round(r.progress * 200) / 200));
         s.ritual.style.setProperty('--rc', tribeCss(r.tribe));
+        setClass(s.ritual, 'idle', !r.communing);
+        setClass(s.ritual, 'contested', r.communing && r.contested);
       }
+      const flag = r?.communing && r.contested ? 'Contested' : m.guardsAwake ? 'Guardians awake' : '';
+      if (s.flag.textContent !== flag) s.flag.textContent = flag;
     });
   }
 }

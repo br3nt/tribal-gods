@@ -7,9 +7,11 @@
  *
  * A narrator line is not a toast: it fades in as a sentence under the top
  * bar, stays long enough to read at a calm pace (by word count), and fades
- * out before the next queued line begins. Lines that arrive together wait
- * their turn instead of piling up in one box. A repeat of the line being
- * shown is dropped.
+ * out before the next line begins. The story stays CURRENT: when a newer
+ * line arrives the one showing gets a short last look (NEWER_GRACE) and
+ * gives way, and at most two lines wait — the narrator never lags behind
+ * world.messageSeq reading out old news. A repeat of the line being shown
+ * is dropped.
  */
 
 import { css, h } from './dom';
@@ -26,6 +28,11 @@ css('narrator', `
   opacity: 0; transform: translateY(-0.25rem); transition: opacity 700ms var(--ease), transform 700ms var(--ease); }
 .narr.on { opacity: 1; transform: none; }
 `);
+
+/** Seconds the line showing stays once a newer one is waiting. */
+const NEWER_GRACE = 1.6;
+/** Lines that may wait behind the one showing. */
+const MAX_WAITING = 2;
 
 /** Seconds a line stays up: a calm reading pace, never shorter than 4.5 s. */
 export function readSeconds(text: string): number {
@@ -49,6 +56,8 @@ export class Narrator {
     const t = text.trim();
     if (!t || t === this.current || this.queue[this.queue.length - 1] === t) return;
     this.queue.push(t);
+    while (this.queue.length > MAX_WAITING) this.queue.shift(); // old news goes unread
+    if (this.current) this.left = Math.min(this.left, NEWER_GRACE);
   }
 
   /** Lines waiting plus the one showing (for tests and the debug readout). */

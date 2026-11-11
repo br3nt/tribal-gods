@@ -178,9 +178,8 @@ export class GroundMarquee {
     this.rim = new Drape(scene, 0.95, 3000, 19);
   }
 
-  /** Recompute from screen points; returns the ground quad (null if nothing hit). */
-  update(view: View, start: { x: number; y: number }, now: { x: number; y: number }, color: number): [Pt, Pt, Pt, Pt] | null {
-    const s = pickSurfaceClamped(start.x, start.y, view);
+  /** Redraw from the drag's ground start `s` (tile coords, picked once) to the pointer. */
+  update(view: View, s: Pt | null, now: { x: number; y: number }, color: number): [Pt, Pt, Pt, Pt] | null {
     const c = pickSurfaceClamped(now.x, now.y, view);
     if (!s || !c) {
       this.hide();

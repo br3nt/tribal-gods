@@ -1,8 +1,10 @@
 /**
  * ui/objectives-panel.ts — what you're here to do (top right).
  *
- * Reads world.objectives (catalog ObjectiveState): the sentence, done or
- * not, a progress bar where progress means something (population, survive,
+ * Reads world.objectives (catalog ObjectiveState): only the ACTIVE ones
+ * (and those done or failed) — objectives chained with `after` appear when
+ * they activate, written in with a flourish. The sentence, done (ticked),
+ * failed (struck through in red), a progress bar where progress means something (population, survive,
  * hold), and an "optional" tag. When one completes, the time it happened
  * is remembered and shown ("done 4:12"). The header collapses the list to
  * a single line for players who know what they're doing.
@@ -35,6 +37,13 @@ css('objectives', `
 .ob-item .mark { width: 0.95rem; height: 0.95rem; margin-top: 0.05rem; border-radius: 50%; box-shadow: inset 0 0 0 2px #6b4527; display: grid; place-items: center; box-sizing: border-box; background: rgba(255,250,235,0.35); }
 .ob-item.done .mark { background: radial-gradient(circle at 40% 35%, #a9d77e, #3f7a22); box-shadow: 0 0 0 1px #2a4a12; color: #f4ffe8; }
 .ob-item.done .txt { color: var(--text-3); text-decoration: line-through; text-decoration-color: rgba(60,35,15,0.5); }
+.ob-item.failed .mark { background: #a3271a; box-shadow: 0 0 0 1px #4a0f06; color: #ffe4da; }
+.ob-item.failed .txt { color: var(--text-3); text-decoration: line-through; text-decoration-color: rgba(163,39,26,0.8); text-decoration-thickness: 2px; }
+.ob-item.failed .meta { color: var(--bad); }
+.ob-item.fresh { animation: ob-fresh 1.4s var(--ease); }
+.ob-item.fresh .txt { animation: ob-ink 1.4s var(--ease); }
+@keyframes ob-fresh { 0% { opacity: 0; transform: translateX(0.6rem); } 30% { opacity: 1; transform: none; } }
+@keyframes ob-ink { 0%, 30% { background: rgba(211,149,55,0.45); } 100% { background: transparent; } }
 .ob-item .tag { display: inline-block; margin-left: 0.3rem; padding: 0 0.3rem; border-radius: 0.15rem; font-size: 0.625rem; font-weight: 700; color: var(--text-3); box-shadow: inset 0 0 0 1px var(--rim); vertical-align: 1px; }
 .ob-item .meta { grid-column: 2; display: flex; align-items: center; gap: 0.5rem; font-size: var(--t-xs); color: var(--text-3); font-weight: 700; }
 .ob-item .meta .bar { flex: 1; height: 0.35rem; }
@@ -46,6 +55,8 @@ export class ObjectivesPanel {
   private readonly count: HTMLSpanElement;
   private sig = '';
   private readonly doneAt = new Map<number, number>();
+  /** Objectives already written on the scroll (a newly active one arrives with a flourish). */
+  private readonly seen = new Set<number>();
 
   constructor(private readonly ctx: UiContext) {
     this.el = h('div.ob.tg-panel.mat-hide');
@@ -59,6 +70,7 @@ export class ObjectivesPanel {
   /** Forget completion times (new scenario). */
   reset(): void {
     this.doneAt.clear();
+    this.seen.clear();
     this.sig = '';
   }
 
@@ -68,32 +80,40 @@ export class ObjectivesPanel {
     obs.forEach((o, i) => {
       if (o.done && !this.doneAt.has(i)) this.doneAt.set(i, w.elapsed);
     });
-    this.el.hidden = obs.length === 0;
-    const sig = obs.map((o) => `${o.text}|${o.done}|${o.optional}`).join('/');
+    // Objectives chain (`after`): one waiting on an earlier one stays off the
+    // scroll until it activates, then is written in with a flourish.
+    const shown = obs.map((o, i) => ({ o, i })).filter(({ o }) => o.active !== false || o.done || o.failed);
+    this.el.hidden = shown.length === 0;
+    const sig = shown.map(({ o, i }) => `${i}|${o.text}|${o.done}|${o.failed}|${o.optional}`).join('/');
     if (sig !== this.sig) {
+      const firstPaint = this.sig === '';
       this.sig = sig;
-      this.list.innerHTML = obs
-        .map((o, i) => {
-          const showBar = !o.done && o.progress > 0 && o.progress < 1;
-          return `<li class="ob-item${o.done ? ' done' : ''}"><span class="mark">${o.done ? icon('check', 10) : ''}</span>` +
+      this.list.innerHTML = shown
+        .map(({ o, i }) => {
+          const fresh = !firstPaint && !this.seen.has(i);
+          const showBar = !o.done && !o.failed && o.progress > 0 && o.progress < 1;
+          const cls = `ob-item${o.done ? ' done' : ''}${o.failed ? ' failed' : ''}${fresh ? ' fresh' : ''}`;
+          return `<li class="${cls}"><span class="mark">${o.done ? icon('check', 10) : o.failed ? icon('close', 10) : ''}</span>` +
             `<span class="txt">${escapeHtml(o.text)}${o.optional ? '<span class="tag">optional</span>' : ''}</span>` +
             (o.done
               ? `<span class="meta">done ${fmtClock(this.doneAt.get(i) ?? w.elapsed)}</span>`
-              : showBar || o.progress > 0
-                ? `<span class="meta"><span class="bar gold"><i data-i="${i}"></i></span><span data-p="${i}"></span></span>`
-                : '') +
+              : o.failed
+                ? `<span class="meta">failed</span>`
+                : showBar
+                  ? `<span class="meta"><span class="bar gold"><i data-i="${i}"></i></span><span data-p="${i}"></span></span>`
+                  : '') +
             `</li>`;
         })
         .join('');
+      for (const { i } of shown) this.seen.add(i);
     }
-    obs.forEach((o, i) => {
+    for (const { o, i } of shown) {
       const bar = this.list.querySelector<HTMLElement>(`[data-i="${i}"]`);
       if (bar) bar.style.transform = fillTransform(o.progress);
       const p = this.list.querySelector(`[data-p="${i}"]`);
       if (p) setText(p, `${Math.round(o.progress * 100)}%`);
-    });
-    const done = obs.filter((o) => o.done && !o.optional).length;
-    const req = obs.filter((o) => !o.optional).length;
-    setText(this.count, `${done}/${req}`);
+    }
+    const req = shown.filter(({ o }) => !o.optional);
+    setText(this.count, `${req.filter(({ o }) => o.done).length}/${req.length}`);
   }
 }

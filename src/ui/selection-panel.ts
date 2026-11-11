@@ -32,7 +32,7 @@ import { buildingIcon, icon, spellIcon, unitIcon } from './icons';
 import { tribeCss } from './orders';
 import { groupByKind } from './selection';
 import { settings } from './settings';
-import { ritualAt, ritualOf, ritualSeconds, stoneBlocked, stoneName, stoneTerms } from './stones';
+import { ritualAt, ritualOf, ritualSeconds, stoneBlocked, stoneGuards, stoneName, stoneTerms } from './stones';
 import { hideTip, tip } from './tooltip';
 
 css('selection-panel', `
@@ -177,6 +177,8 @@ export class SelectionPanel {
     const w = this.ctx.world;
     const sel = this.ctx.selection;
     sel.prune((id) => !!w.unitById(id), (id) => !!w.getBuilding(id));
+    // Someone you were looking at just joined you (Kindled, or stranded kin reached home): now they're yours.
+    if (sel.inspect !== null && w.unitById(sel.inspect)?.tribe === 'player') sel.setUnits([sel.inspect]);
     if (this.rallyPick !== null && sel.building !== this.rallyPick) this.rallyPick = null;
 
     let sig: string;
@@ -189,7 +191,7 @@ export class SelectionPanel {
       render = () => this.renderBuilding(b);
     } else if (sel.monument !== null) {
       const m = w.monuments[sel.monument];
-      sig = `m${sel.monument}|${w.monumentAvailable(m)}|${m.claimedBy}`;
+      sig = `m${sel.monument}|${w.monumentAvailable(m)}|${m.claimedBy}|${!!m.guardsAwake}`;
       render = () => this.renderMonument(sel.monument!);
     } else if (sel.inspect !== null && w.unitById(sel.inspect)) {
       const u = w.unitById(sel.inspect)!;
@@ -207,10 +209,11 @@ export class SelectionPanel {
       sig = 'none';
       render = () => '';
     }
+    sig += `|${settings.leftClickOrders}`; // the panel's wording names the order click
     if (sig !== this.sig) {
       this.sig = sig;
       this.el.innerHTML = render();
-      this.el.hidden = sig === 'none';
+      this.el.hidden = sig.startsWith('none');
       for (const k of this.el.querySelectorAll<HTMLElement>('[data-kind]')) {
         const kind = k.dataset.kind as UnitKind;
         tip(k, () => `<h4>${UNITS[kind].name}</h4><p>${escapeHtml(UNITS[kind].blurb)}</p><p class="hint">Click: select only these. Shift-click: drop them.</p>`);
@@ -277,7 +280,7 @@ export class SelectionPanel {
       if (row) row.hidden = !r;
       if (r) {
         bar('rit', r.progress);
-        set('ritt', `${r.tribe === 'player' ? 'Your leader' : 'A rival'} · ${Math.round(r.progress * 100)}%`);
+        set('ritt', `${r.tribe === 'player' ? 'Your leader' : 'A rival'} · ${Math.round(r.progress * 100)}%${!r.communing ? ' · broken, fading' : r.contested ? ' · contested' : ''}`);
       }
     } else if (units.length === 1 || sel.inspect !== null) {
       const u = units[0] ?? w.unitById(sel.inspect!);
@@ -285,7 +288,9 @@ export class SelectionPanel {
       const r = ritualOf(w, u.id);
       if (r) {
         bar('rit', r.ritual.progress);
-        set('ritt', `${Math.round(r.ritual.progress * 100)}% · ${fmtEta((1 - r.ritual.progress) * ritualSeconds(w.monuments[r.index]))} left`);
+        set('ritt', r.ritual.contested
+          ? `${Math.round(r.ritual.progress * 100)}% · contested — enemies in the ring hold it still`
+          : `${Math.round(r.ritual.progress * 100)}% · ${fmtEta((1 - r.ritual.progress) * ritualSeconds(w.monuments[r.index]))} left`);
       }
       bar('hp', u.hp / u.maxHp);
       set('hpt', `${Math.ceil(u.hp)} / ${u.maxHp}`);
@@ -341,6 +346,10 @@ export class SelectionPanel {
       }
     } else if (u.tribe === 'player' && u.kind === 'brave') {
       html += `<div class="sp-note">Villagers work on their own. Right-click a Shrine to pray there, or a lodge's queue will train them.</div>`;
+    } else if (u.tribe === 'wild' && u.joins) {
+      html += `<div class="sp-note">Stranded kin of ${escapeHtml(tribeLabel(this.ctx, u.joins))}: not yours to command until a walking route links them to your home — then they join.</div>`;
+    } else if (u.tribe === 'wild' && (u.guardOf ?? -1) >= 0) {
+      html += `<div class="sp-note">A guardian of a standing stone. It stands still until a ritual begins there, then fights every tribe in reach.</div>`;
     } else if (u.tribe === 'wild') {
       html += `<div class="sp-note">${escapeHtml(def.blurb)} Not yours to command: <b>Kindle</b> converts wanderers to your tribe.</div>`;
     } else if (u.tribe !== 'player') {
@@ -445,6 +454,8 @@ export class SelectionPanel {
       note = `A ${ritualSeconds(m)}s ritual earns ${m.charges ?? 2} free casts, known or not. Then it sleeps for ${m.cooldown ?? 90}s.`;
     }
     html += `<div class="sp-note">${note} <span data-k="sleep" class="sp-warnword"></span></div>`;
+    const guards = stoneGuards(m);
+    if (guards) html += `<div class="sp-warn soft">${icon('shield', 14)}${escapeHtml(guards)}</div>`;
     html += `<div class="sp-row" data-k="ritrow"><span class="lbl">Ritual</span><div class="sp-train"><div class="bar mana"><i data-k="rit"></i></div><span data-k="ritt"></span></div></div>`;
     const leader = w.leaderOf('player');
     if (avail) {
