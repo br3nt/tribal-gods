@@ -38,6 +38,7 @@ import { spellDef } from '../sim/catalog';
 import type { SpellJob } from '../sim/spells';
 import type { World } from '../sim/world-state';
 import { FxChannel } from '../world/surface-fx';
+import { clearWear, setWear } from '../world/wear';
 import type { TerrainMesh } from '../world/terrain-mesh';
 import { CastGather } from './cast-gather';
 import { CHUNK, EffectsRenderer, fxMaterial, GLOW, MeshFx, PETAL, SMOKE } from './effects';
@@ -96,6 +97,9 @@ export class Spectacle {
   private readonly gather: CastGather;
   private readonly fleet: Fleet;
   private siteAcc = 0;
+  /** Freshly levelled ground shows as bare cut earth for a while (world/wear.ts patches). */
+  private cuts: { key: string; ttl: number }[] = [];
+  private cutSeq = 0;
 
   constructor(
     private readonly fx: EffectsRenderer,
@@ -112,6 +116,8 @@ export class Spectacle {
     this.states.clear();
     this.vents = [];
     this.fleet.reset();
+    for (const c of this.cuts) clearWear(c.key);
+    this.cuts = [];
   }
 
   /** A landing came ashore: boats beach at (x, z). Called from the effects registry. */
@@ -147,6 +153,10 @@ export class Spectacle {
     for (const v of this.vents) this.vent(v, world, dt);
     this.vents = this.vents.filter((v) => v.age < v.life);
     this.siteDust(world, dt);
+    if (this.cuts.length) {
+      for (const c of this.cuts) if ((c.ttl -= dt) <= 0) clearWear(c.key);
+      this.cuts = this.cuts.filter((c) => c.ttl > 0);
+    }
     this.gather.sync(world, dt);
     this.fleet.sync(world, dt);
   }
@@ -182,6 +192,10 @@ export class Spectacle {
     } else if (s.spell === 'flatten') {
       const R = spellDef('flatten').radius;
       this.fx.dust(j.x, j.z, this.fx.n(30, 8), R * TILE, 0xb59e7c, 2.2);
+      // the shaved ground stays bare, raw earth until the turf creeps back
+      const key = `lv:${this.cutSeq++}`;
+      setWear(key, { x: j.x, z: j.z, r: R * 0.85, round: true, k: 0.75 });
+      this.cuts.push({ key, ttl: 75 });
     } else if (s.spell === 'earthquake') {
       // a dark scar where the fault tore
       const len = Math.round(spellDef('earthquake').radius * 1.45);
@@ -480,15 +494,15 @@ export class Spectacle {
     const acc = s.acc;
     const k = 1 - j.t / j.duration;
     // dust curtains stand up round the rim
-    for (let n = owed(acc, 0, fx.detail * 70 * (0.4 + 0.6 * k), dt); n > 0; n--) {
+    for (let n = owed(acc, 0, fx.detail * 110 * (0.4 + 0.6 * k), dt); n > 0; n--) {
       const a = Math.random() * Math.PI * 2;
       const r = R * rand(0.85, 1.08);
       const p = fx.at(j.x + Math.cos(a) * r, j.z + Math.sin(a) * r, 0.3);
       const v = rand(0.55, 0.75);
       fx.matter.emit({
         x: p.x, y: p.y, z: p.z, vx: Math.cos(a) * rand(0.3, 1.2), vy: rand(2, 5), vz: Math.sin(a) * rand(0.3, 1.2),
-        life: rand(1.4, 2.4), size: rand(1.6, 2.4), sizeEnd: rand(5, 7.5),
-        r: v * 0.85, g: v * 0.72, b: v * 0.55, alpha: 0.5, drag: 1.1, shape: SMOKE, fadeIn: 0.1,
+        life: rand(1.6, 2.6), size: rand(2, 3), sizeEnd: rand(6, 9),
+        r: v * 0.95, g: v * 0.75, b: v * 0.5, alpha: 0.72, drag: 1.1, shape: SMOKE, fadeIn: 0.1,
       });
     }
     // clods tumble outward and down as the high ground is shaved away

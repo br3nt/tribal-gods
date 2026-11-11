@@ -128,16 +128,16 @@ export class CastGather {
   private cloud(g: Gather, dt: number): void {
     const fx = this.fx;
     g.cloudAcc += dt * fx.detail * 40;
-    const m = fx.at(g.tx, g.tz, 26);
+    const m = fx.at(g.tx, g.tz, 17);
     const mx = m.x, my = m.y, mz = m.z;
     for (; g.cloudAcc >= 1; g.cloudAcc--) {
       const a = Math.random() * Math.PI * 2;
-      const r = 6 + Math.random() * 8 * (1 - g.prog * 0.6);
+      const r = 4 + Math.random() * 7 * (1 - g.prog * 0.6);
       const v = 0.07 + Math.random() * 0.05;
       fx.matter.emit({
         x: mx + Math.cos(a) * r, y: my + (Math.random() - 0.5) * 3, z: mz + Math.sin(a) * r,
         vx: -Math.cos(a) * r * 0.9, vy: 0, vz: -Math.sin(a) * r * 0.9,
-        life: 1.4, size: 5, sizeEnd: 9, r: v, g: v, b: v * 1.25, alpha: 0.8, drag: 1.2, shape: SMOKE, fadeIn: 0.25,
+        life: 1.4, size: 4, sizeEnd: 8, r: v, g: v, b: v * 1.25, alpha: 0.85, drag: 1.2, shape: SMOKE, fadeIn: 0.25,
         swirl: 0.8, ax: mx, az: mz,
       });
     }

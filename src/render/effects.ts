@@ -367,6 +367,10 @@ interface Projectile {
   age: number; ttl: number;
   arc: number;
   kind: 'ember' | 'stone';
+  /** Where the head was last frame (unbent world units). */
+  lastX?: number;
+  lastY?: number;
+  lastZ?: number;
 }
 
 interface AuraVisual {
@@ -1184,22 +1188,30 @@ export class EffectsRenderer {
       const yBase = p.kind === 'stone' ? p.fromY + (p.toY - p.fromY) * t * t : p.fromY + (p.toY - p.fromY) * t;
       const pos = this.at(cx, cz, 0);
       const y = (p.kind === 'stone' ? this.ground(p.tx, p.tz) : pos.y) + yBase + Math.sin(t * Math.PI) * p.arc;
-      // Head + trail.
+      // Head + trail. A falling stone covers metres per frame: string its
+      // trail along the whole stretch it crossed so it reads as one streak.
       const hot = p.kind === 'stone' ? 1.6 : 0.9;
-      this.glow.emit({ x: pos.x, y, z: pos.z, life: 0.08, size: 1.1 * hot, r: 10, g: 5, b: 1.5, shape: GLOW, fadeIn: 0.01 });
-      for (let k = 0; k < (p.kind === 'stone' ? 3 : 1); k++) {
+      const px = pos.x, pz = pos.z;
+      this.glow.emit({ x: px, y, z: pz, life: 0.08, size: 1.1 * hot, r: 10, g: 5, b: 1.5, shape: GLOW, fadeIn: 0.01 });
+      const steps = p.kind === 'stone' ? 6 : 1;
+      const lx = p.lastX ?? px, ly = p.lastY ?? y, lz = p.lastZ ?? pz;
+      for (let k = 0; k < steps; k++) {
+        const f = steps > 1 ? k / steps : 0;
         this.glow.emit({
-          x: pos.x + (Math.random() - 0.5) * 0.3, y, z: pos.z + (Math.random() - 0.5) * 0.3,
-          vy: 0.5, life: 0.35 + Math.random() * 0.25, size: 0.7 * hot, sizeEnd: 0.1,
+          x: px + (lx - px) * f + (Math.random() - 0.5) * 0.3, y: y + (ly - y) * f, z: pz + (lz - pz) * f + (Math.random() - 0.5) * 0.3,
+          vy: 0.5, life: 0.3 + Math.random() * 0.25, size: 0.75 * hot, sizeEnd: 0.1,
           r: 7, g: 2.6, b: 0.5, r2: 1.5, g2: 0.2, b2: 0.02, shape: GLOW, fadeIn: 0.01,
         });
+        if (p.kind === 'stone' && k % 2 === 0) {
+          this.matter.emit({
+            x: px + (lx - px) * f, y: y + (ly - y) * f + 0.4, z: pz + (lz - pz) * f, vy: 0.8, life: 1.4, size: 0.9, sizeEnd: 2.8,
+            r: 0.15, g: 0.13, b: 0.12, alpha: 0.55, shape: SMOKE, fadeIn: 0.1, drag: 1,
+          });
+        }
       }
-      if (p.kind === 'stone') {
-        this.matter.emit({
-          x: pos.x, y: y + 0.5, z: pos.z, vy: 0.8, life: 1.2, size: 0.9, sizeEnd: 2.6,
-          r: 0.15, g: 0.13, b: 0.12, alpha: 0.6, shape: SMOKE, fadeIn: 0.1, drag: 1,
-        });
-      }
+      p.lastX = px;
+      p.lastY = y;
+      p.lastZ = pz;
       if (t >= 1) {
         if (p.kind === 'ember') {
           this.fireCore(p.tx, p.tz, 0.25, 0.8);
@@ -1258,9 +1270,26 @@ export class EffectsRenderer {
     }
   }
 
+  /** A dark cloud deck over (tx, tz) at `height`: swirling (`swirl` rad/s), its underside tinted `under`. */
+  cloudCap(tx: number, tz: number, height: number, radius: number, n: number, swirl: number, under: [number, number, number]): void {
+    const c = this.at(tx, tz, height);
+    const cx = c.x, cy = c.y, cz = c.z;
+    for (let i = 0; i < n; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const r = Math.sqrt(Math.random()) * radius;
+      const v = 0.06 + Math.random() * 0.05;
+      this.matter.emit({
+        x: cx + Math.cos(a) * r, y: cy + (Math.random() - 0.5) * 2, z: cz + Math.sin(a) * r,
+        vx: 0, vy: 0.2, vz: 0, life: 3 + Math.random() * 1.5, size: 5, sizeEnd: 9,
+        r: under[0], g: under[1], b: under[2], r2: v, g2: v, b2: v * 1.1, alpha: 0.7, drag: 0.5, shape: SMOKE, fadeIn: 0.25,
+        swirl, ax: cx, az: cz,
+      });
+    }
+  }
+
   /** What's left of a lightning cloud: a dark puff high over the strike that breaks up. */
   cloudBurst(tx: number, tz: number): void {
-    const c = this.at(tx, tz, 26);
+    const c = this.at(tx, tz, 17);
     const cx = c.x, cy = c.y, cz = c.z;
     for (let i = 0; i < this.n(18, 6); i++) {
       const a = Math.random() * Math.PI * 2;
@@ -1370,6 +1399,7 @@ export class EffectsRenderer {
       const pulse = Math.sin(performance.now() / 260);
       if (pulse > 0.995) this.ring(a.x, a.z, 0xff8a3a, rT * TILE, 0.8, 2.5);
     } else if (k === 'cyclone') {
+      if (Math.random() < dt * 8 * this.detail + dt * 2) this.cloudCap(a.x, a.z, 21, 9, 1, 1.6, [0.2, 0.2, 0.22]);
       if (every(0.03)) {
         const c = this.at(a.x, a.z, 0).clone();
         for (let i = 0; i < 3; i++) {
@@ -1391,7 +1421,11 @@ export class EffectsRenderer {
         }
       }
     } else if (k === 'emberfall') {
-      if (every(0.1)) this.motes(a.x, a.z, 2, lin(0xff6a2a), { radius: rT * TILE, rise: 1, life: 1.5, hdr: 3, lift: 6 });
+      if (every(0.1)) {
+        this.motes(a.x, a.z, 2, lin(0xff6a2a), { radius: rT * TILE, rise: 1, life: 1.5, hdr: 3, lift: 6 });
+        // a low, smouldering cloud the stones fall out of, lit red from below
+        this.cloudCap(a.x, a.z, 24, rT * TILE * 0.8, this.n(3, 1), 0.5, [0.5, 0.12, 0.05]);
+      }
     } else if (k === 'sink') {
       if (every(0.1)) {
         this.dust(a.x + (Math.random() - 0.5) * rT, a.z + (Math.random() - 0.5) * rT, 2, rT, 0x9a8a70, 1.2);
@@ -1420,13 +1454,16 @@ export class EffectsRenderer {
     }
     // Swamp bubbles on a few random visible swamp tiles.
     this.swampAcc += dt;
-    if (this.swampAcc > 0.15 && world.swamp.size) {
+    if (this.swampAcc > 0.1 && world.swamp.size) {
       this.swampAcc = 0;
       const keys = [...world.swamp.keys()];
-      for (let i = 0; i < 2; i++) {
+      for (let i = 0; i < 4; i++) {
         const idx = keys[Math.floor(Math.random() * keys.length)];
         const tx = idx % WORLD_SIZE, tz = Math.floor(idx / WORLD_SIZE);
-        if (this.near(tx, tz, 80)) this.swampBubble(tx + Math.random() - 0.5, tz + Math.random() - 0.5);
+        if (!this.near(tx, tz, 80)) continue;
+        const fx = tx + Math.random() - 0.5, fz = tz + Math.random() - 0.5;
+        if (i < 3) this.swampBubble(fx, fz);
+        else this.swampMist(fx, fz);
       }
     }
   }
@@ -1434,6 +1471,17 @@ export class EffectsRenderer {
   private swampBubble(tx: number, tz: number): void {
     const p = this.at(tx, tz, 0.1);
     this.matter.emit({ x: p.x, y: p.y, z: p.z, vy: 0.5, life: 1.4, size: 0.5, sizeEnd: 1.6, r: 0.25, g: 0.3, b: 0.16, alpha: 0.5, shape: SMOKE, fadeIn: 0.3 });
+    // a bubble of marsh gas swells and pops with a faint green glint
+    this.glow.emit({ x: p.x, y: p.y + 0.1, z: p.z, vy: 0.2, life: 0.9, size: 0.35, sizeEnd: 0.6, r: 0.5, g: 1.2, b: 0.3, alpha: 0.7, shape: GLOW, fadeIn: 0.8 });
+  }
+
+  /** Low, sickly mist hanging over the mire. */
+  private swampMist(tx: number, tz: number): void {
+    const p = this.at(tx, tz, 0.4);
+    this.matter.emit({
+      x: p.x, y: p.y, z: p.z, vx: 0.4, vy: 0.15, life: 4, size: 2.2, sizeEnd: 4.5,
+      r: 0.42, g: 0.5, b: 0.28, alpha: 0.32, drag: 0.5, shape: SMOKE, fadeIn: 0.35,
+    });
   }
 
   /** Is tile (x, z) within `dist` world units of the camera target? */
@@ -1505,8 +1553,8 @@ const HANDLERS: Record<string, Handler> = {
     // THE bolt: blinding, forked, with an afterimage burned into the eye,
     // scorched ground and a small fire left burning.
     fx.shake(0.6);
-    fx.bolt(x, z, 0xe6f2ff, 0.45, { width: 0.5, branches: 5, hdr: 11 });
-    fx.bolt(x, z, 0xb08cff, 0.9, { width: 0.9, branches: 0, hdr: 1.4, steady: true });
+    fx.bolt(x, z, 0xe6f2ff, 0.5, { top: 19, width: 0.42, branches: 5, hdr: 11 });
+    fx.bolt(x, z, 0xb08cff, 1.1, { top: 19, width: 0.8, branches: 0, hdr: 1.6, steady: true });
     fx.flash(x, z, 0xcfe0ff, 3000, 0.35, 8, 70);
     fx.screenFlash(0xeaf0ff, 0.55, 0.22);
     fx.sparks(x, z, fx.n(40, 12), 9, lin(0xbfe0ff));

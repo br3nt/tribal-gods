@@ -132,6 +132,8 @@ interface Entry {
   tint: StatusTint;
   /** Wearing the hover highlight (render/highlight.ts). */
   lit: boolean;
+  /** Thrown by a blast: seconds into the hop (-1 = not hopping). */
+  hop: number;
   /** Seconds of burning left (volcano heat), and the ember emission owed. */
   burn: number;
   emberAcc: number;
@@ -325,7 +327,7 @@ export class UnitRenderer {
           drawn: new THREE.Vector3(), drawnFrame: -1, inp: { clip: 'idle', speed: 0, turnRate: 0 },
           lift: 0, liftV: 0, ox: 0, oz: 0, simX: u.x, simZ: u.z,
           baseMats: fig.meshes.map((m) => m.material as THREE.Material), tint: 'none', lit: false,
-          burn: 0, emberAcc: 0, look: 'none', guardian, eyes,
+          burn: 0, emberAcc: 0, look: 'none', guardian, eyes, hop: -1,
           focusColor: fig.focus ? fig.focus.material.color.getHex() : 0, focusScale: fig.focus ? fig.focus.scale.x : 1,
         };
         this.entries.set(u.id, e);
@@ -344,9 +346,15 @@ export class UnitRenderer {
       if (spot) {
         e.lift = e.liftV = e.ox = e.oz = 0;
       } else {
-        if ((u.lifted > 0 || e.lift > 0) && jx * jx + jz * jz > 0.25) {
+        const jump = jx * jx + jz * jz;
+        if ((u.lifted > 0 || e.lift > 0) && jump > 0.25) {
           e.ox -= jx;
           e.oz -= jz;
+        } else if (jump > 0.25 && jump < 64 && u.hp < e.lastHp - 0.01) {
+          // hurt AND moved in one tick: a blast threw it — glide the jump as a flight
+          e.ox -= jx;
+          e.oz -= jz;
+          e.hop = 0;
         }
         const glide = Math.exp(-dt * UNIT_STATUS.flingGlide);
         e.ox *= glide;
@@ -385,6 +393,12 @@ export class UnitRenderer {
       const bend = curvatureDrop(relX, relZ);
       const groundY = y;
       if (e.lift > 0) y += e.lift * (UNIT_STATUS.liftHeight + 0.35 * Math.sin(this.clock * 3.1 + u.id));
+      if (e.hop >= 0) {
+        e.hop += dt;
+        const k = e.hop / 0.75;
+        if (k >= 1) e.hop = -1;
+        else y += Math.sin(k * Math.PI) * 2.4;
+      }
 
       // measured speed (world units/s) for foot sync
       if (dt > 0 && !Number.isNaN(e.px)) {
@@ -602,7 +616,7 @@ export class UnitRenderer {
     const pick = pickClip(u, c);
     const inp = e.inp;
     // A leader communing at a standing stone kneels in prayer (whatever the sim calls the task).
-    inp.clip = communers.has(u.id) && e.speed < 0.4 ? 'pray' : pick.clip;
+    inp.clip = e.hop >= 0 ? 'tumble' : communers.has(u.id) && e.speed < 0.4 ? 'pray' : pick.clip;
     inp.speed = e.speed;
     inp.turnRate = e.turn;
     inp.phase = pick.phase;
