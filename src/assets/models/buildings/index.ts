@@ -287,7 +287,7 @@ export function buildTotem(tribe: Tribe, civ: Civ): { root: THREE.Group; flames:
   // ring of stones and a fire pit
   for (let i = 0; i < 10; i++) {
     const a = (i / 10) * Math.PI * 2;
-    const st = blob(0.35, 0.3 + (i % 3) * 0.12, 0.3, 7, 5, 0.06, i, 3);
+    const st = blob(0.27, 0.22 + (i % 3) * 0.08, 0.24, 7, 5, 0.05, i, 3); // low marker stones: they frame the leader, never hide them
     place(st, Math.sin(a) * 2.7, 0.1, Math.cos(a) * 2.7, 0, a, 0);
     paint(st, i % 2 ? STONE : STONE_DARK);
     parts.push(st);
