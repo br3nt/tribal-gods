@@ -144,17 +144,27 @@ export class AlertFeed {
 
   push(a: Alert): void {
     const hasPlace = a.x !== undefined && a.z !== undefined;
+    // The same news twice in a row is one tag with a tally ("Dwelling finished ×3"), not a stack.
+    const top = this.el.firstElementChild as HTMLElement | null;
+    if (top && top.dataset.text === a.text && !top.classList.contains('fade')) {
+      const n = Number(top.dataset.n ?? '1') + 1;
+      top.dataset.n = String(n);
+      top.querySelector('.txt')!.textContent = `${a.text} ×${n}`;
+      if (hasPlace) this.ctx.actions.ping(a.x!, a.z!, a.tone);
+      return;
+    }
     const card = h(hasPlace ? 'button' : 'div', {
       class: `al-card tg-hit ${a.tone}${hasPlace ? ' jump' : ''}`,
-      html: `<span class="i">${icon(ICONS[a.kind], 15)}</span><span>${escapeHtml(a.text)}</span>${hasPlace ? `<span class="go-hint">${icon('eye', 14)}</span>` : ''}`,
+      html: `<span class="i">${icon(ICONS[a.kind], 15)}</span><span class="txt">${escapeHtml(a.text)}</span>${hasPlace ? `<span class="go-hint">${icon('eye', 14)}</span>` : ''}`,
     });
+    card.dataset.text = a.text;
     if (hasPlace) {
       card.setAttribute('type', 'button');
       card.addEventListener('click', () => this.ctx.actions.centreOn(a.x!, a.z!));
       this.ctx.actions.ping(a.x!, a.z!, a.tone);
     }
     this.el.prepend(card);
-    while (this.el.children.length > 5) this.el.lastElementChild!.remove();
+    while (this.el.children.length > 4) this.el.lastElementChild!.remove();
     setTimeout(() => card.classList.add('fade'), 8500);
     setTimeout(() => card.remove(), 9200);
   }

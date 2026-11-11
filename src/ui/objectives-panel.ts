@@ -49,6 +49,9 @@ css('objectives', `
 .ob-item .meta .bar { flex: 1; height: 0.35rem; }
 `);
 
+/** Seconds a finished objective stays on the scroll, ticked, before it is put away. */
+const DONE_LINGER = 20;
+
 export class ObjectivesPanel {
   readonly el: HTMLDivElement;
   private readonly list: HTMLUListElement;
@@ -82,7 +85,11 @@ export class ObjectivesPanel {
     });
     // Objectives chain (`after`): one waiting on an earlier one stays off the
     // scroll until it activates, then is written in with a flourish.
-    const shown = obs.map((o, i) => ({ o, i })).filter(({ o }) => o.active !== false || o.done || o.failed);
+    // Finished ones stay ticked for DONE_LINGER seconds, then leave the scroll (the count keeps them):
+    // a story of eleven steps must not grow a scroll down the whole screen.
+    const lingering = (i: number) => w.elapsed - (this.doneAt.get(i) ?? w.elapsed) < DONE_LINGER;
+    const all = obs.map((o, i) => ({ o, i }));
+    const shown = all.filter(({ o, i }) => (o.active !== false || o.done || o.failed) && (!o.done || lingering(i)));
     this.el.hidden = shown.length === 0;
     const sig = shown.map(({ o, i }) => `${i}|${o.text}|${o.done}|${o.failed}|${o.optional}`).join('/');
     if (sig !== this.sig) {
@@ -113,7 +120,7 @@ export class ObjectivesPanel {
       const p = this.list.querySelector(`[data-p="${i}"]`);
       if (p) setText(p, `${Math.round(o.progress * 100)}%`);
     }
-    const req = shown.filter(({ o }) => !o.optional);
+    const req = all.filter(({ o }) => !o.optional && (o.active !== false || o.done));
     setText(this.count, `${req.filter(({ o }) => o.done).length}/${req.length}`);
   }
 }

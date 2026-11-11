@@ -62,6 +62,8 @@ export class Hints {
   private textHtml = '';
   /** Objectives whose advice chip the player closed (this game only). */
   private readonly dismissedObjectives = new Set<number>();
+  /** When each objective became active (sim seconds), so the chip follows the newest step of the story. */
+  private readonly activatedAt = new Map<number, number>();
   private showing: string | null = null;
   private startCam = { x: 0, z: 0 };
   private armedOnce = false;
@@ -131,12 +133,12 @@ export class Hints {
         // Never "seen" for good — it follows the story; dismissing it hides it for that objective.
         id: OBJECTIVE_HINT, icon: 'objective',
         html: () => {
-          const cur = currentObjective(w());
+          const cur = currentObjective(w(), this.activatedAt);
           return (cur && objectiveAdvice(w(), cur.objective, settings.leftClickOrders)) ?? '';
         },
         when: (_c, t) => {
           if (t < 2 || !isGuided(w())) return false;
-          const cur = currentObjective(w());
+          const cur = currentObjective(w(), this.activatedAt);
           return !!cur && !this.dismissedObjectives.has(cur.index) && !!objectiveAdvice(w(), cur.objective, settings.leftClickOrders);
         },
         done: () => false,
@@ -160,6 +162,7 @@ export class Hints {
   reset(): void {
     this.sinceStart = 0;
     this.dismissedObjectives.clear();
+    this.activatedAt.clear();
     this.startCam = { x: this.ctx.view.target.x, z: this.ctx.view.target.z };
     this.learnedFrom = this.ctx.world.tribes.player?.known.size ?? 0;
     this.hide();
@@ -192,6 +195,10 @@ export class Hints {
 
   update(dt: number): void {
     this.sinceStart += dt;
+    const w = this.ctx.world;
+    w.objectives.forEach((o, i) => {
+      if (o.active !== false && !this.activatedAt.has(i)) this.activatedAt.set(i, w.elapsed);
+    });
     if (activeSpell()) this.armedOnce = true;
     if (!settings.hints) return this.hide();
     // Retire the one showing if it's done.
@@ -219,7 +226,7 @@ export class Hints {
     const close = h('button.tg-btn.icon-only', { type: 'button', 'aria-label': 'Dismiss hint', html: icon('close', 14) });
     close.addEventListener('click', () => {
       if (next.id === OBJECTIVE_HINT) {
-        const cur = currentObjective(this.ctx.world);
+        const cur = currentObjective(this.ctx.world, this.activatedAt);
         if (cur) this.dismissedObjectives.add(cur.index);
       } else this.remember(next.id);
       this.hide();

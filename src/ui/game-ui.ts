@@ -59,6 +59,9 @@ css('game-ui', `
 .hud-rally { position: fixed; z-index: 54; pointer-events: none; }
 `);
 
+/** ms without player input before a narrated line may drift the camera to its place. */
+const IDLE_BEFORE_DRIFT = 1200;
+
 export interface GameUiHooks {
   openMenu(): void;
   openHelp(): void;
@@ -160,7 +163,13 @@ export class GameUi {
 
     addEventListener('keydown', (e) => this.onKey(e));
     // The player taking the camera cancels a narrated drift.
-    for (const ev of ['keydown', 'wheel', 'pointerdown'] as const) addEventListener(ev, () => (this.panTo = null), { capture: true, passive: true });
+    // (A moving mouse counts: a hand on the mouse is about to click something where it is.)
+    for (const ev of ['keydown', 'wheel', 'pointerdown', 'pointermove'] as const) {
+      addEventListener(ev, () => {
+        this.panTo = null;
+        this.lastInput = performance.now();
+      }, { capture: true, passive: true });
+    }
     // A mouse click on a HUD button must not leave it focused (Space would
     // then also "click" it). Keyboard users still Tab to buttons normally.
     this.root.addEventListener('mousedown', (e) => {
@@ -386,7 +395,7 @@ export class GameUi {
       if (m.focus) {
         // The line is about a place: ping it, and drift the camera there unless the player is busy.
         this.minimap.ping(m.focus.x, m.focus.z, 'info');
-        this.panTo = { x: m.focus.x, z: m.focus.z };
+        if (performance.now() - this.lastInput > IDLE_BEFORE_DRIFT) this.panTo = { x: m.focus.x, z: m.focus.z };
       }
     }
     this.heardMessages = w.messageSeq;
@@ -394,10 +403,13 @@ export class GameUi {
 
   /**
    * A gentle camera drift toward a narrated place (world.messages[].focus).
-   * Never while aiming, placing or dragging, and any key, click or wheel
-   * from the player cancels it — the camera is theirs.
+   * Only when the player's hands are still (no input for IDLE_BEFORE_DRIFT)
+   * and never while aiming, placing or dragging; any key, click, wheel or
+   * mouse movement cancels it — the camera is theirs. The minimap ping
+   * always happens, so a busy player still sees where the line points.
    */
   private panTo: { x: number; z: number } | null = null;
+  private lastInput = 0;
   private drift(dt: number): void {
     if (!this.panTo) return;
     if (activeSpell() || activeBuilding() || this.orders.busy) return; // wait: don't move the ground under the cursor

@@ -12,6 +12,7 @@
  * it changes.
  */
 
+import { SPELLS } from '../sim/catalog';
 import { fmtClock, fmtEta, fmtRate } from './format';
 import { appState, SPEEDS } from './app-state';
 import { UiContext } from './context';
@@ -147,7 +148,10 @@ export class TopBar {
     setText(this.idleBtn.lastElementChild!, String(s.idleVillagers));
     setClass(this.idleBtn, 'has', s.idleVillagers > 0);
     setText(this.v.mana, fmtRate(w.tribes.player?.income ?? s.manaRate));
-    setText(this.v.manaL, s.manaRate === 0 && (w.tribes.player?.income ?? 0) > 0 ? 'nothing charging' : 'mana');
+    // Idle mana is only a problem when something could be filling: all full is good news.
+    const idle = s.manaRate === 0 && (w.tribes.player?.income ?? 0) > 0;
+    const allFull = SPELLS.every((d) => { const st = w.spellState('player', d.id); return !st.known || st.charges >= st.max; });
+    setText(this.v.manaL, !idle ? 'mana' : allFull ? 'spells full' : 'nothing charging');
     setText(this.v.pray, String(s.praying));
     setClass(this.prayStat, 'dim', s.praying === 0);
     setText(this.v.leader, s.leaderAlive ? 'Alive' : s.leaderRespawn > 0 ? fmtEta(s.leaderRespawn) : 'Lost');

@@ -25,12 +25,20 @@ export function isGuided(world: World): boolean {
   return (world.rules.events?.length ?? 0) > 0;
 }
 
-/** The objective the player should be working on: the first active, unfinished, required one (else optional). */
-export function currentObjective(world: World): { index: number; objective: Objective; text: string } | null {
+/**
+ * The objective the player should be working on: of the active, unfinished,
+ * required ones, the one that became active MOST RECENTLY (the story moves
+ * forward; it is what the narrator is talking about), the earliest-listed
+ * among those that activated together. `activatedAt` (index → sim seconds)
+ * is kept by the caller; without it, the first open one.
+ */
+export function currentObjective(world: World, activatedAt?: ReadonlyMap<number, number>): { index: number; objective: Objective; text: string } | null {
   const open = world.objectives
     .map((o, index) => ({ o, index }))
     .filter(({ o }) => o.active !== false && !o.done && !o.failed);
-  const pick = open.find(({ o }) => !o.optional) ?? open[0];
+  const required = open.filter(({ o }) => !o.optional);
+  const when = (i: number) => activatedAt?.get(i) ?? 0;
+  const pick = required.reduce<(typeof required)[number] | undefined>((best, c) => (!best || when(c.index) > when(best.index) ? c : best), undefined) ?? open[0];
   return pick ? { index: pick.index, objective: pick.o.objective, text: pick.o.text } : null;
 }
 
@@ -71,13 +79,18 @@ export function objectiveAdvice(world: World, o: Objective, leftClickOrders: boo
     }
     case 'leaderReach':
       return `Select your leader${k('select-leader')} and ${click} the ground where the story points.`;
-    case 'rescueStranded':
+    case 'rescueStranded': {
+      const cb = world.spellState('player', 'landbridge');
+      if (cb.known || cb.gifted > 0) return spellAdvice(world, 'landbridge', 'click the land where they stand — the road runs from her feet');
       return `Your stranded people join when a walking path reaches them — raise land to them.`;
+    }
     case 'holdPoint':
       return `Keep your people standing on the marked ground until the time is up.`;
+    case 'killUnits':
+      if (!world.units.some((u) => u.tribe === o.tribe && !u.hidden)) return `None of them in sight yet. Keep your fighters near the village and a spell charged.`;
+      return `Select your fighters (${labelFor('select-army') || ','}) and ${click} an enemy to attack — or strike them with a spell.`;
     case 'destroyTribe':
     case 'destroyAll':
-    case 'killUnits':
       return `Select your fighters (${labelFor('select-army') || ','}) and ${click} an enemy to attack.`;
     default:
       return null;

@@ -31,14 +31,18 @@ describe('objective advice', () => {
     expect(isGuided(w)).toBe(true);
   });
 
-  it('follows the first active, unfinished objective', () => {
+  it('follows the most recently activated unfinished required objective', () => {
     const w = flatWorld();
     w.objectives = [
       { objective: { type: 'destroyAll' }, text: 'a', done: true, progress: 1, optional: false, active: true, failed: false },
       { objective: { type: 'castSpell', spell: 'landbridge' }, text: 'b', done: false, progress: 0, optional: false, active: false, failed: false },
       { objective: { type: 'buildCount', kind: 'hut', count: 2 }, text: 'c', done: false, progress: 0, optional: false, active: true, failed: false },
+      { objective: { type: 'convertWanderers', count: 2 }, text: 'd', done: false, progress: 0, optional: false, active: true, failed: false },
+      { objective: { type: 'winWithin', seconds: 99 }, text: 'e', done: false, progress: 0, optional: true, active: true, failed: false },
     ];
-    expect(currentObjective(w)?.text).toBe('c');
+    // Activated together: the first listed. A later step of the story wins once it activates.
+    expect(currentObjective(w, new Map([[0, 0], [2, 0], [3, 0], [4, 0]]))?.text).toBe('c');
+    expect(currentObjective(w, new Map([[0, 0], [2, 0], [3, 40], [4, 0]]))?.text).toBe('d');
   });
 
   it('never says "press" for a spell with nothing to cast — it says it is gathering power', () => {
