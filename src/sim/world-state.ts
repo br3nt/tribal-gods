@@ -307,9 +307,10 @@ export class World implements SimQueries {
   eventMemory: EventMemory[] = [];
   readonly rng = new Rng(1);
 
-  private nextId = 1;
+  /** Next id for a unit or building. Public for sim/save.ts only. */
+  nextId = 1;
   /** `${unitId}:${target}` → sim time until which that unit won't retry an unreachable target. */
-  private unreachable = new Map<string, number>();
+  unreachable = new Map<string, number>();
   /** A* budget for jobs a unit picks for itself (orders get the full budget). */
   private static readonly AUTO_EXPANSIONS = 1500;
 
@@ -461,7 +462,7 @@ export class World implements SimQueries {
   }
 
   /** What the loaded level carried beyond the live world (captureLevel writes it back). */
-  private levelExtras: { rules?: ScenarioRules; units?: PlacedUnits[]; buildings?: PlacedBuilding[] } = {};
+  levelExtras: { rules?: ScenarioRules; units?: PlacedUnits[]; buildings?: PlacedBuilding[] } = {};
 
   /** Snapshot the current world as a level document (the editor's Save). */
   async captureLevel(meta: { name: string; author: string; desc: string }): Promise<LevelData> {
