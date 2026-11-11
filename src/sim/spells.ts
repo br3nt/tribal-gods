@@ -26,7 +26,7 @@ import { hash2 } from '../core/noise';
 import { clamp, smoothstep, wrapDelta } from '../core/util';
 import { spellDef, SpellId, TribeId, UNITS } from './catalog';
 import { tileIndex } from './pathfinding';
-import type { World } from './world-state';
+import type { Unit, World } from './world-state';
 
 export type { SpellId } from './catalog';
 /** Spell rows now live in the catalog; re-exported for older imports. */
@@ -427,10 +427,10 @@ function tickVolcano(world: World, job: SpellJob, dt: number): void {
   }
   world.map.version++;
 
-  for (const u of world.units) {
-    if (u.hidden) continue;
+  // Per-tick area effects ask the spatial hash who is near (sim/spatial.ts).
+  world.forEachUnitNear(job.x, job.z, 7, (u) => {
     if (dist(u.x, u.z, job.x, job.z) < 7) world.hurtUnit(u, dt * 6, { spell: true });
-  }
+  });
   for (const b of [...world.buildings]) {
     if (dist(b.x, b.z, job.x, job.z) < 8) {
       world.hurtBuildingFrac(b, dt * 0.3);
@@ -447,11 +447,10 @@ function tickVolcano(world: World, job: SpellJob, dt: number): void {
 /** Heal the caster's people in the circle over the duration. */
 function tickBloom(world: World, job: SpellJob, dt: number): void {
   const R = spellDef('bloom').radius;
-  for (const u of world.units) {
-    if (u.hidden || !world.friendly(job.tribe, u.tribe)) continue;
-    if (dist(u.x, u.z, job.x, job.z) > R) continue;
+  world.forEachUnitNear(job.x, job.z, R, (u) => {
+    if (!world.friendly(job.tribe, u.tribe) || dist(u.x, u.z, job.x, job.z) > R) return;
     u.hp = Math.min(u.maxHp, u.hp + u.maxHp * BUFFS.bloomHealPerSecond * dt);
-  }
+  });
 }
 
 /** A wandering funnel: drifts, flings whoever it touches, peels roofs. */
@@ -469,12 +468,16 @@ function tickCyclone(world: World, job: SpellJob, dt: number): void {
   if (job.timer > 0) return;
   job.timer = 0.5;
   let touched = 0;
-  for (const u of world.units) {
-    if (u.hidden) continue;
+  // Collect first, then fling: displacing people while walking the hash's buckets is fine
+  // (the buckets don't move), but sorting by id keeps the random draws in a stable order.
+  const caught: Unit[] = [];
+  world.forEachUnitNear(job.x, job.z, R, (u) => {
+    if (Math.hypot(wrapDelta(u.x - job.x, N), wrapDelta(u.z - job.z, N)) <= R) caught.push(u);
+  });
+  caught.sort((a, b) => a.id - b.id);
+  for (const u of caught) {
     const dx = wrapDelta(u.x - job.x, N);
     const dz = wrapDelta(u.z - job.z, N);
-    const d = Math.hypot(dx, dz);
-    if (d > R) continue;
     touched++;
     world.hurtUnit(u, 3, { spell: true });
     // Lifted and dropped somewhere else: spun round the funnel and out.
@@ -518,9 +521,9 @@ function tickEmberfall(world: World, job: SpellJob, dt: number): void {
   sz = world.map.wrap(sz);
   crater(world, sx, sz, 1.2, 0.25);
   world.events.push({ type: 'emberStrike', x: sx, z: sz, x2: job.x, z2: job.z });
-  for (const u of world.units) {
-    if (!u.hidden && dist(u.x, u.z, sx, sz) < 1.6) world.hurtUnit(u, 9, { spell: true });
-  }
+  world.forEachUnitNear(sx, sz, 1.6, (u) => {
+    if (dist(u.x, u.z, sx, sz) < 1.6) world.hurtUnit(u, 9, { spell: true });
+  });
   for (const b of [...world.buildings]) {
     if (dist(b.x, b.z, sx, sz) > b.size / 2 + 1) continue;
     world.hurtBuildingFrac(b, 0.06);

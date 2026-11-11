@@ -72,6 +72,7 @@ import { breakChant, tickChant } from './chant';
 import { initObjectives, ObjectiveMemory, tickObjectives } from './objectives';
 import { findNearestWalkable, findPath, flowField, obstaclesOf, pathStats, tileIndex, walkable } from './pathfinding';
 import { isMajor, regionAt } from './regions';
+import { UnitGrid } from './spatial';
 import { Rng } from './rng';
 import { ALL_BUILDINGS, skirmishRules, STARTER_SPELLS } from './rules';
 import { EventMemory, initEventMemory, tickScenarioEvents } from './scenario-events';
@@ -815,9 +816,49 @@ export class World implements SimQueries {
   // -------------------------------------------------------------------------
 
   /** Advance the whole simulation by one fixed tick. */
+  /** Who stands where, re-bucketed at the start of every tick (sim/spatial.ts). */
+  private readonly grid = new UnitGrid();
+
+  /**
+   * Visible people who MAY be within `r` tiles of (x, z) — a superset;
+   * callers test the exact distance. Valid inside tick() (the hash is
+   * rebuilt at its start).
+   */
+  forEachUnitNear(x: number, z: number, r: number, fn: (u: Unit) => void): void {
+    this.grid.forEachNear(x, z, r, fn);
+  }
+
+  /**
+   * The nearest visible person strictly within `r` of (x, z) passing `pred`.
+   * Distance is tested first; `pred` only runs for someone nearer than the
+   * best so far, so expensive predicates stay off the common path.
+   */
+  nearestUnit(x: number, z: number, r: number, pred: (q: Unit) => boolean): Unit | null {
+    let best: Unit | null = null;
+    let bestD = r;
+    this.grid.forEachNear(x, z, r, (q) => {
+      const d = Math.hypot(wrapDelta(q.x - x, WORLD_SIZE), wrapDelta(q.z - z, WORLD_SIZE));
+      if (d < bestD && pred(q)) {
+        bestD = d;
+        best = q;
+      }
+    });
+    return best;
+  }
+
+  /** Is anyone passing `pred` strictly within `r` of (x, z)? */
+  anyUnitNear(x: number, z: number, r: number, pred: (q: Unit) => boolean): boolean {
+    let found = false;
+    this.grid.forEachNear(x, z, r, (q) => {
+      if (!found && Math.hypot(wrapDelta(q.x - x, WORLD_SIZE), wrapDelta(q.z - z, WORLD_SIZE)) < r && pred(q)) found = true;
+    });
+    return found;
+  }
+
   tick(dt: number): void {
     this.elapsed += dt;
     this.tickExpansionsStart = pathStats.expansions;
+    this.grid.rebuild(this.units);
     tickChant(this, dt);
 
     for (const u of this.units) {
@@ -978,18 +1019,9 @@ export class World implements SimQueries {
 
   /** Chanters: start chanting if a hostile is in earshot, else close on one in sight. */
   private tryChant(u: Unit, approach = true): boolean {
-    let best: Unit | null = null;
-    let bestD: number = UNITS.chanter.sight;
-    for (const q of this.units) {
-      if (q.hidden || q.kind === 'chanter' || !this.hostile(u.tribe, q.tribe) || this.isUnreachable(u, `u${q.id}`)) continue;
-      const d = this.distTo(u, q.x, q.z);
-      if (d < bestD) {
-        bestD = d;
-        best = q;
-      }
-    }
+    const best = this.nearestUnit(u.x, u.z, UNITS.chanter.sight, (q) => q.kind !== 'chanter' && this.hostile(u.tribe, q.tribe) && !this.isUnreachable(u, `u${q.id}`));
     if (!best) return false;
-    if (bestD <= CHANT.pacifyRadius - 0.3) {
+    if (this.distTo(u, best.x, best.z) <= CHANT.pacifyRadius - 0.3) {
       this.abandonTask(u);
       u.task = 'chant';
       u.state = 'working';
@@ -1426,16 +1458,10 @@ export class World implements SimQueries {
   private acquireTarget(u: Unit): boolean {
     if (u.pacified > 0) return false;
     const sight = UNITS[u.kind].sight;
-    let best: Unit | null = null;
-    let bestD: number = sight;
-    for (const q of this.units) {
-      if (q.hidden || !this.hostile(u.tribe, q.tribe) || this.isUnreachable(u, `u${q.id}`)) continue;
-      const d = this.distTo(u, q.x, q.z);
-      if (d < bestD) {
-        bestD = d;
-        best = q;
-      }
-    }
+    // Cheapest test first: distance (via the spatial hash), then allegiance,
+    // and only for someone actually in sight the unreachable-memory lookup
+    // (which builds a string key).
+    const best = this.nearestUnit(u.x, u.z, sight, (q) => this.hostile(u.tribe, q.tribe) && !this.isUnreachable(u, `u${q.id}`));
     if (best) {
       u.task = 'attack';
       u.targetUnit = best.id;
@@ -1457,9 +1483,7 @@ export class World implements SimQueries {
   }
 
   private enemySoldierNear(u: Unit, radius: number): boolean {
-    return this.units.some(
-      (q) => !q.hidden && this.hostile(u.tribe, q.tribe) && isFighterKind(q.kind) && this.distTo(u, q.x, q.z) < radius,
-    );
+    return this.anyUnitNear(u.x, u.z, radius, (q) => isFighterKind(q.kind) && this.hostile(u.tribe, q.tribe));
   }
 
   abandonTask(u: Unit): void {
@@ -1832,16 +1856,7 @@ export class World implements SimQueries {
       if (u.attackCooldown > 0) continue;
       const stats = UNITS[u.kind];
       const reach = Math.max(stats.range, TOWER_BONUS.minRange) + TOWER_BONUS.range;
-      let best: Unit | null = null;
-      let bestD = reach;
-      for (const q of this.units) {
-        if (q.hidden || !this.hostile(b.tribe, q.tribe)) continue;
-        const d = Math.hypot(wrapDelta(q.x - b.x, WORLD_SIZE), wrapDelta(q.z - b.z, WORLD_SIZE));
-        if (d < bestD) {
-          bestD = d;
-          best = q;
-        }
-      }
+      const best = this.nearestUnit(b.x, b.z, reach, (q) => this.hostile(b.tribe, q.tribe));
       if (best) {
         u.attackCooldown = this.unitCooldown(u);
         this.events.push({ type: 'fireball', x: b.x, z: b.z, x2: best.x, z2: best.z });
@@ -1966,7 +1981,10 @@ export class World implements SimQueries {
       burning: 0,
       wardTime: 0,
     };
+    this.indexedBuildings();
     this.buildings.push(b);
+    this.buildingIndex.set(b.id, b);
+    this.buildingIndexLen++;
     this.blockFootprint(b);
     for (const t of this.trees) {
       if (Math.abs(wrapDelta(t.x - b.x, WORLD_SIZE)) <= half(b) && Math.abs(wrapDelta(t.z - b.z, WORLD_SIZE)) <= half(b)) {
@@ -2327,7 +2345,7 @@ export class World implements SimQueries {
     const m = this.monuments[monumentIdx];
     if (!m || !this.monumentAvailable(m)) return;
     for (const id of ids) {
-      const u = this.units.find((q) => q.id === id);
+      const u = this.unitById(id);
       if (!u || u.hidden || u.kind !== 'shaman') continue;
       this.abandonTask(u);
       u.task = 'worship';
@@ -2344,7 +2362,7 @@ export class World implements SimQueries {
     if (!target) return;
     const movers: number[] = [];
     for (const id of ids) {
-      const u = this.units.find((q) => q.id === id);
+      const u = this.unitById(id);
       if (!u || u.hidden) continue;
       if (UNITS[u.kind].dmg > 0 && this.hostile(u.tribe, target.tribe)) {
         this.abandonTask(u);
@@ -2384,8 +2402,44 @@ export class World implements SimQueries {
     return Math.hypot(wrapDelta(x - u.x, WORLD_SIZE), wrapDelta(z - u.z, WORLD_SIZE));
   }
 
+  // --- O(1) id lookups ------------------------------------------------------
+  // unitById/getBuilding are called from every hot path (orders, garrisons,
+  // targets, the UI each frame). They read a Map from id to object. The map
+  // is checked against the array it indexes — same array object, same
+  // length — and rebuilt in one pass when they differ, so every way the
+  // arrays change stays covered without bookkeeping at each site: spawning
+  // extends the index directly; deaths, demolitions and save/resume
+  // replace the array (filter / assignment), which the identity check
+  // catches; a splice changes the length, which the length check catches.
+  private unitIndex = new Map<number, Unit>();
+  private unitIndexOf: Unit[] | null = null;
+  private unitIndexLen = -1;
+  private buildingIndex = new Map<number, Building>();
+  private buildingIndexOf: Building[] | null = null;
+  private buildingIndexLen = -1;
+
+  private indexedUnits(): Map<number, Unit> {
+    if (this.unitIndexOf !== this.units || this.unitIndexLen !== this.units.length) {
+      this.unitIndex.clear();
+      for (const u of this.units) this.unitIndex.set(u.id, u);
+      this.unitIndexOf = this.units;
+      this.unitIndexLen = this.units.length;
+    }
+    return this.unitIndex;
+  }
+
+  private indexedBuildings(): Map<number, Building> {
+    if (this.buildingIndexOf !== this.buildings || this.buildingIndexLen !== this.buildings.length) {
+      this.buildingIndex.clear();
+      for (const b of this.buildings) this.buildingIndex.set(b.id, b);
+      this.buildingIndexOf = this.buildings;
+      this.buildingIndexLen = this.buildings.length;
+    }
+    return this.buildingIndex;
+  }
+
   unitById(id: number): Unit | undefined {
-    return this.units.find((u) => u.id === id);
+    return this.indexedUnits().get(id);
   }
 
   countUnits(pred: (u: Unit) => boolean): number {
@@ -2395,7 +2449,7 @@ export class World implements SimQueries {
   }
 
   getBuilding(id: number): Building | undefined {
-    return this.buildings.find((b) => b.id === id);
+    return this.indexedBuildings().get(id);
   }
 
   private nearestChoppableTree(u: Unit): number {
@@ -2457,7 +2511,10 @@ export class World implements SimQueries {
       chantBy: -1,
       chantProgress: 0,
     };
+    this.indexedUnits(); // bring the index up to date BEFORE the push, so it can be extended
     this.units.push(u);
+    this.unitIndex.set(u.id, u);
+    this.unitIndexLen++;
     return u;
   }
 
