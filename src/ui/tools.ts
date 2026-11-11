@@ -13,7 +13,7 @@
 import { BUILD_ORDER, BuildingKind, SPELLS, SpellId } from '../sim/catalog';
 
 /** Editor-only placement tools (the level builder's palette). */
-export type EditorTool = 'homePlayer' | 'homeRed' | 'monument' | 'tree' | 'wildman' | 'erase';
+export type EditorTool = 'home' | 'monument' | 'tree' | 'wildman' | 'erase';
 
 export type Tool = 'select' | BuildingKind | 'raise' | 'lower' | SpellId | EditorTool;
 

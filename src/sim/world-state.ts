@@ -223,6 +223,8 @@ export interface Building {
   /** Seconds left burning (0 = not on fire). */
   burning: number;
   wardTime: number;
+  /** 'start' = stood up by a loadout's startBuildings (the level's rules make it, so a captured level must not). */
+  origin?: 'start';
 }
 
 export interface AiState {
@@ -471,9 +473,12 @@ export class World implements SimQueries {
 
   /** Snapshot the current world as a level document (the editor's Save). */
   async captureLevel(meta: { name: string; author: string; desc: string }): Promise<LevelData> {
+    // Every wanderer standing in the world — the level's list, its placed
+    // groups and any the editor added — is written once, as a wildman spot.
+    // (Placed wild groups are folded in here, so they are not written twice.)
     const wild: number[] = [];
     for (const u of this.units) {
-      if (u.kind === 'wildman') wild.push(Math.round(u.x), Math.round(u.z));
+      if (u.kind === 'wildman' && u.tribe === 'wild') wild.push(Math.round(u.x), Math.round(u.z));
     }
     const trees: number[] = [];
     for (const t of this.trees) {
@@ -486,7 +491,8 @@ export class World implements SimQueries {
       if (id !== 'player') civs[id] = this.tribes[id]!.civ;
     }
     const source = this.levelExtras.buildings ?? [];
-    const buildings: PlacedBuilding[] = this.buildings.map((b) => {
+    // Loadout start buildings come from the rules on every load: not level content.
+    const buildings: PlacedBuilding[] = this.buildings.filter((b) => b.origin !== 'start').map((b) => {
       const out: PlacedBuilding = { tribe: b.tribe, kind: b.kind, x: b.x, z: b.z };
       if (b.progress < 1) out.complete = false;
       const was = source.find((s) => s.tribe === b.tribe && s.kind === b.kind && s.x === b.x && s.z === b.z);
@@ -517,7 +523,8 @@ export class World implements SimQueries {
     };
     if (this.levelExtras.rules) level.rules = this.levelExtras.rules;
     if (buildings.length) level.buildings = buildings;
-    if (this.levelExtras.units?.length) level.units = this.levelExtras.units.map((u) => ({ ...u }));
+    const tribeUnits = (this.levelExtras.units ?? []).filter((u) => u.tribe !== 'wild');
+    if (tribeUnits.length) level.units = tribeUnits.map((u) => ({ ...u }));
     return level;
   }
 
@@ -557,44 +564,7 @@ export class World implements SimQueries {
     placed: PlacedBuilding[] = [],
   ): void {
     this.rules = rules;
-    const civIds = Object.keys(CIVS) as CivId[];
-    const otherCivs = civIds.filter((c) => c !== this.settings.playerCiv);
-    const leaderDies = (rules.fail ?? []).some((f) => f.type === 'leaderDies');
-
-    for (const t of rules.tribes) {
-      const wanted = civs[t.id];
-      const civ =
-        t.id === 'player' ? this.settings.playerCiv
-        : wanted && CIVS[wanted] && wanted !== this.settings.playerCiv ? wanted
-        : this.rng.pick(otherCivs.length ? otherCivs : civIds);
-      const lo = t.loadout ?? {};
-      const known = new Set<SpellId>(lo.spells ?? STARTER_SPELLS);
-      const spells = newSpellBook();
-      for (const [id, n] of Object.entries(lo.extraCharges ?? {}) as Array<[SpellId, number]>) spells[id].bonus += n;
-      for (const [id, k] of Object.entries(lo.chargeCost ?? {}) as Array<[SpellId, number]>) spells[id].cost = Math.max(0.05, k);
-      for (const [id, n] of Object.entries(lo.gifts ?? {}) as Array<[SpellId, number]>) spells[id].gifted += n;
-      const personality = { ...(t.personality ?? {}) };
-      this.tribes[t.id] = {
-        id: t.id,
-        wood: lo.startWood ?? START_WOOD,
-        home: homes[t.id] ?? { x: WORLD_SIZE / 2, z: WORLD_SIZE / 2 },
-        civ,
-        known,
-        unlocked: known,
-        spells,
-        income: 0,
-        manaRate: 0,
-        allowed: new Set(lo.buildings ?? ALL_BUILDINGS),
-        allies: [...(t.allies ?? [])],
-        shamanRespawn: 0,
-        reincarnates: !(leaderDies && t.id === 'player'),
-        leaderDeaths: 0,
-        threatTimer: 0,
-        everBuilt: new Set(),
-        ai: t.ai ? { state: 'grow', evalTimer: 2, target: null, awake: !personality.passive, castCooldown: 0, crossing: null } : null,
-        personality,
-      };
-    }
+    for (const t of rules.tribes) this.makeTribe(t, homes[t.id], civs[t.id]);
 
     // Buildings first, so the people below spawn clear of their walls: the
     // level's pre-placed ones where it says, then loadout extras near home.
@@ -663,7 +633,7 @@ export class World implements SimQueries {
         const a = (k / steps) * Math.PI * 2 + r * 0.7;
         const x = Math.round(t.home.x + Math.cos(a) * r);
         const z = Math.round(t.home.z + Math.sin(a) * r);
-        if (this.siteFree(kind, x, z)) return this.spawnBuilding(tribe, kind, x, z);
+        if (this.siteFree(kind, x, z)) return this.markStart(this.spawnBuilding(tribe, kind, x, z));
       }
     }
     const half = (BUILDINGS[kind].size - 1) / 2;
@@ -686,10 +656,85 @@ export class World implements SimQueries {
         if (!clear(x, z)) continue;
         this.map.flatten(x, z, half + 1.5, 1);
         this.map.version++;
-        return this.spawnBuilding(tribe, kind, x, z);
+        return this.markStart(this.spawnBuilding(tribe, kind, x, z));
       }
     }
     return null;
+  }
+
+  /** One tribe's state from its scenario entry (no units, no buildings). */
+  private makeTribe(t: ScenarioRules['tribes'][number], home: { x: number; z: number } | undefined, wanted: CivId | undefined): TribeState {
+    const civIds = Object.keys(CIVS) as CivId[];
+    const otherCivs = civIds.filter((c) => c !== this.settings.playerCiv);
+    const leaderDies = (this.rules.fail ?? []).some((f) => f.type === 'leaderDies');
+    const civ =
+      t.id === 'player' ? this.settings.playerCiv
+      : wanted && CIVS[wanted] && wanted !== this.settings.playerCiv ? wanted
+      : this.rng.pick(otherCivs.length ? otherCivs : civIds);
+    const lo = t.loadout ?? {};
+    const known = new Set<SpellId>(lo.spells ?? STARTER_SPELLS);
+    const spells = newSpellBook();
+    for (const [id, n] of Object.entries(lo.extraCharges ?? {}) as Array<[SpellId, number]>) spells[id].bonus += n;
+    for (const [id, k] of Object.entries(lo.chargeCost ?? {}) as Array<[SpellId, number]>) spells[id].cost = Math.max(0.05, k);
+    for (const [id, n] of Object.entries(lo.gifts ?? {}) as Array<[SpellId, number]>) spells[id].gifted += n;
+    const personality = { ...(t.personality ?? {}) };
+    const state: TribeState = {
+      id: t.id,
+      wood: lo.startWood ?? START_WOOD,
+      home: home ?? { x: WORLD_SIZE / 2, z: WORLD_SIZE / 2 },
+      civ,
+      known,
+      unlocked: known,
+      spells,
+      income: 0,
+      manaRate: 0,
+      allowed: new Set(lo.buildings ?? ALL_BUILDINGS),
+      allies: [...(t.allies ?? [])],
+      shamanRespawn: 0,
+      reincarnates: !(leaderDies && t.id === 'player'),
+      leaderDeaths: 0,
+      threatTimer: 0,
+      everBuilt: new Set(),
+      ai: t.ai ? { state: 'grow', evalTimer: 2, target: null, awake: !personality.passive, castCooldown: 0, crossing: null } : null,
+      personality,
+    };
+    this.tribes[t.id] = state;
+    return state;
+  }
+
+  /**
+   * The editor's home tool: put a tribe's home circle at (x, z). A tribe the
+   * level doesn't have yet joins it as an AI rival (the level's rules gain
+   * the entry, so Save keeps it).
+   */
+  setHome(tribe: TribeId, x: number, z: number): void {
+    if (!this.tribes[tribe]) {
+      const rules: ScenarioRules = structuredClone(this.levelExtras.rules ?? this.rules);
+      if (!rules.tribes.some((t) => t.id === tribe)) rules.tribes.push({ id: tribe, ai: true });
+      this.rules = rules;
+      this.levelExtras.rules = rules;
+      this.makeTribe(rules.tribes.find((t) => t.id === tribe)!, undefined, undefined);
+    }
+    this.tribes[tribe]!.home = { x: this.map.wrap(Math.round(x)), z: this.map.wrap(Math.round(z)) };
+  }
+
+  /** The editor's erase on a rival's home: the tribe leaves the level (never the player, never the last rival). */
+  removeTribe(tribe: TribeId): boolean {
+    if (tribe === 'player' || !this.tribes[tribe] || this.activeTribes().length <= 2) return false;
+    const rules: ScenarioRules = structuredClone(this.levelExtras.rules ?? this.rules);
+    rules.tribes = rules.tribes.filter((t) => t.id !== tribe);
+    for (const t of rules.tribes) if (t.allies) t.allies = t.allies.filter((a) => a !== tribe);
+    this.rules = rules;
+    this.levelExtras.rules = rules;
+    for (const b of this.buildings.filter((q) => q.tribe === tribe)) this.demolish(b.id);
+    this.units = this.units.filter((u) => u.tribe !== tribe);
+    delete this.tribes[tribe];
+    return true;
+  }
+
+  private markStart(b: Building): Building {
+    b.origin = 'start';
+    return b;
   }
 
   /**
