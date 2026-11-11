@@ -145,7 +145,8 @@ function think(world: World, id: TribeId, tribe: TribeState): void {
       break;
   }
 
-  leaderCasts(world, id, tribe);
+  // A passive god keeps its hands down: no spells at anyone until it wakes.
+  if (ai.awake) leaderCasts(world, id, tribe);
 }
 
 /** Next step of the plan that isn't done yet; places it if it can. */

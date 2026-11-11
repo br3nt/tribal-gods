@@ -70,12 +70,12 @@ export const scenario: CampaignScenario = {
           },
           {
             id: 'red', ai: true,
-            personality: { harassAt: 4, assaultAt: 9, maxArmy: 14 },
+            personality: { passive: true, wakeAt: 480, harassAt: 4, assaultAt: 8, maxArmy: 10 },
             loadout: {
               spells: ['blast', 'convert'],
-              buildings: ['hut', 'lumberyard', 'warriorHut', 'tower'],
-              startUnits: { brave: 5 },
-              startWood: 6,
+              buildings: ['hut', 'lumberyard', 'warriorHut'],
+              startUnits: { brave: 4 },
+              startWood: 0,
             },
           },
         ],

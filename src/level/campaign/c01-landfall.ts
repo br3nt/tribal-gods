@@ -58,10 +58,10 @@ export const scenario: CampaignScenario = {
           },
         ],
         objectives: [
-          { objective: { type: 'buildCount', kind: 'hut', count: 5 }, text: 'Raise 5 Dwellings' },
-          { objective: { type: 'reachPopulation', count: 30 }, text: 'Grow the tribe to 30' },
+          { objective: { type: 'buildCount', kind: 'hut', count: 6 }, text: 'Raise 6 Dwellings' },
+          { objective: { type: 'reachPopulation', count: 40 }, text: 'Grow the tribe to 40' },
           { objective: { type: 'buildCount', kind: 'lumberyard', count: 1 }, text: 'Build a Lumberyard', optional: true },
-          { objective: { type: 'reachPopulation', count: 45 }, text: 'Grow the tribe to 45', optional: true },
+          { objective: { type: 'reachPopulation', count: 60 }, text: 'Grow the tribe to 60', optional: true },
         ],
         briefing: {
           title: 'Landfall',

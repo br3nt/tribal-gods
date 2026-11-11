@@ -237,6 +237,20 @@ describe('AI personalities', () => {
     expect(w.tribes.red!.ai!.state).toBe('assault');
   });
 
+  it('a passive god’s leader does not cast at you until it wakes', () => {
+    const w = setupFlat(
+      rulesFor([{ id: 'player', ai: false }, { id: 'red', ai: true, personality: { passive: true, builds: false } }]),
+    );
+    const leader = w.leaderOf('red')!;
+    for (let i = 0; i < 4; i++) w.spawn('brave', 'player', leader.x + 6 + i * 0.5, leader.z);
+    w.tribes.red!.spells.blast.charges = 4;
+    run(w, 10);
+    expect(eventsOf(w, 'explosion').length).toBe(0);
+    w.tribes.red!.ai!.awake = true;
+    run(w, 10);
+    expect(eventsOf(w, 'explosion').length).toBeGreaterThan(0);
+  });
+
   it('builds:false never places buildings', () => {
     const w = setupFlat(rulesFor([{ id: 'player', ai: false }, { id: 'red', ai: true, personality: { builds: false }, loadout: { startWood: 50 } }]));
     w.trees = [];
