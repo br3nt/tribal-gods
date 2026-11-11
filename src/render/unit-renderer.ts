@@ -59,7 +59,7 @@ import { wrapDelta } from '../core/util';
 import { buildUnitModel, FigureModel } from '../assets/models/registry';
 import { decalMaterial, disposeModelMaterial, fadeCopy, tickModelMaterials, tintedMaterial } from '../assets/models/materials';
 import { garrisonSpot } from '../assets/models/buildings/index';
-import { spellDef, TRIBE_COLORS, Tribe, UNITS } from '../sim/catalog';
+import { spellDef, TRIBE_COLORS, Tribe, UNITS, UnitKind } from '../sim/catalog';
 import { AnimInput, FigureAnimator, runThreshold } from './figure-animator';
 import { UNIT_STATUS } from './look';
 import { ParticlePool } from './model-particles';
@@ -80,8 +80,8 @@ interface Entry {
   fig: FigureModel;
   anim: FigureAnimator;
   ring: THREE.Mesh;
-  kind: string;
-  tribe: string;
+  kind: UnitKind;
+  tribe: Tribe;
   lastHp: number;
   /** Last rendered world position (for measured speed). */
   px: number;
@@ -133,7 +133,7 @@ interface Ghost {
   tz: number;
   yaw: number;
   fade: THREE.Material[] | null;
-  tribe: string;
+  tribe: Tribe;
   /** Fractional wisp emission carried between frames. */
   wispAcc: number;
 }
@@ -147,9 +147,10 @@ const GHOST_DIE: AnimInput = { clip: 'die', speed: 0, turnRate: 0 };
 const GHOST_DROWN: AnimInput = { clip: 'drown', speed: 0, turnRate: 0 };
 const GHOST_CAST: AnimInput = { clip: 'cast', speed: 0, turnRate: 0 };
 
+/** A tribe's civilisation look (wild folk, and tribes not in play, dress forest). */
 function civOf(world: World, tribe: Tribe) {
-  const t = (world.tribes as Record<string, { civ?: string } | undefined>)[tribe];
-  return CIVS[(t?.civ ?? 'forest') as keyof typeof CIVS] ?? CIVS.forest;
+  const t = tribe === 'wild' ? undefined : world.tribes[tribe];
+  return CIVS[t?.civ ?? 'forest'];
 }
 
 export class UnitRenderer {
@@ -184,10 +185,10 @@ export class UnitRenderer {
     this.camera = camera;
   }
 
-  private ringMat(tribe: string): THREE.Material {
+  private ringMat(tribe: Tribe): THREE.Material {
     let m = this.ringMats.get(tribe);
     if (!m) {
-      const c = new THREE.Color(TRIBE_COLORS[tribe as Tribe] ?? 0xffe9a8).lerp(new THREE.Color(0xffffff), 0.45);
+      const c = new THREE.Color(TRIBE_COLORS[tribe]).lerp(new THREE.Color(0xffffff), 0.45);
       m = decalMaterial(c.getHex(), 0.9);
       this.ringMats.set(tribe, m);
     }
@@ -243,7 +244,7 @@ export class UnitRenderer {
       }
 
       if (!e) {
-        const fig = buildUnitModel(u.kind, u.tribe as Tribe, civOf(world, u.tribe as Tribe), u.id);
+        const fig = buildUnitModel(u.kind, u.tribe, civOf(world, u.tribe), u.id);
         const ring = new THREE.Mesh(this.ringGeo, this.ringMat(u.tribe));
         ring.renderOrder = 1;
         ring.visible = false;
@@ -472,7 +473,7 @@ export class UnitRenderer {
         if (k <= 0) for (const m of g.fig.meshes) m.visible = false;
         if (g.t > DIE_LIE - 0.2 && g.t < DIE_LIE + DIE_FADE) {
           g.wispAcc += dt * 34;
-          const col = TRIBE_COLORS[g.tribe as Tribe] ?? 0xffe9a8;
+          const col = TRIBE_COLORS[g.tribe];
           const s = g.fig.scale;
           for (; g.wispAcc >= 1; g.wispAcc--) {
             // the body lies along local −Z (it falls backward): spread along it

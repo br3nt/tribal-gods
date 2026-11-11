@@ -11,9 +11,8 @@
  * Also here: each tribe's home circle (totem) at tribes[t].home and the
  * monuments (standing stones), lit while they still hold a spell.
  *
- * Sim fields read DEFENSIVELY: b.tier (dwelling tier 0..2), b.maxHp,
- * b.burning (seconds left, or boolean), monument.claimedBy / .sleep,
- * world.activeTribes().
+ * Sim fields read: b.tier (dwelling tier 0..2), b.maxHp, b.burning
+ * (seconds left), monument.mode / .claimedBy / .sleep, world.activeTribes().
  */
 
 import * as THREE from 'three';
@@ -22,8 +21,8 @@ import { curvatureDrop } from '../world/curvature';
 import { wrapDelta } from '../core/util';
 import { buildBuildingModel, BuildingModel } from '../assets/models/registry';
 import { buildMonument, buildTotem } from '../assets/models/buildings/index';
-import { BUILDINGS, BuildingKind, Tribe } from '../sim/catalog';
-import { Building, World } from '../sim/world-state';
+import { TribeId } from '../sim/catalog';
+import { World } from '../sim/world-state';
 import { ModelFx } from './model-particles';
 
 const WORLD_UNITS = WORLD_SIZE * TILE;
@@ -36,27 +35,18 @@ interface Entry {
   tier: number;
 }
 
-type AnyB = Building & Record<string, unknown>;
-
-function civOf(world: World, tribe: string) {
-  const t = (world.tribes as Record<string, { civ?: string } | undefined>)[tribe];
-  return CIVS[(t?.civ ?? 'forest') as keyof typeof CIVS] ?? CIVS.forest;
-}
-
-function activeTribes(world: World): string[] {
-  const w = world as unknown as { activeTribes?: () => string[] };
-  if (typeof w.activeTribes === 'function') return w.activeTribes();
-  return Object.keys(world.tribes).filter((k) => (world.tribes as Record<string, unknown>)[k]);
+function civOf(world: World, tribe: TribeId) {
+  return CIVS[world.tribes[tribe]?.civ ?? 'forest'];
 }
 
 export class BuildingRenderer {
   private readonly entries = new Map<number, Entry>();
-  private readonly totems = new Map<string, { root: THREE.Group; flames: THREE.Vector3[]; civ: string; dispose(): void }>();
+  private readonly totems = new Map<TribeId, { root: THREE.Group; flames: THREE.Vector3[]; civ: string; dispose(): void }>();
   private monuments: Array<ReturnType<typeof buildMonument>> = [];
   private readonly fx: ModelFx;
   private last = performance.now();
   /** Reused every frame (no per-frame allocation). */
-  private readonly active = new Set<string>();
+  private readonly active = new Set<TribeId>();
   private readonly live = new Set<number>();
 
   constructor(private readonly scene: THREE.Scene) {
@@ -71,7 +61,7 @@ export class BuildingRenderer {
     // Home circles, built lazily per active tribe.
     const active = this.active;
     active.clear();
-    for (const id of activeTribes(world)) active.add(id);
+    for (const id of world.activeTribes()) active.add(id);
     for (const id of active) {
       const civ = civOf(world, id);
       let t = this.totems.get(id);
@@ -81,12 +71,12 @@ export class BuildingRenderer {
         t = undefined;
       }
       if (!t) {
-        const built = buildTotem(id as Tribe, civ);
+        const built = buildTotem(id, civ);
         t = { ...built, civ: civ.id };
         this.scene.add(t.root);
         this.totems.set(id, t);
       }
-      const home = (world.tribes as Record<string, { home: { x: number; z: number } } | undefined>)[id]!.home;
+      const home = world.tribes[id]!.home;
       t.root.visible = this.anchor(t.root.position, home.x, home.z, world, camTarget);
       t.root.updateMatrixWorld();
       this.fx.building(t.root, { smoke: [], fire: [], flames: t.flames, emit: { smoke: false, fire: false, flames: true, hurt: 0 } }, dt);
@@ -111,9 +101,9 @@ export class BuildingRenderer {
       m.dispose();
     }
     for (let i = 0; i < world.monuments.length; i++) {
-      const sim = world.monuments[i] as unknown as { x: number; z: number; claimedBy: unknown; sleep?: number; mode?: string };
+      const sim = world.monuments[i];
       const model = this.monuments[i];
-      const dark = (sim.mode !== 'gift' && sim.claimedBy !== null && sim.claimedBy !== undefined) || (sim.sleep ?? 0) > 0;
+      const dark = (sim.mode !== 'gift' && sim.claimedBy !== null) || sim.sleep > 0;
       model.setClaimed(dark);
       model.root.visible = this.anchor(model.root.position, sim.x, sim.z, world, camTarget);
     }
@@ -121,10 +111,9 @@ export class BuildingRenderer {
     // Buildings.
     const live = this.live;
     live.clear();
-    for (const raw of world.buildings) {
-      const b = raw as AnyB;
+    for (const b of world.buildings) {
       live.add(b.id);
-      const tier = typeof b.tier === 'number' ? (b.tier as number) : 0;
+      const tier = b.tier;
       let e = this.entries.get(b.id);
       if (e && (e.kind !== b.kind || e.tribe !== b.tribe || (b.kind === 'hut' && e.tier !== tier))) {
         this.remove(e);
@@ -132,7 +121,7 @@ export class BuildingRenderer {
         e = undefined;
       }
       if (!e) {
-        const model = buildBuildingModel(b.kind, b.tribe as Tribe, civOf(world, b.tribe), tier);
+        const model = buildBuildingModel(b.kind, b.tribe, civOf(world, b.tribe), tier);
         // turn every model so its door faces the sim's door (south, +Z): already the case
         this.scene.add(model.root);
         e = { model, kind: b.kind, tribe: b.tribe, tier };
@@ -140,9 +129,7 @@ export class BuildingRenderer {
       }
       const visible = this.anchor(e.model.root.position, b.x, b.z, world, camTarget);
       e.model.root.visible = visible;
-      const maxHp = typeof b.maxHp === 'number' ? (b.maxHp as number) : BUILDINGS[b.kind as BuildingKind]?.hp ?? 40;
-      const burning = typeof b.burning === 'number' ? (b.burning as number) > 0 : !!b.burning;
-      e.model.update({ progress: b.progress, hpFrac: maxHp > 0 ? b.hp / maxHp : 1, burning, dt });
+      e.model.update({ progress: b.progress, hpFrac: b.maxHp > 0 ? b.hp / b.maxHp : 1, burning: b.burning > 0, dt });
       if (visible) {
         e.model.root.updateMatrixWorld();
         this.fx.building(e.model.root, e.model, dt);

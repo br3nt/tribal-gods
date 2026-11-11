@@ -30,7 +30,7 @@ import { AnimInput, ClipName, FigureAnimator, CLIP_NAMES } from './figure-animat
 import { buildFloraPreview } from '../assets/models/flora';
 import { ModelFx } from './model-particles';
 import { UnitRenderer } from './unit-renderer';
-import type { World } from '../sim/world-state';
+import { World } from '../sim/world-state';
 
 interface Actor {
   fig: FigureModel;
@@ -162,12 +162,11 @@ export function startGallery(): Promise<never> {
   let deathStage: { r: UnitRenderer; world: World; dieAt: number } | null = null;
   if (view === 'death') {
     const kinds: UnitKind[] = ['brave', 'warrior', 'firewarrior', 'warden'];
-    const units = kinds.map((kind, i) => ({
-      id: 100 + i, kind, tribe: i % 2 ? 'red' : 'player', x: (i - 1.5) * 1.6, z: 0, prevX: (i - 1.5) * 1.6, prevZ: 0,
-      heading: 0.5, hp: 10, hidden: false, state: 'idle', task: 'none', carrying: false, attackCooldown: 0,
-    }));
-    const map = { sampleHeight: () => 0, heightAt: () => 0 };
-    const world = { units, buildings: [], tribes: {}, map } as unknown as World;
+    // A real (empty, flat) World: the renderer reads it exactly as in game.
+    const world = new World();
+    kinds.forEach((kind, i) => {
+      world.spawn(kind, i % 2 ? 'red' : 'player', (i - 1.5) * 1.6, 0).heading = 0.5;
+    });
     const r = new UnitRenderer(scene);
     r.setCamera(camera);
     deathStage = { r, world, dieAt: Number(q.get('dieAt') ?? 1) };
@@ -238,7 +237,7 @@ export function startGallery(): Promise<never> {
       fx.building(b.root, b, dt);
     }
     if (deathStage) {
-      if (time > deathStage.dieAt) (deathStage.world.units as unknown[]).length = 0;
+      if (time > deathStage.dieAt) deathStage.world.units.length = 0;
       deathStage.r.sync(deathStage.world, ZERO3, 1, dt, EMPTY);
     }
     scene.updateMatrixWorld();

@@ -276,25 +276,16 @@ export class TreeRenderer {
    * (its footprint + 4); flora scales up smoothly from inside it.
    */
   private updateClearings(world: World): void {
-    const tribes = world.tribes as Record<string, { home?: { x: number; z: number } } | undefined>;
+    const tribes = Object.values(world.tribes);
     let key = `${world.buildings.length}|${world.trees.length}`;
-    for (const id in tribes) {
-      const h = tribes[id]?.home;
-      if (h) key += `|${h.x},${h.z}`;
-    }
+    for (const t of tribes) if (t) key += `|${t.home.x},${t.home.z}`;
     if (key === this.nearKey) return;
     this.nearKey = key;
     this.coverKey = ''; // cover thins around the new clearings too
     const cl = this.clearings;
     cl.length = 0;
-    for (const id in tribes) {
-      const h = tribes[id]?.home;
-      if (h) cl.push({ x: h.x, z: h.z, r: 9 });
-    }
-    for (const b of world.buildings) {
-      const size = (b as unknown as { size?: number }).size ?? 3;
-      cl.push({ x: b.x, z: b.z, r: size / 2 + 4 });
-    }
+    for (const t of tribes) if (t) cl.push({ x: t.home.x, z: t.home.z, r: 9 });
+    for (const b of world.buildings) cl.push({ x: b.x, z: b.z, r: b.size / 2 + 4 });
     for (let i = 0; i < world.trees.length; i++) {
       const t = world.trees[i];
       this.states[i].near = nearFactor(cl, t.x, t.z);
@@ -303,7 +294,7 @@ export class TreeRenderer {
 
   private syncCover(world: World, camTarget: THREE.Vector3): void {
     // Only when something moved: the camera, the land, or the buildings.
-    const ver = (world.map as unknown as { version?: number }).version ?? 0;
+    const ver = world.map.version;
     if (
       Math.abs(camTarget.x - this.lastCamX) < 0.005 && Math.abs(camTarget.z - this.lastCamZ) < 0.005 &&
       ver === this.lastMapVersion && world.buildings.length === this.lastBuildings && this.coverKey === 'ok'
@@ -317,7 +308,7 @@ export class TreeRenderer {
     const blocked = this.blocked;
     blocked.clear();
     for (const b of world.buildings) {
-      const half = Math.floor(((b as unknown as { size?: number }).size ?? 3) / 2) + 1;
+      const half = Math.floor(b.size / 2) + 1;
       for (let dz = -half; dz <= half; dz++) for (let dx = -half; dx <= half; dx++) {
         blocked.add((((b.z + dz) % WORLD_SIZE + WORLD_SIZE) % WORLD_SIZE) * WORLD_SIZE + (((b.x + dx) % WORLD_SIZE + WORLD_SIZE) % WORLD_SIZE));
       }
