@@ -258,14 +258,8 @@ export class OrderControl {
     const b = this.buildingAt(x, z);
     if (b) {
       if (w.hostile('player', b.tribe)) return { kind: 'attackBuilding', building: b, x, z };
-      if (b.tribe === 'player' && b.progress >= 1) {
-        const fits = b.kind === 'tower'
-          ? mine.some((u) => UNITS[u.kind].dmg > 0 && UNITS[u.kind].sight > 0)
-          : b.kind === 'shrine'
-            ? mine.some((u) => u.kind === 'brave')
-            : false;
-        if (fits) return { kind: 'garrison', building: b, x, z };
-      }
+      // The sim decides (room, completion, who fits) — a full tower doesn't promise a garrison.
+      if (b.tribe === 'player' && w.canGarrison(mine.map((u) => u.id), b.id)) return { kind: 'garrison', building: b, x, z };
     }
     const m = this.monumentAt(x, z);
     if (m >= 0 && mine.some((u) => u.kind === 'shaman') && w.monumentAvailable(w.monuments[m])) {
@@ -311,17 +305,10 @@ export class OrderControl {
       case 'attackBuilding':
         w.orderAttackBuilding(ids, c.building!.id);
         break;
-      case 'garrison': {
-        const b = c.building!;
-        const fit = ids.filter((id) => {
-          const u = w.unitById(id)!;
-          return b.kind === 'tower' ? UNITS[u.kind].dmg > 0 && UNITS[u.kind].sight > 0 : u.kind === 'brave';
-        });
-        w.orderGarrison(fit, b.id);
-        const rest = ids.filter((id) => !fit.includes(id));
-        if (rest.length) w.orderMove(rest, b.x, b.z + b.size / 2 + 1.5);
+      case 'garrison':
+        // Whoever can't go in (wrong kind, no room) walks to the door; the sim cues 'denied'.
+        if (w.orderGarrison(ids, c.building!.id).accepted.length === 0) return;
         break;
-      }
       case 'worship': {
         const m = w.monuments[c.monument!];
         w.orderWorship(ids, c.monument!);

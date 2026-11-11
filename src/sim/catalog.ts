@@ -489,8 +489,13 @@ export interface SimQueries {
   queueTraining(buildingId: number, count: number): number;
   /** Where freshly trained units gather. */
   setRally(buildingId: number, x: number, z: number): void;
-  /** Send villagers to pray at a shrine / man a tower / leave again. */
-  orderGarrison(unitIds: number[], buildingId: number): void;
+  /**
+   * Send villagers to pray at a shrine / fighters to man a tower. Says who
+   * went in and who was turned away (wrong kind, full, no path to the door).
+   */
+  orderGarrison(unitIds: number[], buildingId: number): { accepted: number[]; refused: number[] };
+  /** Would orderGarrison put at least one of these inside right now? (The cursor asks this.) */
+  canGarrison(unitIds: number[], buildingId: number): boolean;
   ejectGarrison(buildingId: number): void;
   /** Tear down your own building (refunds half the wood). */
   demolish(buildingId: number): void;

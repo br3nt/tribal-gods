@@ -1246,7 +1246,7 @@ export class World implements SimQueries {
       }
       case 'garrison': {
         const b = this.getBuilding(u.targetBuilding);
-        if (b && b.progress >= 1 && b.garrison.length < this.garrisonCap(b) && this.canGarrison(u, b)) {
+        if (b && b.progress >= 1 && b.garrison.length < this.garrisonCap(b) && this.fitsGarrison(u, b)) {
           this.enter(u, b);
           b.garrison.push(u.id);
         } else this.abandonTask(u);
@@ -1675,7 +1675,7 @@ export class World implements SimQueries {
     return b.kind === 'tower' ? ECONOMY.towerGarrison : b.kind === 'shrine' ? ECONOMY.shrineWorshippers : 0;
   }
 
-  private canGarrison(u: Unit, b: Building): boolean {
+  private fitsGarrison(u: Unit, b: Building): boolean {
     if (u.tribe !== b.tribe) return false;
     if (b.kind === 'tower') return isFighterKind(u.kind);
     if (b.kind === 'shrine') return u.kind === 'brave';
@@ -2049,27 +2049,77 @@ export class World implements SimQueries {
     if (b) b.rally = { x: this.map.wrap(Math.round(x)), z: this.map.wrap(Math.round(z)) };
   }
 
-  orderGarrison(unitIds: number[], buildingId: number): void {
+  /** Seats left in a tower/shrine, counting those already on their way. */
+  private garrisonRoom(b: Building): number {
+    return this.garrisonCap(b) - b.garrison.length - this.countUnits((q) => q.task === 'garrison' && q.targetBuilding === b.id);
+  }
+
+  /**
+   * Would orderGarrison(unitIds, buildingId) put at least one of them
+   * inside? The UI asks this for its cursor instead of re-deriving the rule.
+   */
+  canGarrison(unitIds: number[], buildingId: number): boolean {
     const b = this.getBuilding(buildingId);
-    if (!b || b.progress < 1) return;
-    const cap = this.garrisonCap(b);
-    let reserved = b.garrison.length + this.countUnits((q) => q.task === 'garrison' && q.targetBuilding === b.id);
-    const door = this.doorOf(b);
-    for (const id of unitIds) {
-      if (reserved >= cap) break;
+    if (!b || b.progress < 1) return false;
+    const room = this.garrisonRoom(b) > 0;
+    return unitIds.some((id) => {
       const u = this.unitById(id);
-      if (!u || u.hidden || !this.canGarrison(u, b)) continue;
-      if (u.task === 'garrison' && u.targetBuilding === b.id) continue;
+      if (!u || u.hidden || !this.fitsGarrison(u, b)) return false;
+      return room || (u.task === 'garrison' && u.targetBuilding === b.id);
+    });
+  }
+
+  /**
+   * Send people into a tower (fighters) or shrine (villagers). Returns who
+   * was taken (`accepted`, including anyone already on the way) and who
+   * was not (`refused`: the wrong kind, no room left, or no path to the
+   * door). For the player, refusal is never silent: the refused walk up to
+   * the door anyway and a 'denied' cue plays when anyone who fits was
+   * turned away (or nobody was taken at all).
+   */
+  orderGarrison(unitIds: number[], buildingId: number): { accepted: number[]; refused: number[] } {
+    const accepted: number[] = [];
+    const refused: number[] = [];
+    const b = this.getBuilding(buildingId);
+    if (!b || b.progress < 1) return { accepted, refused: [...unitIds] };
+    let room = this.garrisonRoom(b);
+    const door = this.doorOf(b);
+    let fitTurnedAway = false;
+    for (const id of unitIds) {
+      const u = this.unitById(id);
+      if (!u || u.hidden) continue;
+      if (u.task === 'garrison' && u.targetBuilding === b.id) {
+        accepted.push(id);
+        continue;
+      }
+      const fits = this.fitsGarrison(u, b);
+      if (!fits || room <= 0) {
+        refused.push(id);
+        if (fits) fitTurnedAway = true;
+        continue;
+      }
       this.abandonTask(u);
       u.task = 'garrison';
       u.targetBuilding = b.id;
-      reserved++;
       if (this.distTo(u, door.x, door.z) < 0.6) this.onArrive(u);
-      else if (!this.sendTo(u, door.x, door.z)) {
+      else if (!this.sendTo(u, door.x, door.z, b.tribe === 'player' ? World.PLAYER_EXPANSIONS : 4000)) {
         this.abandonTask(u);
-        reserved--;
+        refused.push(id);
+        fitTurnedAway = true;
+        continue;
       }
+      accepted.push(id);
+      room--;
     }
+    if (b.tribe === 'player') {
+      const walkers = refused.map((id) => this.unitById(id)!).filter((u) => u && u.tribe === 'player');
+      if (walkers.length) {
+        for (const u of walkers) this.abandonTask(u);
+        this.groupMove(walkers, door.x, door.z + 1.5, World.PLAYER_EXPANSIONS);
+      }
+      if (fitTurnedAway || (accepted.length === 0 && unitIds.length > 0)) this.events.push({ type: 'denied', x: b.x, z: b.z });
+    }
+    return { accepted, refused };
   }
 
   ejectGarrison(buildingId: number): void {
