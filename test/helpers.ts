@@ -3,7 +3,6 @@
  * test sets up exactly the pieces it is about.
  */
 import type { ScenarioRules, TribeId } from '../src/sim/catalog';
-import { obstacles } from '../src/sim/pathfinding';
 import { World } from '../src/sim/world-state';
 
 export function rulesFor(
@@ -41,7 +40,7 @@ export function flatWorld(rules: ScenarioRules = rulesFor(), seed = 1): World {
   w.events = [];
   w.jobs = [];
   w.auras = [];
-  obstacles.clear();
+  w.obstacles.clear();
   for (const id of w.activeTribes()) {
     w.tribes[id]!.home = { ...HOMES[id] };
   }

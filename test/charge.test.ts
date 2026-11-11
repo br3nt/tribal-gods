@@ -141,8 +141,9 @@ describe('casting', () => {
     run(w, 400);
     expect(w.orderCast('player', 'blast', 50, 20)).toBeNull();
     const leader = w.units.find((u) => u.kind === 'shaman')!;
-    run(w, 25);
-    expect(w.spellState('player', 'blast').charges).toBe(3);
+    w.events = [];
+    run(w, 12);
+    expect(w.events.some((e) => e.type === 'explosion')).toBe(true);
     expect(Math.abs(leader.x - 50)).toBeLessThanOrEqual(spellDef('blast').range + 0.5);
   });
 

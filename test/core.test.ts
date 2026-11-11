@@ -43,8 +43,9 @@ describe('catalog-driven units', () => {
 
   it('a warrior kills an enemy villager it is ordered to attack', () => {
     const w = flatWorld();
-    const a = w.spawn('warrior', 'player', 30, 30);
-    const v = w.spawn('brave', 'red', 33, 30);
+    // (villagers run home from soldiers — catch this one on its doorstep)
+    const v = w.spawn('brave', 'red', 84, 84);
+    const a = w.spawn('warrior', 'player', 87, 84);
     w.orderAttack([a.id], v.id);
     run(w, 20);
     expect(w.units.includes(v)).toBe(false);
@@ -79,9 +80,9 @@ describe('tribes and hostility', () => {
     expect(w.hostile('player', 'gold')).toBe(false);
     expect(w.hostile('gold', 'player')).toBe(false);
     expect(w.hostile('gold', 'red')).toBe(true);
-    const g = w.spawn('warrior', 'gold', 40, 40);
-    const p = w.spawn('brave', 'player', 42, 40);
-    const r = w.spawn('brave', 'red', 40, 43);
+    const g = w.spawn('warrior', 'gold', 84, 87);
+    const p = w.spawn('brave', 'player', 86, 87);
+    const r = w.spawn('brave', 'red', 84, 84);
     run(w, 25);
     expect(w.units.includes(p)).toBe(true);
     expect(w.units.includes(r)).toBe(false);

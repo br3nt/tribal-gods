@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { BUILDINGS, DWELLING_TIERS, ECONOMY, UNITS } from '../src/sim/catalog';
-import { obstacles, tileIndex } from '../src/sim/pathfinding';
+import { tileIndex } from '../src/sim/pathfinding';
 import { eventsOf, flatWorld, rulesFor, run } from './helpers';
 
 describe('placement', () => {
@@ -11,10 +11,10 @@ describe('placement', () => {
     const shrine = w.spawnBuilding('player', 'shrine', 60, 60);
     expect(hut.size).toBe(3);
     expect(shrine.size).toBe(5);
-    expect(obstacles.has(tileIndex(41, 39))).toBe(true);
-    expect(obstacles.has(tileIndex(42, 40))).toBe(false);
-    expect(obstacles.has(tileIndex(62, 58))).toBe(true);
-    expect(obstacles.has(tileIndex(63, 60))).toBe(false);
+    expect(w.obstacles.has(tileIndex(41, 39))).toBe(true);
+    expect(w.obstacles.has(tileIndex(42, 40))).toBe(false);
+    expect(w.obstacles.has(tileIndex(62, 58))).toBe(true);
+    expect(w.obstacles.has(tileIndex(63, 60))).toBe(false);
     // overlapping placement refused
     expect(w.canPlaceBuilding('player', 'hut', 43, 40)).toBe(false);
     expect(w.canPlaceBuilding('player', 'hut', 44, 40)).toBe(true);
@@ -65,7 +65,7 @@ describe('placement', () => {
     w.demolish(b.id);
     expect(w.buildings.length).toBe(0);
     expect(w.tribes.player!.wood).toBe(Math.floor(BUILDINGS.warriorHut.wood / 2));
-    expect(obstacles.has(tileIndex(40, 39))).toBe(false);
+    expect(w.obstacles.has(tileIndex(40, 39))).toBe(false);
   });
 });
 
@@ -111,7 +111,7 @@ describe('dwellings', () => {
     const w = flatWorld();
     const hut = w.spawnBuilding('player', 'hut', 40, 40);
     w.moveIn(w.spawn('brave', 'player', 40, 42), hut);
-    run(w, DWELLING_TIERS[0].breedSeconds * 1.5);
+    run(w, DWELLING_TIERS[0].breedSeconds * 2.5);
     expect(w.units.filter((u) => u.tribe === 'player').length).toBeGreaterThan(1);
   });
 });

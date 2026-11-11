@@ -42,7 +42,17 @@ const SQRT2 = Math.SQRT2;
  * walkable() consults both — so buildings block routes with zero changes to
  * the A* algorithm itself.
  */
-export const obstacles = new Set<number>();
+const obstacleSets = new WeakMap<Heightmap, Set<number>>();
+
+/** The occupied-tile set for one world (keyed by its heightmap, so two Worlds never share). */
+export function obstaclesOf(map: Heightmap): Set<number> {
+  let set = obstacleSets.get(map);
+  if (!set) {
+    set = new Set<number>();
+    obstacleSets.set(map, set);
+  }
+  return set;
+}
 
 export const tileIndex = (x: number, z: number): number =>
   (((z % N) + N) % N) * N + (((x % N) + N) % N);
@@ -65,7 +75,7 @@ const DIRS = [
 
 /** Can a unit stand on this tile? Above water, unoccupied, and no cliff-step to any neighbor. */
 export function walkable(map: Heightmap, x: number, z: number): boolean {
-  if (obstacles.has(tileIndex(x, z))) return false;
+  if (obstaclesOf(map).has(tileIndex(x, z))) return false;
   const h = map.heightAt(x, z);
   if (h < WALK_MIN_HEIGHT) return false;
   // Steepness = worst height step to the 4 cardinal neighbors.
