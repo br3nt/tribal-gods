@@ -25,6 +25,15 @@ export interface SavedGame {
   /** Shown on the Continue button. */
   label: string;
   world: SaveData;
+  /** The game-over numbers so far (ui/alerts.ts GameTally), so Continue doesn't start them over. */
+  tally?: { peakPopulation: number; spellsCast: number };
+}
+
+/** The saved tally if it is well-formed, else null (an old save without one still loads). */
+export function savedTally(g: SavedGame): { peakPopulation: number; spellsCast: number } | null {
+  const t = g.tally;
+  const ok = (n: unknown) => typeof n === 'number' && Number.isFinite(n) && n >= 0;
+  return t && ok(t.peakPopulation) && ok(t.spellsCast) ? { peakPopulation: t.peakPopulation, spellsCast: t.spellsCast } : null;
 }
 
 export function writeSave(game: SavedGame): boolean {

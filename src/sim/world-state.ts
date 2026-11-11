@@ -70,8 +70,9 @@ import {
 } from './catalog';
 import { breakChant, tickChant } from './chant';
 import { initObjectives, ObjectiveMemory, tickObjectives } from './objectives';
-import { findNearestWalkable, findPath, obstaclesOf, tileIndex, walkable } from './pathfinding';
+import { findNearestWalkable, findPath, flowField, obstaclesOf, pathStats, tileIndex, walkable } from './pathfinding';
 import { isMajor, regionAt } from './regions';
+import { UnitGrid } from './spatial';
 import { Rng } from './rng';
 import { ALL_BUILDINGS, skirmishRules, STARTER_SPELLS } from './rules';
 import { EventMemory, initEventMemory, tickScenarioEvents } from './scenario-events';
@@ -322,6 +323,36 @@ export class World implements SimQueries {
   unreachable = new Map<string, number>();
   /** A* budget for jobs a unit picks for itself (orders get the full budget). */
   private static readonly AUTO_EXPANSIONS = 1500;
+  /**
+   * PER-TICK SEARCH BUDGET for self-chosen jobs. Path searches are the
+   * sim's one expensive operation, and they come in bursts: a battle ends
+   * and forty soldiers look for a new target in the same tick; a game
+   * loads and every villager looks for work at once. Once this many A*
+   * expansions have been spent in a tick, idle units stop LOOKING for
+   * work until the next tick — they simply stay idle one more tick and
+   * ask again. The idle crowd is the queue; the burst is spread over a
+   * few ticks instead of stalling one frame. Orders (yours, the AI's
+   * group moves) and flight from danger are never deferred.
+   */
+  private static readonly IDLE_SEARCH_BUDGET = 5000;
+  /** pathStats.expansions at the start of this tick. */
+  private tickExpansionsStart = 0;
+
+  /** Units that were made to wait last time: they jump the queue (units always tick in array order). */
+  private deferredIdle = new Set<number>();
+
+  /**
+   * Is there search budget left this tick for `u` choosing its own job?
+   * Someone already deferred gets double the budget, so the same people at
+   * the back of the unit list can't be starved tick after tick.
+   */
+  private canSearchIdle(u: Unit): boolean {
+    const limit = World.IDLE_SEARCH_BUDGET * (this.deferredIdle.has(u.id) ? 2 : 1);
+    const ok = pathStats.expansions - this.tickExpansionsStart < limit;
+    if (ok) this.deferredIdle.delete(u.id);
+    else this.deferredIdle.add(u.id);
+    return ok;
+  }
 
   /** Tiles occupied by building footprints (pathfinding reads the same set). */
   get obstacles(): Set<number> {
@@ -796,8 +827,49 @@ export class World implements SimQueries {
   // -------------------------------------------------------------------------
 
   /** Advance the whole simulation by one fixed tick. */
+  /** Who stands where, re-bucketed at the start of every tick (sim/spatial.ts). */
+  private readonly grid = new UnitGrid();
+
+  /**
+   * Visible people who MAY be within `r` tiles of (x, z) — a superset;
+   * callers test the exact distance. Valid inside tick() (the hash is
+   * rebuilt at its start).
+   */
+  forEachUnitNear(x: number, z: number, r: number, fn: (u: Unit) => void): void {
+    this.grid.forEachNear(x, z, r, fn);
+  }
+
+  /**
+   * The nearest visible person strictly within `r` of (x, z) passing `pred`.
+   * Distance is tested first; `pred` only runs for someone nearer than the
+   * best so far, so expensive predicates stay off the common path.
+   */
+  nearestUnit(x: number, z: number, r: number, pred: (q: Unit) => boolean): Unit | null {
+    let best: Unit | null = null;
+    let bestD = r;
+    this.grid.forEachNear(x, z, r, (q) => {
+      const d = Math.hypot(wrapDelta(q.x - x, WORLD_SIZE), wrapDelta(q.z - z, WORLD_SIZE));
+      if (d < bestD && pred(q)) {
+        bestD = d;
+        best = q;
+      }
+    });
+    return best;
+  }
+
+  /** Is anyone passing `pred` strictly within `r` of (x, z)? */
+  anyUnitNear(x: number, z: number, r: number, pred: (q: Unit) => boolean): boolean {
+    let found = false;
+    this.grid.forEachNear(x, z, r, (q) => {
+      if (!found && Math.hypot(wrapDelta(q.x - x, WORLD_SIZE), wrapDelta(q.z - z, WORLD_SIZE)) < r && pred(q)) found = true;
+    });
+    return found;
+  }
+
   tick(dt: number): void {
     this.elapsed += dt;
+    this.tickExpansionsStart = pathStats.expansions;
+    this.grid.rebuild(this.units);
     tickChant(this, dt);
 
     for (const u of this.units) {
@@ -919,9 +991,11 @@ export class World implements SimQueries {
       return;
     }
 
+    // Out of search budget this tick: stay idle, ask again next tick (see IDLE_SEARCH_BUDGET).
+    const canSearch = this.canSearchIdle(u);
     if (u.kind === 'chanter' && u.tribe !== 'wild') {
-      if (u.task === 'none' && this.tryChant(u)) return;
-    } else if (isFighterKind(u.kind) && u.task === 'none') {
+      if (canSearch && u.task === 'none' && this.tryChant(u)) return;
+    } else if (isFighterKind(u.kind) && u.task === 'none' && canSearch) {
       // Soldiers on standby scan for trouble...
       if (this.acquireTarget(u)) return;
       // ...and if the tribe has no villagers left, billet in a dwelling
@@ -936,6 +1010,7 @@ export class World implements SimQueries {
       this.sendTo(u, home.x, home.z, 1200);
       return;
     }
+    if (!canSearch) return;
 
     if (u.kind === 'brave' && u.tribe !== 'wild' && u.task === 'none' && u.idleTime > 1.2) {
       if (this.assignWork(u)) return;
@@ -955,18 +1030,9 @@ export class World implements SimQueries {
 
   /** Chanters: start chanting if a hostile is in earshot, else close on one in sight. */
   private tryChant(u: Unit, approach = true): boolean {
-    let best: Unit | null = null;
-    let bestD: number = UNITS.chanter.sight;
-    for (const q of this.units) {
-      if (q.hidden || q.kind === 'chanter' || !this.hostile(u.tribe, q.tribe) || this.isUnreachable(u, `u${q.id}`)) continue;
-      const d = this.distTo(u, q.x, q.z);
-      if (d < bestD) {
-        bestD = d;
-        best = q;
-      }
-    }
+    const best = this.nearestUnit(u.x, u.z, UNITS.chanter.sight, (q) => q.kind !== 'chanter' && this.hostile(u.tribe, q.tribe) && !this.isUnreachable(u, `u${q.id}`));
     if (!best) return false;
-    if (bestD <= CHANT.pacifyRadius - 0.3) {
+    if (this.distTo(u, best.x, best.z) <= CHANT.pacifyRadius - 0.3) {
       this.abandonTask(u);
       u.task = 'chant';
       u.state = 'working';
@@ -1223,7 +1289,13 @@ export class World implements SimQueries {
       }
       case 'garrison': {
         const b = this.getBuilding(u.targetBuilding);
-        if (b && b.progress >= 1 && b.garrison.length < this.garrisonCap(b) && this.canGarrison(u, b)) {
+        // Only from beside the building. The route to the door was planned
+        // with no "nearest shore" allowance (orderGarrison), so getting here
+        // means the door's side; the door tile itself may be too steep to
+        // stand on, so the route can end a step or two away from it.
+        const door = b ? this.doorOf(b) : null;
+        const atDoor = !!b && !!door && this.distTo(u, door.x, door.z) < half(b) + 2.5;
+        if (b && atDoor && b.progress >= 1 && b.garrison.length < this.garrisonCap(b) && this.fitsGarrison(u, b)) {
           this.enter(u, b);
           b.garrison.push(u.id);
         } else this.abandonTask(u);
@@ -1403,16 +1475,10 @@ export class World implements SimQueries {
   private acquireTarget(u: Unit): boolean {
     if (u.pacified > 0) return false;
     const sight = UNITS[u.kind].sight;
-    let best: Unit | null = null;
-    let bestD: number = sight;
-    for (const q of this.units) {
-      if (q.hidden || !this.hostile(u.tribe, q.tribe) || this.isUnreachable(u, `u${q.id}`)) continue;
-      const d = this.distTo(u, q.x, q.z);
-      if (d < bestD) {
-        bestD = d;
-        best = q;
-      }
-    }
+    // Cheapest test first: distance (via the spatial hash), then allegiance,
+    // and only for someone actually in sight the unreachable-memory lookup
+    // (which builds a string key).
+    const best = this.nearestUnit(u.x, u.z, sight, (q) => this.hostile(u.tribe, q.tribe) && !this.isUnreachable(u, `u${q.id}`));
     if (best) {
       u.task = 'attack';
       u.targetUnit = best.id;
@@ -1434,9 +1500,7 @@ export class World implements SimQueries {
   }
 
   private enemySoldierNear(u: Unit, radius: number): boolean {
-    return this.units.some(
-      (q) => !q.hidden && this.hostile(u.tribe, q.tribe) && isFighterKind(q.kind) && this.distTo(u, q.x, q.z) < radius,
-    );
+    return this.anyUnitNear(u.x, u.z, radius, (q) => isFighterKind(q.kind) && this.hostile(u.tribe, q.tribe));
   }
 
   abandonTask(u: Unit): void {
@@ -1652,7 +1716,7 @@ export class World implements SimQueries {
     return b.kind === 'tower' ? ECONOMY.towerGarrison : b.kind === 'shrine' ? ECONOMY.shrineWorshippers : 0;
   }
 
-  private canGarrison(u: Unit, b: Building): boolean {
+  private fitsGarrison(u: Unit, b: Building): boolean {
     if (u.tribe !== b.tribe) return false;
     if (b.kind === 'tower') return isFighterKind(u.kind);
     if (b.kind === 'shrine') return u.kind === 'brave';
@@ -1809,16 +1873,7 @@ export class World implements SimQueries {
       if (u.attackCooldown > 0) continue;
       const stats = UNITS[u.kind];
       const reach = Math.max(stats.range, TOWER_BONUS.minRange) + TOWER_BONUS.range;
-      let best: Unit | null = null;
-      let bestD = reach;
-      for (const q of this.units) {
-        if (q.hidden || !this.hostile(b.tribe, q.tribe)) continue;
-        const d = Math.hypot(wrapDelta(q.x - b.x, WORLD_SIZE), wrapDelta(q.z - b.z, WORLD_SIZE));
-        if (d < bestD) {
-          bestD = d;
-          best = q;
-        }
-      }
+      const best = this.nearestUnit(b.x, b.z, reach, (q) => this.hostile(b.tribe, q.tribe));
       if (best) {
         u.attackCooldown = this.unitCooldown(u);
         this.events.push({ type: 'fireball', x: b.x, z: b.z, x2: best.x, z2: best.z });
@@ -1943,7 +1998,10 @@ export class World implements SimQueries {
       burning: 0,
       wardTime: 0,
     };
+    this.indexedBuildings();
     this.buildings.push(b);
+    this.buildingIndex.set(b.id, b);
+    this.buildingIndexLen++;
     this.blockFootprint(b);
     for (const t of this.trees) {
       if (Math.abs(wrapDelta(t.x - b.x, WORLD_SIZE)) <= half(b) && Math.abs(wrapDelta(t.z - b.z, WORLD_SIZE)) <= half(b)) {
@@ -2026,27 +2084,78 @@ export class World implements SimQueries {
     if (b) b.rally = { x: this.map.wrap(Math.round(x)), z: this.map.wrap(Math.round(z)) };
   }
 
-  orderGarrison(unitIds: number[], buildingId: number): void {
+  /** Seats left in a tower/shrine, counting those already on their way. */
+  private garrisonRoom(b: Building): number {
+    return this.garrisonCap(b) - b.garrison.length - this.countUnits((q) => q.task === 'garrison' && q.targetBuilding === b.id);
+  }
+
+  /**
+   * Would orderGarrison(unitIds, buildingId) put at least one of them
+   * inside? The UI asks this for its cursor instead of re-deriving the rule.
+   */
+  canGarrison(unitIds: number[], buildingId: number): boolean {
     const b = this.getBuilding(buildingId);
-    if (!b || b.progress < 1) return;
-    const cap = this.garrisonCap(b);
-    let reserved = b.garrison.length + this.countUnits((q) => q.task === 'garrison' && q.targetBuilding === b.id);
-    const door = this.doorOf(b);
-    for (const id of unitIds) {
-      if (reserved >= cap) break;
+    if (!b || b.progress < 1) return false;
+    const room = this.garrisonRoom(b) > 0;
+    return unitIds.some((id) => {
       const u = this.unitById(id);
-      if (!u || u.hidden || !this.canGarrison(u, b)) continue;
-      if (u.task === 'garrison' && u.targetBuilding === b.id) continue;
+      if (!u || u.hidden || !this.fitsGarrison(u, b)) return false;
+      return room || (u.task === 'garrison' && u.targetBuilding === b.id);
+    });
+  }
+
+  /**
+   * Send people into a tower (fighters) or shrine (villagers). Returns who
+   * was taken (`accepted`, including anyone already on the way) and who
+   * was not (`refused`: the wrong kind, no room left, or no path to the
+   * door). For the player, refusal is never silent: the refused walk up to
+   * the door anyway and a 'denied' cue plays when anyone who fits was
+   * turned away (or nobody was taken at all).
+   */
+  orderGarrison(unitIds: number[], buildingId: number): { accepted: number[]; refused: number[] } {
+    const accepted: number[] = [];
+    const refused: number[] = [];
+    const b = this.getBuilding(buildingId);
+    if (!b || b.progress < 1) return { accepted, refused: [...unitIds] };
+    let room = this.garrisonRoom(b);
+    const door = this.doorOf(b);
+    let fitTurnedAway = false;
+    for (const id of unitIds) {
+      const u = this.unitById(id);
+      if (!u || u.hidden) continue;
+      if (u.task === 'garrison' && u.targetBuilding === b.id) {
+        accepted.push(id);
+        continue;
+      }
+      const fits = this.fitsGarrison(u, b);
+      if (!fits || room <= 0) {
+        refused.push(id);
+        if (fits) fitTurnedAway = true;
+        continue;
+      }
       this.abandonTask(u);
       u.task = 'garrison';
       u.targetBuilding = b.id;
-      reserved++;
       if (this.distTo(u, door.x, door.z) < 0.6) this.onArrive(u);
-      else if (!this.sendTo(u, door.x, door.z)) {
+      // shoreRadius 0: across water the door is unreachable, not "near enough".
+      else if (!this.sendTo(u, door.x, door.z, b.tribe === 'player' ? World.PLAYER_EXPANSIONS : 4000, 0)) {
         this.abandonTask(u);
-        reserved--;
+        refused.push(id);
+        fitTurnedAway = true;
+        continue;
       }
+      accepted.push(id);
+      room--;
     }
+    if (b.tribe === 'player') {
+      const walkers = refused.map((id) => this.unitById(id)!).filter((u) => u && u.tribe === 'player');
+      if (walkers.length) {
+        for (const u of walkers) this.abandonTask(u);
+        this.groupMove(walkers, door.x, door.z + 1.5, World.PLAYER_EXPANSIONS);
+      }
+      if (fitTurnedAway || (accepted.length === 0 && unitIds.length > 0)) this.events.push({ type: 'denied', x: b.x, z: b.z });
+    }
+    return { accepted, refused };
   }
 
   ejectGarrison(buildingId: number): void {
@@ -2133,34 +2242,125 @@ export class World implements SimQueries {
     return true;
   }
 
+  /**
+   * Move a group to (tx, tz). See groupMove(); the player hears 'denied'
+   * if any of the group could not be routed at all.
+   */
   orderMove(ids: number[], tx: number, tz: number): void {
-    let slot = 0;
-    let moved = 0;
-    let refused: Unit | null = null;
+    const units: Unit[] = [];
     for (const id of ids) {
-      const u = this.units.find((q) => q.id === id);
+      const u = this.unitById(id);
       if (!u || u.hidden) continue;
       this.abandonTask(u);
-      let ox = 0;
-      let oz = 0;
-      if (slot > 0) {
-        let ring = 1;
-        let first = 1;
-        while (slot >= first + 6 * ring) {
-          first += 6 * ring;
-          ring++;
-        }
-        const a = ((slot - first) / (6 * ring)) * Math.PI * 2;
-        ox = Math.cos(a) * 1.6 * ring;
-        oz = Math.sin(a) * 1.6 * ring;
-      }
-      // A move across water walks to the nearest shore facing it (a player
-      // clicking the sea on the minimap still sees their people go).
-      if (this.sendTo(u, Math.round(tx + ox), Math.round(tz + oz), 4000, 24)) moved++;
-      else if (!refused) refused = u;
-      slot++;
+      units.push(u);
     }
-    if (moved === 0 && refused && refused.tribe === 'player') this.events.push({ type: 'denied', x: tx, z: tz });
+    const refused = this.groupMove(units, tx, tz, units[0]?.tribe === 'player' ? World.PLAYER_EXPANSIONS : 4000);
+    if (refused.length > 0 && refused[0].tribe === 'player') this.events.push({ type: 'denied', x: tx, z: tz });
+  }
+
+  /** Search budget for a fallback per-unit path on a player's order (bigger than the AI's). */
+  private static readonly PLAYER_EXPANSIONS = 12000;
+
+  /**
+   * GROUP MOVEMENT. One path search for the whole group, then a formation
+   * slot for each member near the mark:
+   *
+   *   1. Group by the region (island) each unit stands on. Usually one.
+   *      For a group whose island isn't the mark's, the goal becomes the
+   *      nearest shore of THEIR island facing the mark (a player clicking
+   *      the sea still sees their people go).
+   *   2. One flow field (pathfinding.ts flowField) from that goal out to
+   *      every member: each unit's route to the mark falls out of it.
+   *   3. Slots: hexagonal rings 1.6 tiles apart around the goal; whoever
+   *      is nearest gets the innermost slot, so the column doesn't cross
+   *      itself on arrival.
+   *   4. Each unit follows the shared route until it reaches the edge of
+   *      the gathering area, then a short "join" path to its own slot.
+   *
+   * Anyone the field didn't reach (walled in by buildings, say) falls back
+   * to their own A* with `fallbackBudget`. Returns the units that could
+   * not be routed at all.
+   */
+  groupMove(units: Unit[], tx: number, tz: number, fallbackBudget = 4000): Unit[] {
+    const refused: Unit[] = [];
+    if (units.length === 0) return refused;
+    const groups = new Map<number, Unit[]>();
+    for (const u of units) {
+      const r = regionAt(this.map, Math.round(u.x), Math.round(u.z)) ?? 0;
+      const list = groups.get(r);
+      if (list) list.push(u);
+      else groups.set(r, [u]);
+    }
+    const gx = this.map.wrap(Math.round(tx));
+    const gz = this.map.wrap(Math.round(tz));
+    for (const [region, members] of groups) {
+      let goal: { x: number; z: number } | null = { x: gx, z: gz };
+      const goalTile = findNearestWalkable(this.map, gx, gz);
+      if (region && (!goalTile || regionAt(this.map, goalTile.x, goalTile.z) !== region)) {
+        goal = findNearestWalkable(this.map, gx, gz, 24, (x, z) => regionAt(this.map, x, z) === region);
+      }
+      if (!goal) {
+        refused.push(...members);
+        continue;
+      }
+      const field = flowField(this.map, goal.x, goal.z, members);
+      const order = members
+        .map((u) => ({ u, cost: field ? field.costFrom(u.x, u.z) : Infinity }))
+        .sort((a, b) => a.cost - b.cost);
+      // Every route first, then the joins: a join is a small A*, and the
+      // field's scratch stays valid regardless (separate arrays).
+      for (let slot = 0; slot < order.length; slot++) {
+        const { u, cost } = order[slot];
+        const { ox, oz, ring } = World.formationSlot(slot);
+        const sx = this.map.wrap(Math.round(goal.x + ox));
+        const sz = this.map.wrap(Math.round(goal.z + oz));
+        const route = field && cost < Infinity ? field.pathFrom(u.x, u.z) : null;
+        if (!route) {
+          // The field searches until it reaches everyone or runs out of
+          // ground, so a member it missed has no route at all (the mark is
+          // walled in by buildings, say): refuse at once rather than prove it
+          // again with a full A* per unit. Only when there was no field (no
+          // walkable ground near the mark) does each unit try its own search.
+          if (field || !this.sendTo(u, goal.x, goal.z, fallbackBudget, 24)) refused.push(u);
+          continue;
+        }
+        // Leave the shared route where it enters the gathering area.
+        const gather = ring * 1.6 + 2.5;
+        let cut = route.length;
+        for (let i = 0; i < route.length; i++) {
+          if (Math.hypot(wrapDelta(route[i].x - goal.x, WORLD_SIZE), wrapDelta(route[i].z - goal.z, WORLD_SIZE)) <= gather) {
+            cut = i;
+            break;
+          }
+        }
+        const from = cut > 0 ? route[cut - 1] : { x: u.x, z: u.z };
+        const join = slot === 0 ? null : findPath(this.map, from.x, from.z, sx, sz, 400, 3);
+        const path = join ? [...route.slice(0, cut), ...join] : route;
+        if (path.length === 0) {
+          if (!this.sendTo(u, sx, sz, 400, 3)) u.state = 'idle'; // already standing on the mark
+          continue;
+        }
+        u.path = path;
+        u.pathIndex = 0;
+        const end = path[path.length - 1];
+        u.goal = { x: end.x, z: end.z };
+        u.state = 'moving';
+      }
+    }
+    return refused;
+  }
+
+  /** Offset of formation slot `slot`: 0 is the mark itself, then hexagonal rings 1.6 tiles apart. */
+  static formationSlot(slot: number): { ox: number; oz: number; ring: number } {
+    if (slot === 0) return { ox: 0, oz: 0, ring: 0 };
+    let ring = 1;
+    let first = 1;
+    while (slot >= first + 6 * ring) {
+      first += 6 * ring;
+      ring++;
+    }
+    const a = ((slot - first) / (6 * ring)) * Math.PI * 2;
+    return { ox: Math.cos(a) * 1.6 * ring, oz: Math.sin(a) * 1.6 * ring, ring };
   }
 
   /** Send a leader to commune at a monument. Only leaders can worship. */
@@ -2168,7 +2368,7 @@ export class World implements SimQueries {
     const m = this.monuments[monumentIdx];
     if (!m || !this.monumentAvailable(m)) return;
     for (const id of ids) {
-      const u = this.units.find((q) => q.id === id);
+      const u = this.unitById(id);
       if (!u || u.hidden || u.kind !== 'shaman') continue;
       this.abandonTask(u);
       u.task = 'worship';
@@ -2185,7 +2385,7 @@ export class World implements SimQueries {
     if (!target) return;
     const movers: number[] = [];
     for (const id of ids) {
-      const u = this.units.find((q) => q.id === id);
+      const u = this.unitById(id);
       if (!u || u.hidden) continue;
       if (UNITS[u.kind].dmg > 0 && this.hostile(u.tribe, target.tribe)) {
         this.abandonTask(u);
@@ -2225,8 +2425,44 @@ export class World implements SimQueries {
     return Math.hypot(wrapDelta(x - u.x, WORLD_SIZE), wrapDelta(z - u.z, WORLD_SIZE));
   }
 
+  // --- O(1) id lookups ------------------------------------------------------
+  // unitById/getBuilding are called from every hot path (orders, garrisons,
+  // targets, the UI each frame). They read a Map from id to object. The map
+  // is checked against the array it indexes — same array object, same
+  // length — and rebuilt in one pass when they differ, so every way the
+  // arrays change stays covered without bookkeeping at each site: spawning
+  // extends the index directly; deaths, demolitions and save/resume
+  // replace the array (filter / assignment), which the identity check
+  // catches; a splice changes the length, which the length check catches.
+  private unitIndex = new Map<number, Unit>();
+  private unitIndexOf: Unit[] | null = null;
+  private unitIndexLen = -1;
+  private buildingIndex = new Map<number, Building>();
+  private buildingIndexOf: Building[] | null = null;
+  private buildingIndexLen = -1;
+
+  private indexedUnits(): Map<number, Unit> {
+    if (this.unitIndexOf !== this.units || this.unitIndexLen !== this.units.length) {
+      this.unitIndex.clear();
+      for (const u of this.units) this.unitIndex.set(u.id, u);
+      this.unitIndexOf = this.units;
+      this.unitIndexLen = this.units.length;
+    }
+    return this.unitIndex;
+  }
+
+  private indexedBuildings(): Map<number, Building> {
+    if (this.buildingIndexOf !== this.buildings || this.buildingIndexLen !== this.buildings.length) {
+      this.buildingIndex.clear();
+      for (const b of this.buildings) this.buildingIndex.set(b.id, b);
+      this.buildingIndexOf = this.buildings;
+      this.buildingIndexLen = this.buildings.length;
+    }
+    return this.buildingIndex;
+  }
+
   unitById(id: number): Unit | undefined {
-    return this.units.find((u) => u.id === id);
+    return this.indexedUnits().get(id);
   }
 
   countUnits(pred: (u: Unit) => boolean): number {
@@ -2236,7 +2472,7 @@ export class World implements SimQueries {
   }
 
   getBuilding(id: number): Building | undefined {
-    return this.buildings.find((b) => b.id === id);
+    return this.indexedBuildings().get(id);
   }
 
   private nearestChoppableTree(u: Unit): number {
@@ -2298,7 +2534,10 @@ export class World implements SimQueries {
       chantBy: -1,
       chantProgress: 0,
     };
+    this.indexedUnits(); // bring the index up to date BEFORE the push, so it can be extended
     this.units.push(u);
+    this.unitIndex.set(u.id, u);
+    this.unitIndexLen++;
     return u;
   }
 

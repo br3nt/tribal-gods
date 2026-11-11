@@ -38,11 +38,18 @@
  * (src/ui) should prefer it over the sim's (x, z) + ground height; it is
  * not wired into the UI yet.
  *
- * Sim fields read DEFENSIVELY (the v2 sim adds them; absent = default):
- *   u.maxHp, u.garrison (building id, −1 none), u.wardTime, u.warsongTime,
- *   u.pacified, u.chantBy, u.praying, u.cheer, u.chanting;
- *   b.kind 'tower' / 'shrine' for garrisoned figures shown on the platform
- *   or kneeling round the altar; world.gameOver for victory cheers.
+ * Status (unit-visual-state.ts decides; this file draws):
+ *   u.lifted      — caught in a cyclone: the figure is snatched up, spins,
+ *                   tumbles, and its fling (the sim teleports it) is glided
+ *                   into a flight; dropped, it falls back with gravity.
+ *   u.pacified    — a hostile chant holds it: slack pose, no strikes.
+ *   u.wardTime    — Stone Ward: a shared stone-sheen material variant.
+ *   u.warsongTime — Warsong: a shared red-gold variant; movers run.
+ *   u.garrison    — tower lookouts on the platform, shrine worshippers
+ *                   kneeling round the altar.
+ *   Chanters with task 'chant' chant; idle villagers cheer near a recruit
+ *   trained or an objective met (world.events, read before effects drains
+ *   them), and on world.gameOver for the winning side.
  */
 
 import * as THREE from 'three';
@@ -50,12 +57,14 @@ import { CIVS, TILE, WORLD_SIZE } from '../config';
 import { curvatureDrop } from '../world/curvature';
 import { wrapDelta } from '../core/util';
 import { buildUnitModel, FigureModel } from '../assets/models/registry';
-import { decalMaterial, disposeModelMaterial, fadeCopy, tickModelMaterials } from '../assets/models/materials';
+import { decalMaterial, disposeModelMaterial, fadeCopy, tickModelMaterials, tintedMaterial } from '../assets/models/materials';
 import { garrisonSpot } from '../assets/models/buildings/index';
 import { spellDef, TRIBE_COLORS, Tribe, UNITS, UnitKind } from '../sim/catalog';
-import { AnimInput, ClipName, FigureAnimator, runThreshold } from './figure-animator';
+import { AnimInput, FigureAnimator, runThreshold } from './figure-animator';
+import { UNIT_STATUS } from './look';
 import { ParticlePool } from './model-particles';
-import { Unit, World } from '../sim/world-state';
+import { Building, Unit, World } from '../sim/world-state';
+import { cheerersFor, ClipContext, pickClip, StatusTint, statusTint } from './unit-visual-state';
 
 const WORLD_UNITS = WORLD_SIZE * TILE;
 /** Beyond this (world units from the camera target) figures are over the horizon. */
@@ -64,15 +73,15 @@ const VIEW_RADIUS = 150;
 const LOD1 = 70;
 const LOD2 = 105;
 
-type AnyUnit = Unit & Record<string, unknown>;
-const num = (u: AnyUnit, k: string, d: number): number => (typeof u[k] === 'number' ? (u[k] as number) : d);
+/** How long a cheer lasts (seconds). */
+const CHEER_SECONDS = 2.4;
 
 interface Entry {
   fig: FigureModel;
   anim: FigureAnimator;
   ring: THREE.Mesh;
-  kind: string;
-  tribe: string;
+  kind: UnitKind;
+  tribe: Tribe;
   lastHp: number;
   /** Last rendered world position (for measured speed). */
   px: number;
@@ -91,6 +100,17 @@ interface Entry {
   drawnFrame: number;
   /** Animation input, refilled every frame. */
   inp: AnimInput;
+  /** Cyclone: 0 on the ground … 1 fully aloft, its fall speed, and the glide offset (tiles) hiding the sim's fling teleport. */
+  lift: number;
+  liftV: number;
+  ox: number;
+  oz: number;
+  /** Sim position last frame (to spot a fling). */
+  simX: number;
+  simZ: number;
+  /** The figure's own materials, and which status variant it wears. */
+  baseMats: THREE.Material[];
+  tint: StatusTint;
 }
 
 /** Where a unit is drawn: world-space feet (bent, nearest image) and tile coords. */
@@ -113,7 +133,7 @@ interface Ghost {
   tz: number;
   yaw: number;
   fade: THREE.Material[] | null;
-  tribe: string;
+  tribe: Tribe;
   /** Fractional wisp emission carried between frames. */
   wispAcc: number;
 }
@@ -127,9 +147,10 @@ const GHOST_DIE: AnimInput = { clip: 'die', speed: 0, turnRate: 0 };
 const GHOST_DROWN: AnimInput = { clip: 'drown', speed: 0, turnRate: 0 };
 const GHOST_CAST: AnimInput = { clip: 'cast', speed: 0, turnRate: 0 };
 
+/** A tribe's civilisation look (wild folk, and tribes not in play, dress forest). */
 function civOf(world: World, tribe: Tribe) {
-  const t = (world.tribes as Record<string, { civ?: string } | undefined>)[tribe];
-  return CIVS[(t?.civ ?? 'forest') as keyof typeof CIVS] ?? CIVS.forest;
+  const t = tribe === 'wild' ? undefined : world.tribes[tribe];
+  return CIVS[t?.civ ?? 'forest'];
 }
 
 export class UnitRenderer {
@@ -144,7 +165,11 @@ export class UnitRenderer {
   private readonly sphere = new THREE.Sphere();
   /** Reused every frame (no per-frame allocation). */
   private readonly live = new Set<number>();
-  private readonly buildingsById = new Map<number, { kind: string; x: number; z: number; garrison?: number[] }>();
+  private readonly buildingsById = new Map<number, Building>();
+  /** Unit id → render-clock time its cheer ends. */
+  private readonly cheerUntil = new Map<number, number>();
+  private clock = 0;
+  private readonly clipCtx: ClipContext = { garrisonKind: null, inWater: false, speed: 0, runSpeed: 0, cheering: false, winner: null };
   /** Tribe-coloured wisps rising from the dead. */
   private readonly wisps: ParticlePool;
 
@@ -160,10 +185,10 @@ export class UnitRenderer {
     this.camera = camera;
   }
 
-  private ringMat(tribe: string): THREE.Material {
+  private ringMat(tribe: Tribe): THREE.Material {
     let m = this.ringMats.get(tribe);
     if (!m) {
-      const c = new THREE.Color(TRIBE_COLORS[tribe as Tribe] ?? 0xffe9a8).lerp(new THREE.Color(0xffffff), 0.45);
+      const c = new THREE.Color(TRIBE_COLORS[tribe]).lerp(new THREE.Color(0xffffff), 0.45);
       m = decalMaterial(c.getHex(), 0.9);
       this.ringMats.set(tribe, m);
     }
@@ -184,11 +209,15 @@ export class UnitRenderer {
     live.clear();
     const buildingsById = this.buildingsById;
     buildingsById.clear();
-    for (const b of world.buildings) buildingsById.set(b.id, b as never);
-    const winner = (world as unknown as { gameOver?: string | null }).gameOver;
+    for (const b of world.buildings) buildingsById.set(b.id, b);
+    this.clock += dt;
+    // Good news nearby: idle villagers cheer. (Effects drains the events later this frame.)
+    if (world.events.length) {
+      for (const id of cheerersFor(world.events, world.units, world.buildings)) this.cheerUntil.set(id, this.clock + CHEER_SECONDS);
+    }
+    const winner = world.gameOver;
 
-    for (const raw of world.units) {
-      const u = raw as AnyUnit;
+    for (const u of world.units) {
       live.add(u.id);
       let e = this.entries.get(u.id);
 
@@ -200,11 +229,10 @@ export class UnitRenderer {
       }
 
       // Garrisoned figures we still SHOW: tower lookouts and shrine worshippers.
-      const gid = num(u, 'garrison', -1);
-      const gb = gid >= 0 ? buildingsById.get(gid) : undefined;
+      const gb = u.garrison >= 0 ? buildingsById.get(u.garrison) : undefined;
       let spot: { x: number; z: number; y: number; yaw: number } | null = null;
       if (u.hidden && gb && (gb.kind === 'tower' || gb.kind === 'shrine')) {
-        const idx = Math.max(0, (gb.garrison ?? []).indexOf(u.id));
+        const idx = Math.max(0, gb.garrison.indexOf(u.id));
         spot = garrisonSpot(gb.kind, idx);
       }
       if (u.hidden && !spot) {
@@ -216,7 +244,7 @@ export class UnitRenderer {
       }
 
       if (!e) {
-        const fig = buildUnitModel(u.kind, u.tribe as Tribe, civOf(world, u.tribe as Tribe), u.id);
+        const fig = buildUnitModel(u.kind, u.tribe, civOf(world, u.tribe), u.id);
         const ring = new THREE.Mesh(this.ringGeo, this.ringMat(u.tribe));
         ring.renderOrder = 1;
         ring.visible = false;
@@ -226,6 +254,8 @@ export class UnitRenderer {
           fig, anim: new FigureAnimator(fig, u.id), ring, kind: u.kind, tribe: u.tribe, lastHp: u.hp,
           px: NaN, pz: NaN, speed: 0, yaw: u.heading, turn: 0, lodTick: u.id % 3, accDt: 0, tx: u.x, tz: u.z, inWater: false,
           drawn: new THREE.Vector3(), drawnFrame: -1, inp: { clip: 'idle', speed: 0, turnRate: 0 },
+          lift: 0, liftV: 0, ox: 0, oz: 0, simX: u.x, simZ: u.z,
+          baseMats: fig.meshes.map((m) => m.material as THREE.Material), tint: 'none',
         };
         this.entries.set(u.id, e);
       }
@@ -234,6 +264,33 @@ export class UnitRenderer {
       let ix = u.prevX + wrapDelta(u.x - u.prevX, WORLD_SIZE) * alpha;
       let iz = u.prevZ + wrapDelta(u.z - u.prevZ, WORLD_SIZE) * alpha;
       let heading = u.heading;
+      // Cyclone: snatched up while lifted, then a gravity drop. The sim
+      // teleports a flung unit; glide that jump into a flight instead.
+      const jx = wrapDelta(u.x - e.simX, WORLD_SIZE);
+      const jz = wrapDelta(u.z - e.simZ, WORLD_SIZE);
+      e.simX = u.x;
+      e.simZ = u.z;
+      if (spot) {
+        e.lift = e.liftV = e.ox = e.oz = 0;
+      } else {
+        if ((u.lifted > 0 || e.lift > 0) && jx * jx + jz * jz > 0.25) {
+          e.ox -= jx;
+          e.oz -= jz;
+        }
+        const glide = Math.exp(-dt * UNIT_STATUS.flingGlide);
+        e.ox *= glide;
+        e.oz *= glide;
+        if (u.lifted > 0) {
+          e.lift += (1 - e.lift) * Math.min(1, dt * UNIT_STATUS.liftRise);
+          e.liftV = 0;
+        } else if (e.lift > 0) {
+          e.liftV += dt * UNIT_STATUS.liftFall;
+          e.lift = Math.max(0, e.lift - e.liftV * dt);
+          if (e.lift === 0) e.liftV = 0;
+        }
+        ix += e.ox;
+        iz += e.oz;
+      }
       if (spot && gb) {
         ix = gb.x + spot.x / TILE;
         iz = gb.z + spot.z / TILE;
@@ -249,11 +306,13 @@ export class UnitRenderer {
       const wx = camTarget.x + relX;
       const wz = camTarget.z + relZ;
       const ground = world.map.sampleHeight(ix, iz);
-      const inWater = ground < -0.25 && !spot;
+      const inWater = ground < -0.25 && !spot && e.lift < 0.05;
       e.inWater = inWater;
       let y = spot ? world.map.heightAt(Math.round(gb!.x), Math.round(gb!.z)) + spot.y : Math.max(ground, inWater ? -0.9 - 0.1 * Math.sin(this.frame * 0.1 + u.id) : 0);
       // 4. CURVE
       y -= curvatureDrop(relX, relZ);
+      const groundY = y;
+      if (e.lift > 0) y += e.lift * (UNIT_STATUS.liftHeight + 0.35 * Math.sin(this.clock * 3.1 + u.id));
 
       // measured speed (world units/s) for foot sync
       if (dt > 0 && !Number.isNaN(e.px)) {
@@ -278,18 +337,34 @@ export class UnitRenderer {
       if (!visible) continue;
 
       e.fig.root.position.set(wx, y, wz);
-      // face the heading, the short way round; remember the turn rate for leaning
-      const dyaw = wrapDelta(heading - e.yaw, Math.PI * 2) * Math.min(1, dt * 9);
-      e.yaw += dyaw;
-      e.turn += ((dt > 0 ? dyaw / dt : 0) - e.turn) * Math.min(1, dt * 8);
+      // face the heading, the short way round; remember the turn rate for
+      // leaning. Aloft in a cyclone the figure spins instead.
+      if (e.lift > 0.05) {
+        e.yaw = (e.yaw + dt * UNIT_STATUS.liftSpin * e.lift) % (Math.PI * 2);
+        e.turn = 0;
+      } else {
+        const dyaw = wrapDelta(heading - e.yaw, Math.PI * 2) * Math.min(1, dt * 9);
+        e.yaw += dyaw;
+        e.turn += ((dt > 0 ? dyaw / dt : 0) - e.turn) * Math.min(1, dt * 8);
+      }
       e.fig.root.rotation.y = e.yaw;
+
+      // Stone Ward / Warsong: swap to a shared tinted variant.
+      const tint = statusTint(u);
+      if (tint !== e.tint) {
+        e.tint = tint;
+        const base = e.baseMats;
+        e.fig.meshes.forEach((m, i) => {
+          m.material = tint === 'none' ? base[i] : tintedMaterial(base[i], tint, UNIT_STATUS[tint]);
+        });
+      }
 
       // hit flinch
       if (u.hp < e.lastHp - 0.01) e.anim.flinch();
       e.lastHp = u.hp;
 
       // 5. ANIMATE (with LOD)
-      const inp = this.chooseClip(u, e, spot ? (gb!.kind as string) : null, winner ?? null);
+      const inp = this.chooseClip(u, e, spot ? gb!.kind : null, winner);
       const lodEvery = d2 > LOD2 * LOD2 ? 3 : d2 > LOD1 * LOD1 ? 2 : 1;
       e.accDt += dt;
       e.lodTick++;
@@ -309,7 +384,7 @@ export class UnitRenderer {
       }
 
       if (e.ring.visible) {
-        e.ring.position.set(wx, y + 0.08, wz);
+        e.ring.position.set(wx, groundY + 0.08, wz);
         tiltToGround(e.ring, world, ix, iz);
       }
     }
@@ -319,6 +394,7 @@ export class UnitRenderer {
     let vanished = 0;
     for (const id of this.entries.keys()) if (!live.has(id)) vanished++;
     const reset = vanished > 6 && vanished > live.size * 0.5;
+    for (const [id, until] of this.cheerUntil) if (!live.has(id) || until < this.clock) this.cheerUntil.delete(id);
     for (const [id, e] of this.entries) {
       if (live.has(id)) continue;
       this.entries.delete(id);
@@ -360,58 +436,22 @@ export class UnitRenderer {
     return v;
   }
 
-  /** Map sim state → clip. */
-  private chooseClip(u: AnyUnit, e: Entry, garrisonKind: string | null, winner: string | null): AnimInput {
-    const speed = e.speed;
-    const turnRate = e.turn;
-    const kind = u.kind as string;
-    const task = u.task as string;
-    const def = UNITS[u.kind as UnitKind];
-    let clip: ClipName = 'idle';
-    let phase: number | undefined;
-    let period: number | undefined;
-    if (garrisonKind === 'shrine') clip = 'pray';
-    else if (garrisonKind === 'tower') clip = 'idle';
-    else if (e.inWater) clip = 'drown';
-    else if (u.state === 'fighting' || task === 'attack' && u.state !== 'moving') {
-      if (kind === 'chanter') clip = 'chant';
-      else if (kind === 'firewarrior') clip = 'throw';
-      else if (kind === 'shaman' || kind === 'wildman') clip = 'idle';
-      else clip = 'attack';
-      const cool = def?.cooldown ?? 1.2;
-      if (cool > 0 && clip !== 'chant') {
-        // phase 0 at the sim's strike moment → our clip's impact frame
-        const impact = clip === 'throw' ? 0.6 : 0.5;
-        phase = (1 - THREE.MathUtils.clamp(u.attackCooldown / cool, 0, 1) + impact) % 1;
-      }
-    } else if (u.state === 'working') {
-      if (u.castSpell) {
-        clip = 'cast';
-        try {
-          period = spellDef(u.castSpell as never)?.castSeconds;
-        } catch {
-          period = undefined;
-        }
-      } else if (task === 'chop') clip = 'chop';
-      else if (task === 'worship') clip = 'pray';
-      else if (task === 'chant' || kind === 'chanter') clip = 'chant';
-      else clip = 'build';
-    } else if (u.state === 'moving') {
-      if (u.carrying) clip = 'carry';
-      else clip = speed > runThreshold(e.fig) || num(u, 'warsongTime', 0) > 0 ? 'run' : 'walk';
-    } else {
-      if (u['praying']) clip = 'pray';
-      else if (u['chanting'] || task === 'chant') clip = 'chant';
-      else if (num(u, 'cheer', 0) > 0 || (winner && winnerMatches(winner, u.tribe))) clip = 'cheer';
-    }
-    // still moving visibly but sim says idle (end of path) → let the blend handle it
-    if (clip === 'idle' && speed > 1.2 && !garrisonKind) clip = 'walk';
+  /** Map sim state → clip (the decision lives in unit-visual-state.ts). */
+  private chooseClip(u: Unit, e: Entry, garrisonKind: string | null, winner: World['gameOver']): AnimInput {
+    const c = this.clipCtx;
+    c.garrisonKind = garrisonKind;
+    c.inWater = e.inWater;
+    c.speed = e.speed;
+    c.runSpeed = runThreshold(e.fig);
+    c.cheering = (this.cheerUntil.get(u.id) ?? -1) >= this.clock;
+    c.winner = winner;
+    const pick = pickClip(u, c);
     const inp = e.inp;
-    inp.clip = clip;
-    inp.speed = speed;
-    inp.turnRate = turnRate;
-    inp.phase = phase;
-    inp.period = period;
+    inp.clip = pick.clip;
+    inp.speed = e.speed;
+    inp.turnRate = e.turn;
+    inp.phase = pick.phase;
+    inp.period = pick.clip === 'cast' && u.castSpell ? spellDef(u.castSpell).castSeconds : undefined;
     return inp;
   }
 
@@ -433,7 +473,7 @@ export class UnitRenderer {
         if (k <= 0) for (const m of g.fig.meshes) m.visible = false;
         if (g.t > DIE_LIE - 0.2 && g.t < DIE_LIE + DIE_FADE) {
           g.wispAcc += dt * 34;
-          const col = TRIBE_COLORS[g.tribe as Tribe] ?? 0xffe9a8;
+          const col = TRIBE_COLORS[g.tribe];
           const s = g.fig.scale;
           for (; g.wispAcc >= 1; g.wispAcc--) {
             // the body lies along local −Z (it falls backward): spread along it
@@ -490,7 +530,7 @@ export class UnitRenderer {
     camTarget: THREE.Vector3,
     camera: THREE.Camera,
   ): { x: number; y: number } | null {
-    const h = UNITS[u.kind as UnitKind]?.height ?? 2.3;
+    const h = UNITS[u.kind]?.height ?? 2.3;
     const v = _proj;
     const e = this.entries.get(u.id);
     if (e && e.drawnFrame === this.frame && e.fig.root.visible) {
@@ -505,13 +545,6 @@ export class UnitRenderer {
     if (v.z > 1) return null;
     return { x: (v.x + 1) * 0.5 * innerWidth, y: (1 - v.y) * 0.5 * innerHeight };
   }
-}
-
-function winnerMatches(gameOver: string, tribe: string): boolean {
-  // Old sim: 'victory' = the player won, 'defeat' = the player lost. Newer sims may name the tribe.
-  if (gameOver === 'victory') return tribe === 'player';
-  if (gameOver === 'defeat') return tribe !== 'player' && tribe !== 'wild';
-  return gameOver === tribe;
 }
 
 const _n = new THREE.Vector3();

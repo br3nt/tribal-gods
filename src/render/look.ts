@@ -265,3 +265,25 @@ export const CAMERA = {
   near: 0.5,
   far: 900,
 };
+
+// ---------------------------------------------------------------------------
+// Figures under spells (unit-renderer.ts). Tints multiply the vertex colours
+// of a shared material variant, so they stay cheap for hundreds of people.
+// ---------------------------------------------------------------------------
+
+export const UNIT_STATUS = {
+  /** Stone Ward: a cool, faintly polished stone sheen. */
+  ward: { color: 0xdde4ee, emissive: 0x0c1218, desaturate: 0.7, roughnessShift: -0.4, metalnessShift: 0.15, rim: 0x8aa4c0 },
+  /** Warsong: a red-gold flush. */
+  warsong: { color: 0xffd2a6, emissive: 0x2a0c02, desaturate: 0, roughnessShift: -0.1, metalnessShift: 0, rim: 0xd2601e },
+  /** Both at once: the stone sheen, warmed red-gold. */
+  both: { color: 0xf0d2b4, emissive: 0x1c0c04, desaturate: 0.45, roughnessShift: -0.3, metalnessShift: 0.15, rim: 0xc8783a },
+  /** Cyclone: how high a caught figure is carried (world units), how fast it spins (rad/s). */
+  liftHeight: 3.4,
+  liftSpin: 9,
+  /** Rates (1/s) at which a figure is snatched up / falls back down. */
+  liftRise: 5,
+  liftFall: 3.2,
+  /** Rate (1/s) at which a fling's teleport is smoothed into a flight. */
+  flingGlide: 3.5,
+};

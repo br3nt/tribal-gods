@@ -14,7 +14,7 @@ import { TRIBE_COLORS as CATALOG_TRIBE_COLORS } from './sim/catalog';
 /**
  * The world is a square grid of height values, WORLD_SIZE tiles on a side,
  * that wraps at both edges (see world/heightmap.ts for why that makes a
- * "planet"). The original game used roughly this size. Bigger = a larger
+ * "planet"). 128 tiles a side is enough for a small planet. Bigger = a larger
  * planet that takes longer to walk around; must stay a power of two so the
  * tileable noise octaves in heightmap generation divide it evenly.
  */
@@ -66,8 +66,8 @@ export const CAM_DIST_MAX = 130;
 
 /**
  * Camera pitch (radians above the horizon) at min / max zoom. Low and
- * cinematic up close, high and god-like zoomed out — exactly the original's
- * feel of swooping down into your village.
+ * cinematic up close, high and god-like zoomed out — the feel of swooping down
+ * into your village.
  */
 export const CAM_PITCH_MIN = 0.6; // ~34° when zoomed in
 export const CAM_PITCH_MAX = 1.1; // ~63° when zoomed out
@@ -118,8 +118,8 @@ export const CIVS: Record<CivId, Civ> = {
   forest: {
     id: 'forest',
     name: 'Forest Tribe',
-    leaderTitle: 'the Shaman',
-    blurb: 'Thatch, totems, and the old ways. The classic.',
+    leaderTitle: 'the Grove-Speaker',
+    blurb: 'Thatch, totems, and a leader who listens to the trees.',
     roof: 'thatch',
     roofColor: 0xc9a84c,
     wallColor: 0xb08d5e,
@@ -274,7 +274,7 @@ export const BRUSH_RATE = 10;
 export const FLATTEN_RATE = 4;
 
 // ---------------------------------------------------------------------------
-// Palette — the painted, saturated 1998 look lives in these numbers
+// Palette — the painted, saturated look lives in these numbers
 // ---------------------------------------------------------------------------
 
 export const COLOR_SKY = 0x8db8d8;

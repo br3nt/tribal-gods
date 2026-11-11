@@ -11,7 +11,7 @@
  * falls over the horizon in every direction — which is exactly what standing
  * on a small sphere looks like. Combined with the wrapping heightmap (walk
  * far enough and you come back around), the brain happily concludes:
- * "planet". Bullfrog shipped this trick in 1998 and nobody questioned it.
+ * "planet". Many classic 3D games used this cheap trick and few players ever noticed.
  *
  * It's a quadratic drop, not a true sphere projection, because (a) it's
  * indistinguishable at game camera angles and (b) it's one multiply-add per

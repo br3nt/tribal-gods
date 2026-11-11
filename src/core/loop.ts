@@ -5,8 +5,7 @@
  * 47 Hz on a hot laptop), but gameplay must be deterministic — a volcano
  * should grow in exactly the same steps on every machine, every run.
  *
- * THE CLASSIC SOLUTION (used by virtually every RTS, including the
- * original): split time in two.
+ * THE CLASSIC SOLUTION (used by virtually every RTS): split time in two.
  *
  *   - The SIMULATION steps in fixed slices of exactly 1/TICK_HZ seconds.
  *     We accumulate real elapsed time and run as many fixed ticks as fit.

@@ -159,6 +159,80 @@ describe('garrisons', () => {
     expect(a.hidden).toBe(false);
   });
 
+  it('a full tower refuses out loud: the result says who, they walk to the door, the player hears denied', () => {
+    const w = flatWorld();
+    const tower = w.spawnBuilding('player', 'tower', 40, 40);
+    const a = w.spawn('warrior', 'player', 40, 43);
+    const b = w.spawn('warrior', 'player', 41, 43);
+    w.orderGarrison([a.id, b.id], tower.id);
+    run(w, 5);
+    expect(tower.garrison.length).toBe(2);
+    const c = w.spawn('warrior', 'player', 40, 52);
+    expect(w.canGarrison([c.id], tower.id)).toBe(false);
+    w.events = [];
+    const r = w.orderGarrison([c.id], tower.id);
+    expect(r.accepted).toEqual([]);
+    expect(r.refused).toEqual([c.id]);
+    expect(eventsOf(w, 'denied')).toHaveLength(1);
+    expect(c.state).toBe('moving');
+    run(w, 6);
+    const door = w.doorOf(tower);
+    expect(Math.hypot(c.x - door.x, c.z - door.z)).toBeLessThan(3);
+    expect(c.hidden).toBe(false);
+  });
+
+  it('canGarrison asks the sim: room, completion and who fits', () => {
+    const w = flatWorld();
+    const tower = w.spawnBuilding('player', 'tower', 40, 40);
+    const site = w.spawnBuilding('player', 'tower', 60, 40, { complete: false });
+    const shrine = w.spawnBuilding('player', 'shrine', 40, 60);
+    const fighter = w.spawn('warrior', 'player', 40, 44);
+    const villager = w.spawn('brave', 'player', 41, 44);
+    const foe = w.spawn('warrior', 'red', 42, 44);
+    expect(w.canGarrison([fighter.id], tower.id)).toBe(true);
+    expect(w.canGarrison([villager.id], tower.id)).toBe(false);
+    expect(w.canGarrison([villager.id, fighter.id], tower.id)).toBe(true);
+    expect(w.canGarrison([foe.id], tower.id)).toBe(false);
+    expect(w.canGarrison([fighter.id], site.id)).toBe(false);
+    expect(w.canGarrison([villager.id], shrine.id)).toBe(true);
+    expect(w.canGarrison([fighter.id], shrine.id)).toBe(false);
+  });
+
+  it('a garrison order whose door cannot be reached is refused, not silently dropped', () => {
+    const w = flatWorld();
+    const tower = w.spawnBuilding('player', 'tower', 40, 40);
+    // The fighter stands on an island ringed by sea.
+    for (let z = 60; z <= 76; z++) for (let x = 60; x <= 76; x++) {
+      if (x < 63 || x > 73 || z < 63 || z > 73) w.map.heights[z * 128 + x] = -1;
+    }
+    w.map.version++;
+    const f = w.spawn('warrior', 'player', 68, 68);
+    w.events = [];
+    const r = w.orderGarrison([f.id], tower.id);
+    expect(r.accepted).toEqual([]);
+    expect(r.refused).toEqual([f.id]);
+    expect(eventsOf(w, 'denied')).toHaveLength(1);
+  });
+
+  it('a fighter across a narrow channel from the door is refused, never let in from the far shore', () => {
+    const w = flatWorld();
+    const tower = w.spawnBuilding('player', 'tower', 40, 40);
+    const door = w.doorOf(tower);
+    // A 3-tile channel just past the door, and a second band of sea further
+    // round (the planet wraps), so the fighter's side is cut off entirely.
+    for (let x = 0; x < 128; x++) {
+      for (let z = door.z + 2; z <= door.z + 4; z++) w.map.heights[z * 128 + x] = -1;
+      for (let z = door.z + 30; z <= door.z + 34; z++) w.map.heights[(z % 128) * 128 + x] = -1;
+    }
+    w.map.version++;
+    const f = w.spawn('warrior', 'player', door.x, door.z + 6);
+    const r = w.orderGarrison([f.id], tower.id);
+    expect(r.refused).toEqual([f.id]);
+    run(w, 6);
+    expect(tower.garrison).toEqual([]);
+    expect(f.hidden).toBe(false);
+  });
+
   it('an empty tower does not shoot', () => {
     const w = flatWorld();
     w.spawnBuilding('player', 'tower', 40, 40);

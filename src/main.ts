@@ -21,13 +21,16 @@
  */
 
 import * as THREE from 'three';
+import { WORLD_SIZE } from './config';
 import { startLoop } from './core/loop';
+import { wrapDelta } from './core/util';
 import { uiClick, uiHover, unlockAudio } from './core/audio';
 import { Soundscape } from './core/sfx';
 import { LevelData } from './level/level-format';
 import type { ScenarioRules } from './sim/catalog';
 import { BuildingRenderer } from './render/building-renderer';
 import { CameraRig } from './render/camera-rig';
+import { pickGroundTile } from './render/ground-picker';
 import { EffectsRenderer } from './render/effects';
 import { Lighting } from './render/lighting';
 import { CAMERA, initialQuality, QUALITY, sunPreset } from './render/look';
@@ -40,7 +43,7 @@ import { World } from './sim/world-state';
 import './ui/theme.css';
 import { SculptBrush } from './ui/brush';
 import { appState } from './ui/app-state';
-import { clearSave, clock, readSave, writeSave } from './ui/autosave';
+import { clearSave, clock, readSave, savedTally, writeSave } from './ui/autosave';
 import { CampaignController } from './ui/campaign';
 import { Editor } from './ui/editor';
 import { registerGameOverAction } from './ui/game-over';
@@ -63,7 +66,8 @@ const world = new World();
 // Dev/automation hooks: ?seed=N fixes the planet, ?play=1 skips the menu,
 // ?level=<official id> loads a designed level (see tools/shot.mjs).
 const query = new URLSearchParams(location.search);
-world.reset(query.has('seed') ? Number(query.get('seed')) : Math.floor(Math.random() * 1e9));
+const querySeed = query.get('seed')?.trim() && Number.isFinite(Number(query.get('seed'))) ? Number(query.get('seed')) : null;
+world.reset(querySeed ?? Math.floor(Math.random() * 1e9));
 
 // --- Renderer & scene (the look: render/look.ts, sky.ts, lighting.ts, post.ts) ---
 writeQualityToUrl(true); // the player's saved graphics setting becomes ?q= before the renderer reads it
@@ -104,6 +108,11 @@ water.mesh.userData.gpuCurved = true;
 const unitRenderer = new UnitRenderer(scene);
 const treeRenderer = new TreeRenderer(scene);
 const buildingRenderer = new BuildingRenderer(scene);
+/** A different world was loaded (new game, level, save, editor canvas): drop per-world render state. */
+function worldChanged(): void {
+  treeRenderer.rebuild(world);
+  terrain.clearScorch(); // burnt ground belongs to the old world
+}
 treeRenderer.rebuild(world);
 
 // --- Camera, input, UI ---
@@ -160,8 +169,13 @@ function ambientAround(tx: number, tz: number): { sea: number; trees: number } {
       if (world.map.heightAt(Math.round(tx + dx), Math.round(tz + dz)) < 0) sea++;
     }
   }
+  // The camera target is unwrapped (you can pan round the planet forever), so
+  // distances to trees go the short way round, or the forest falls silent
+  // after a lap.
   let trees = 0;
-  for (const t of world.trees) if (t.alive && Math.abs(t.x - tx) < 16 && Math.abs(t.z - tz) < 16) trees++;
+  for (const t of world.trees) {
+    if (t.alive && Math.abs(wrapDelta(t.x - tx, WORLD_SIZE)) < 16 && Math.abs(wrapDelta(t.z - tz, WORLD_SIZE)) < 16) trees++;
+  }
   ambientSample = { sea: sea / n, trees: Math.min(1, trees / 40), at: now };
   return ambientSample;
 }
@@ -178,10 +192,18 @@ centerOnHome();
 /** What Restart replays: the last skirmish settings, or the last level. */
 let lastStart: { settings?: Parameters<World['reset']>[1]; level?: LevelData } = {};
 
-function newWorld(settings?: Parameters<World['reset']>[1]): void {
+/** Seed of the planet the last skirmish was rolled from (automation reads it to report/replay a run). */
+let lastSeed = querySeed ?? 0;
+
+/**
+ * Roll a fresh skirmish planet. `?seed=N` in the URL fixes it (so the menu's
+ * Begin is reproducible for automation and bug reports); otherwise random.
+ */
+function newWorld(settings?: Parameters<World['reset']>[1], seed = querySeed ?? Math.floor(Math.random() * 1e9)): void {
   startToken++;
-  world.reset(Math.floor(Math.random() * 1e9), settings);
-  treeRenderer.rebuild(world);
+  lastSeed = seed;
+  world.reset(seed, settings);
+  worldChanged();
   centerOnHome();
   ui?.reset();
   lastStart = { settings };
@@ -271,6 +293,7 @@ function autosave(): void {
     ...(kind === 'level' ? { level: lastStart.level } : {}),
     label: `${what} · ${clock(world.elapsed)}`,
     world: saveWorld(world),
+    ...(ui ? { tally: { ...ui.alerts.tally } } : {}),
   });
 }
 menu.continueLabel = () => readSave()?.label ?? null;
@@ -286,8 +309,11 @@ menu.onContinue = () => {
     clearSave();
     return showTitle();
   }
-  treeRenderer.rebuild(world);
+  worldChanged();
   ui?.reset();
+  // Game-over numbers carry on from where the save left them.
+  const tally = savedTally(g);
+  if (ui && tally) Object.assign(ui.alerts.tally, tally);
   lastStart = g.kind === 'level' && g.level ? { level: g.level } : { settings: world.settings };
   testingLevel = null;
   backBtn.style.display = 'none';
@@ -322,7 +348,7 @@ async function startLevel(level: LevelData, asTest = false, rules?: ScenarioRule
     return false;
   }
   if (token !== startToken) return false;
-  treeRenderer.rebuild(world);
+  worldChanged();
   centerOnHome();
   ui?.reset();
   appState.mode = 'game';
@@ -335,11 +361,13 @@ async function startLevel(level: LevelData, asTest = false, rules?: ScenarioRule
 
 /** Load a level into the editor as clay (sim frozen, placement tools out). */
 async function editLevel(id: string | undefined, level: LevelData): Promise<void> {
+  const token = ++startToken;
   await world.loadLevel(level, menu.settings);
+  if (token !== startToken) return; // the player moved on while it loaded
   // Tribes' units don't belong in the editor — keep only the wildmen
   // (which ARE level content). Homes stay marked by the totems.
   world.units = world.units.filter((u) => u.kind === 'wildman');
-  treeRenderer.rebuild(world);
+  worldChanged();
   ui?.reset();
   centerOnHome();
   lastEdit = { id, level };
@@ -351,7 +379,7 @@ async function editLevel(id: string | undefined, level: LevelData): Promise<void
 function freshEditorCanvas(): void {
   newWorld();
   world.units = world.units.filter((u) => u.kind === 'wildman');
-  treeRenderer.rebuild(world);
+  worldChanged();
   lastEdit = { id: undefined, level: null };
   appState.mode = 'editor';
   editor.open();
@@ -502,8 +530,14 @@ ui = new GameUi(world, { camera: rig.camera, target: rig.target, map: world.map 
 (window as unknown as { __tg: unknown }).__tg = {
   world, rig, appState, menu, startLevel, terrain, effects, post, scene, lighting, ui, toolState, newWorld, campaign,
   autosave, applyQuality, soundscape,
+  /** Seed of the last skirmish planet rolled (newWorld). */
+  get lastSeed() {
+    return lastSeed;
+  },
   /** Screen position (CSS px) of tile (x, z) at height h above the ground, or null if off screen. */
   screenOf: (x: number, z: number, h = 0) => toScreen({ camera: rig.camera, target: rig.target, map: world.map }, x, z, h),
+  /** The ground tile under screen pixel (px, py), as a click would pick it (null = sky). */
+  groundAt: (px: number, py: number) => pickGroundTile(px, py, rig.camera, world.map, rig.target),
 };
 if (query.get('play') !== '1') rig.zoom = 0.78;
 if (query.get('play') === '1') {

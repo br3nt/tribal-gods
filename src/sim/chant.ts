@@ -25,9 +25,10 @@ export function tickChant(world: World, dt: number): void {
   for (const c of world.units) {
     if (c.kind !== 'chanter' || c.task !== 'chant' || c.hidden || c.hp <= 0) continue;
     // Counter-chant: an enemy chanter in earshot silences this one.
-    const countered = world.units.some(
-      (q) => q.kind === 'chanter' && !q.hidden && q.tribe !== 'wild' && world.hostile(c.tribe, q.tribe) &&
-        world.distTo(c, q.x, q.z) <= CHANT.pacifyRadius,
+    // (Neighbour queries go through the world's spatial hash: sim/spatial.ts.)
+    const countered = world.anyUnitNear(
+      c.x, c.z, CHANT.pacifyRadius + 1e-6,
+      (q) => q.kind === 'chanter' && q.tribe !== 'wild' && world.hostile(c.tribe, q.tribe),
     );
     if (countered) {
       // Drowned out: give up after a moment rather than stand there forever.
@@ -41,12 +42,13 @@ export function tickChant(world: World, dt: number): void {
     }
     c.workTimer = 0;
 
-    const listeners = world.units
-      .filter((q) => !q.hidden && q.kind !== 'chanter' && q.tribe !== 'wild' && world.hostile(c.tribe, q.tribe))
-      .map((q) => ({ q, d: world.distTo(c, q.x, q.z) }))
-      .filter((e) => e.d <= CHANT.pacifyRadius)
-      .sort((a, b) => a.d - b.d)
-      .slice(0, CHANT.maxListeners);
+    const near: Array<{ q: Unit; d: number }> = [];
+    world.forEachUnitNear(c.x, c.z, CHANT.pacifyRadius, (q) => {
+      const d = world.distTo(c, q.x, q.z);
+      if (d <= CHANT.pacifyRadius && q.kind !== 'chanter' && q.tribe !== 'wild' && world.hostile(c.tribe, q.tribe)) near.push({ q, d });
+    });
+    // Ties broken by id so the choice never depends on bucket order.
+    const listeners = near.sort((a, b) => a.d - b.d || a.q.id - b.q.id).slice(0, CHANT.maxListeners);
 
     if (listeners.length === 0) {
       c.task = 'none';

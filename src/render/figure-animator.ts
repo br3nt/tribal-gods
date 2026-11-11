@@ -36,10 +36,11 @@ import type { FigureStyle } from '../assets/models/people/recipes';
 
 export type ClipName =
   | 'idle' | 'walk' | 'run' | 'carry' | 'chop' | 'build' | 'attack' | 'throw' | 'cast'
-  | 'chant' | 'pray' | 'cheer' | 'die' | 'drown';
+  | 'chant' | 'pray' | 'cheer' | 'die' | 'drown' | 'slack' | 'tumble';
 
 export const CLIP_NAMES: ClipName[] = [
   'idle', 'walk', 'run', 'carry', 'chop', 'build', 'attack', 'throw', 'cast', 'chant', 'pray', 'cheer', 'die', 'drown',
+  'slack', 'tumble',
 ];
 
 /** Pose: 3 Euler angles per bone, then the hip offset (xyz, model units). */
@@ -449,6 +450,45 @@ const CLIPS: Record<ClipName, (t: number, p: Pose, c: ClipCtx) => void> = {
     setR(p, BI.foreL, -0.5 - 0.4 * Math.sin(ph * 4));
     setR(p, BI.foreR, -0.5 - 0.4 * Math.sin(ph * 4 + 2));
   },
+
+  slack(t, p, c) {
+    // held by a hostile chant: shoulders drop, arms hang, head bowed, a slow
+    // entranced sway — the weapon points at the ground, nothing strikes
+    const ph = t * TAU;
+    const sway = Math.sin(ph);
+    p[HX] = 0.03 * sway;
+    stance(p, 0.14, 0.07);
+    setR(p, BI.hips, 0, 0, 0.05 * sway);
+    setR(p, BI.spine, 0.2 + c.style.hunch, 0, -0.05 * sway);
+    setR(p, BI.chest, 0.12, 0, -0.03 * sway);
+    setR(p, BI.neck, 0.26, 0, 0);
+    setR(p, BI.head, 0.5 + 0.04 * Math.sin(ph * 2), 0.08 * sway, 0.08 * sway);
+    setR(p, BI.clavL, 0, 0, -0.1);
+    setR(p, BI.clavR, 0, 0, 0.1);
+    setR(p, BI.armL, 0.06 + 0.04 * sway, 0, 0.05);
+    setR(p, BI.armR, 0.06 - 0.04 * sway, 0, -0.05);
+    setR(p, BI.foreL, -0.1);
+    setR(p, BI.foreR, -0.1);
+    setR(p, BI.handL, 0.05);
+    if (c.style.holdR === 'staff' || c.style.holdR === 'spear' || c.style.holdR === 'maul') aimR(p, 1.05);
+  },
+
+  tumble(t, p, _c) {
+    // whirled off the ground: limbs flung wide and flailing
+    const ph = t * TAU;
+    p[HX + 1] = 0.04;
+    setR(p, BI.thighL, -0.5 + 0.45 * Math.sin(ph * 2), 0, 0.35);
+    setR(p, BI.thighR, -0.2 - 0.45 * Math.sin(ph * 2), 0, -0.35);
+    setR(p, BI.shinL, 0.9 + 0.4 * Math.sin(ph * 2 + 1));
+    setR(p, BI.shinR, 0.6 - 0.4 * Math.sin(ph * 2 + 1));
+    setR(p, BI.spine, -0.25 + 0.1 * Math.sin(ph), 0, 0.15 * Math.sin(ph * 2));
+    setR(p, BI.chest, -0.1, 0, 0);
+    setR(p, BI.head, -0.35, 0.25 * Math.sin(ph * 1.5), 0);
+    setR(p, BI.armL, -1.4 + 0.6 * Math.sin(ph * 3), 0, 1.2 + 0.3 * Math.cos(ph * 3));
+    setR(p, BI.armR, -1.4 + 0.6 * Math.sin(ph * 3 + 2), 0, -1.2 - 0.3 * Math.cos(ph * 3 + 2));
+    setR(p, BI.foreL, -0.4 - 0.4 * Math.sin(ph * 4));
+    setR(p, BI.foreR, -0.4 - 0.4 * Math.sin(ph * 4 + 2));
+  },
 };
 
 /** Planted stance: feet apart, knees soft. */
@@ -511,6 +551,7 @@ const ONE_SHOT: Partial<Record<ClipName, number>> = { die: 1.25 };
 /** Seconds per cycle for looped, non-locomotion clips. */
 const PERIOD: Partial<Record<ClipName, number>> = {
   idle: 4.2, chop: 1.15, build: 1.0, attack: 1.1, throw: 1.6, cast: 1.2, chant: 1.5, pray: 2.8, cheer: 1.3, drown: 1.4,
+  slack: 3.6, tumble: 0.8,
 };
 
 export interface AnimInput {
