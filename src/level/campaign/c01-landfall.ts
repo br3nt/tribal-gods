@@ -53,7 +53,7 @@ export const scenario: CampaignScenario = {
       rules: {
         tribes: [
           {
-            id: 'player', ai: false,
+            id: 'player', name: 'the Lantern-folk', ai: false,
             loadout: { spells: ['convert'], buildings: ['hut', 'lumberyard'], startUnits: { brave: 6 }, startWood: 10 },
           },
         ],

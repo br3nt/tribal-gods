@@ -77,7 +77,7 @@ export const scenario: CampaignScenario = {
       rules: {
         tribes: [
           {
-            id: 'player', ai: false,
+            id: 'player', name: 'the Lantern-folk', ai: false,
             loadout: {
               spells: ['blast', 'convert', 'flatten', 'bloom', 'lightning'],
               buildings: ['hut', 'lumberyard', 'warriorHut', 'fireHut', 'tower', 'shrine'],
@@ -86,7 +86,7 @@ export const scenario: CampaignScenario = {
             },
           },
           {
-            id: 'gold', ai: true,
+            id: 'gold', name: 'the Saltborn', ai: true,
             personality: { target: 'player', harassAt: 4, assaultAt: 9 },
             loadout: {
               spells: ['blast', 'convert', 'sink', 'lightning'],

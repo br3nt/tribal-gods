@@ -27,6 +27,13 @@ export type TribeId = (typeof TRIBE_IDS)[number];
 /** `wild` = unaligned wanderers (recruitable). */
 export type Tribe = TribeId | 'wild';
 
+/** What a tribe is called when its scenario doesn't name it. */
+export function tribeName(rules: ScenarioRules, id: TribeId): string {
+  const named = rules.tribes.find((t) => t.id === id)?.name;
+  if (named) return named;
+  return id === 'player' ? 'your tribe' : `the ${id[0].toUpperCase()}${id.slice(1)} tribe`;
+}
+
 export const TRIBE_COLORS: Record<Tribe, number> = {
   player: 0x2f7fe6,
   red: 0xd9483b,
@@ -416,7 +423,8 @@ export interface ScenarioEvent {
 }
 
 export interface ScenarioRules {
-  tribes: Array<{ id: TribeId; ai: boolean; loadout?: Loadout; allies?: TribeId[]; personality?: AiPersonality }>;
+  /** `name` is what the story calls the people ("the Ashmark"); omitted = "the Red tribe". */
+  tribes: Array<{ id: TribeId; name?: string; ai: boolean; loadout?: Loadout; allies?: TribeId[]; personality?: AiPersonality }>;
   objectives: Array<{ objective: Objective; text: string; optional?: boolean }>;
   fail?: FailCondition[];
   /** Shown before play: a title, a few sentences, and tips. */

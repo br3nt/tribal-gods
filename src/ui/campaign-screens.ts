@@ -18,7 +18,7 @@
  */
 
 import { BOONS, BoonId } from '../campaign/boons';
-import { BUILDINGS, FailCondition, ScenarioRules, spellDef, SpellId, UNITS, UnitKind } from '../sim/catalog';
+import { BUILDINGS, FailCondition, ScenarioRules, spellDef, SpellId, TribeId, tribeName, UNITS, UnitKind } from '../sim/catalog';
 import { STARTER_SPELLS } from '../sim/rules';
 import { START_BRAVES, START_WOOD } from '../config';
 import type { LevelData } from '../level/level-format';
@@ -350,8 +350,8 @@ export class BriefingScreen extends Overlay {
     side.append(el('div', 'tgc-h', 'The stones offer'), stones.length ? chips(stones, 'gift') : el('div', 'tgc-sub', 'No standing stones here.'));
     const rivals = d.rules.tribes.filter((t) => t.id !== 'player');
     if (rivals.length) {
-      const names: Record<string, string> = { red: 'the Ashmark', gold: 'the Saltborn', violet: 'the Unmoored' };
-      side.append(el('div', 'tgc-h', 'Others here'), el('div', undefined, rivals.map((t) => names[t.id] + (t.allies?.length ? ` (allied with ${t.allies.map((a) => names[a] ?? a).join(', ')})` : '')).join('; ')));
+      const name = (id: TribeId) => tribeName(d.rules, id);
+      side.append(el('div', 'tgc-h', 'Others here'), el('div', undefined, rivals.map((t) => name(t.id) + (t.allies?.length ? ` (allied with ${t.allies.map(name).join(', ')})` : '')).join('; ')));
     }
     if (d.boons.length) side.append(el('div', 'tgc-h', 'Boons you carry'), chips(d.boons.map((id) => BOONS[id].name)));
     if (d.pendingBoon && this.hooks.onBoon) {

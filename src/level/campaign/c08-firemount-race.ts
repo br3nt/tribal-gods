@@ -71,7 +71,7 @@ export const scenario: CampaignScenario = {
       rules: {
         tribes: [
           {
-            id: 'player', ai: false,
+            id: 'player', name: 'the Lantern-folk', ai: false,
             loadout: {
               spells: ['blast', 'convert', 'flatten', 'bloom', 'ward', 'landbridge'],
               buildings: ['hut', 'lumberyard', 'warriorHut', 'fireHut', 'tower', 'shrine'],
@@ -80,7 +80,7 @@ export const scenario: CampaignScenario = {
             },
           },
           {
-            id: 'red', ai: true,
+            id: 'red', name: 'the Ashmark', ai: true,
             personality: { target: 'player', harassAt: 5, assaultAt: 11 },
             loadout: {
               spells: ['blast', 'convert', 'ward'],
@@ -88,7 +88,7 @@ export const scenario: CampaignScenario = {
               startUnits: { brave: 8, warrior: 2 },
             },
           },
-          { id: 'violet', ai: false, loadout: { spells: [], buildings: [], startUnits: { shaman: 0, brave: 0 } } },
+          { id: 'violet', name: 'the Keepers', ai: false, loadout: { spells: [], buildings: [], startUnits: { shaman: 0, brave: 0 } } },
         ],
         objectives: [
           { objective: { type: 'claimMonument', index: 0 }, text: 'Be first to commune at the Firemount' },

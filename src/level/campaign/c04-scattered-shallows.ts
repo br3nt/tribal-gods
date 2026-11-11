@@ -72,7 +72,7 @@ export const scenario: CampaignScenario = {
       rules: {
         tribes: [
           {
-            id: 'player', ai: false,
+            id: 'player', name: 'the Lantern-folk', ai: false,
             loadout: {
               spells: ['blast', 'convert', 'bloom', 'flatten'],
               buildings: ['hut', 'lumberyard', 'warriorHut', 'fireHut', 'tower'],
@@ -81,7 +81,7 @@ export const scenario: CampaignScenario = {
             },
           },
           {
-            id: 'red', ai: true,
+            id: 'red', name: 'the Ashmark', ai: true,
             personality: { harassAt: 6, assaultAt: 12 },
             loadout: {
               spells: ['blast', 'convert', 'lightning'],

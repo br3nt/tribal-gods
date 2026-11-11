@@ -35,6 +35,8 @@ describe('campaign: every scenario', () => {
       expect(rules.briefing.tips.length).toBeGreaterThanOrEqual(2);
       expect(rules.briefing.tips.length).toBeLessThanOrEqual(3);
       expect(rules.objectives.some((o) => !o.optional)).toBe(true);
+      // Every people is named by the scenario (briefings read names from the data).
+      for (const t of rules.tribes) expect(t.name, `${s.id}: ${t.id}`).toMatch(/^the /);
 
       // Homes: walkable, and tribes that build have room for a village.
       for (const t of rules.tribes) {

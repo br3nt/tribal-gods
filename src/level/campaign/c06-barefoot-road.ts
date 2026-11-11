@@ -94,14 +94,14 @@ export const scenario: CampaignScenario = {
       rules: {
         tribes: [
           {
-            id: 'player', ai: false,
+            id: 'player', name: 'the Lantern-folk', ai: false,
             loadout: {
               spells: ['blast', 'convert', 'ward'],
               buildings: [],
               startUnits: { brave: 0, warrior: 6, firewarrior: 2 },
             },
           },
-          { id: 'red', ai: false, loadout: { spells: [], buildings: [], startUnits: { shaman: 0, brave: 0 } } },
+          { id: 'red', name: 'the Ashmark', ai: false, loadout: { spells: [], buildings: [], startUnits: { shaman: 0, brave: 0 } } },
         ],
         objectives: [
           { objective: { type: 'claimMonument', index: 1 }, text: 'Bring the leader to the Cairn of First Fire' },
