@@ -24,6 +24,7 @@ import * as THREE from 'three';
 import { startLoop } from './core/loop';
 import { unlockAudio } from './core/audio';
 import { LevelData } from './level/level-format';
+import type { ScenarioRules } from './sim/catalog';
 import { BuildingRenderer } from './render/building-renderer';
 import { CameraRig } from './render/camera-rig';
 import { EffectsRenderer } from './render/effects';
@@ -37,7 +38,9 @@ import { World } from './sim/world-state';
 import './ui/theme.css';
 import { SculptBrush } from './ui/brush';
 import { appState } from './ui/app-state';
+import { CampaignController } from './ui/campaign';
 import { Editor } from './ui/editor';
+import { registerGameOverAction } from './ui/game-over';
 import { GameUi } from './ui/game-ui';
 import { LevelLibrary } from './ui/level-library';
 import { Menu } from './ui/menu';
@@ -141,8 +144,9 @@ function newWorld(settings?: Parameters<World['reset']>[1]): void {
 
 // --- App modes: menu ⇄ game ⇄ editor ⇄ library ----------------------------
 //
-// The setup screen offers three doors: Skirmish (random planet), Levels
-// (the library: official + yours + imported), and Editor. The library and
+// The title screen offers Campaign (ui/campaign.ts), Skirmish (random
+// planet), Levels (the library: official + campaign + yours + imported),
+// and Editor. The library and
 // editor feed back into the game via loadLevel; the editor's Test button
 // round-trips — play your level, then pop back with the terrain pristine.
 
@@ -173,7 +177,10 @@ menu.onRestart = () => {
 };
 menu.onQuit = () => quitToMenu();
 function restart(): void {
-  if (lastStart.level) {
+  if (campaign.active) {
+    appState.mode = 'menu';
+    void campaign.play(campaign.active, { force: true }); // same chapter, same boons
+  } else if (lastStart.level) {
     appState.mode = 'menu'; // hold the sim until the level has loaded
     void startLevel(lastStart.level, !!testingLevel);
   } else {
@@ -183,6 +190,7 @@ function restart(): void {
 }
 function quitToMenu(): void {
   startToken++;
+  campaign.leave();
   appState.mode = 'menu';
   appState.paused = false;
   backBtn.style.display = 'none';
@@ -194,13 +202,14 @@ function showTitle(): void {
   menu.show('title');
 }
 
-/** Launch any level document as a playable skirmish. */
 /** Bumped by every start/quit: a level load that finishes after the player moved on is dropped. */
 let startToken = 0;
 
-async function startLevel(level: LevelData, asTest = false): Promise<void> {
+/** Launch any level document — under its own rules, or `rules` (a campaign chapter with boons). */
+async function startLevel(level: LevelData, asTest = false, rules?: ScenarioRules): Promise<void> {
   const token = ++startToken;
-  await world.loadLevel(level, menu.settings);
+  if (!rules) campaign.leave();
+  await world.loadLevel(level, menu.settings, rules);
   if (token !== startToken) return;
   treeRenderer.rebuild(world);
   centerOnHome();
@@ -245,7 +254,34 @@ const library = new LevelLibrary({
     appState.mode = 'menu';
     showTitle();
   },
+  onPlayScenario: (id) => void campaign.brief(id),
+  isScenarioUnlocked: (id) => campaign.unlocked(id),
 });
+
+// --- Campaign: title → map → briefing → play → debrief (ui/campaign.ts) ---
+const campaign = new CampaignController(
+  {
+    world,
+    startScenario: (level, rules) => startLevel(level, false, rules),
+    pause: () => {
+      ui?.gameOver.hide();
+      if (appState.mode === 'game') appState.mode = 'menu';
+    },
+    showMenu: () => {
+      appState.mode = 'menu';
+      showTitle();
+    },
+  },
+  { autoDebrief: false }, // the game-over screen offers the debrief (below)
+);
+menu.onCampaign = () => {
+  appState.mode = 'menu';
+  campaign.showMap();
+};
+if (menu.visible) menu.show('title'); // re-render: the Campaign door is open now
+registerGameOverAction(() =>
+  campaign.active ? { label: 'Campaign debrief', primary: true, icon: 'arrowRight', run: () => campaign.handleGameOver() } : null,
+);
 
 const editor = new Editor(rig.camera, rig.target, world, renderer.domElement, {
   onTest: (level) => {
@@ -302,6 +338,7 @@ const stats = startLoop({
     rig.update(menu.visible || ui?.gameOver.visible ? 0 : dt); // no panning behind a menu
     brush.update(dt);
     ui?.update(dt);
+    campaign.update();
 
     // One uniform update curves every world-space material around wherever
     // the camera looks (they share these uniform objects — see curvature.ts).
@@ -334,7 +371,7 @@ ui = new GameUi(world, { camera: rig.camera, target: rig.target, map: world.map 
 
 // Automation handle (tools/shot.mjs, tests, the console). Not a game API.
 (window as unknown as { __tg: unknown }).__tg = {
-  world, rig, appState, menu, startLevel, terrain, effects, post, scene, lighting, ui, toolState, newWorld,
+  world, rig, appState, menu, startLevel, terrain, effects, post, scene, lighting, ui, toolState, newWorld, campaign,
 };
 if (query.get('play') !== '1') rig.zoom = 0.78;
 if (query.get('play') === '1') {
@@ -342,7 +379,10 @@ if (query.get('play') === '1') {
   appState.mode = 'game';
   ui.reset();
   const levelId = query.get('level');
-  if (levelId) {
+  const scenarioId = query.get('scenario'); // ?play=1&scenario=<campaign id> jumps into a chapter
+  if (scenarioId) {
+    void campaign.play(scenarioId, { force: true });
+  } else if (levelId) {
     void import('./level/official-levels').then(async (m) => {
       const hit = m.OFFICIAL_LEVELS.find((l) => l.id === levelId);
       if (hit) await startLevel(await hit.build());
