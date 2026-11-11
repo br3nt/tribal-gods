@@ -14,9 +14,9 @@
 type Child = Node | string | null | undefined | false;
 type Attrs = Record<string, string | number | boolean | EventListener | undefined>;
 
-/** `h('button.tg-btn.primary', { onclick }, 'Play')`. Tag defaults to div. */
-export function h<K extends keyof HTMLElementTagNameMap = 'div'>(
-  sel: string,
+/** `h('button.tg-btn.primary', { onclick }, 'Play')`. The tag comes first and types the result. */
+export function h<K extends keyof HTMLElementTagNameMap>(
+  sel: K | `${K}.${string}`,
   attrs: Attrs = {},
   ...children: Child[]
 ): HTMLElementTagNameMap[K] {

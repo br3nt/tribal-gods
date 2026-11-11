@@ -88,8 +88,9 @@ body {
   pointer-events: none;
   z-index: 10;
 }
-#ui > * { pointer-events: auto; }
-#ui .passthrough, #ui .passthrough * { pointer-events: none; }
+/* pointer-events inherits: only real controls opt back in. */
+.tg-panel, .tg-btn, .tg-hit { pointer-events: auto; }
+.passthrough { pointer-events: none !important; }
 [hidden] { display: none !important; }
 
 /* ---------- Panels ------------------------------------------------------- */
