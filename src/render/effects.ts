@@ -41,7 +41,7 @@ import { heightGlsl } from '../world/terrain-glsl';
 import { TerrainMesh } from '../world/terrain-mesh';
 import { CameraRig } from './camera-rig';
 import { Lighting } from './lighting';
-import { QualityTier } from './look';
+import { QualityTier, SPELL_LOOK, SPELL_LOOK_DEFAULT } from './look';
 
 const WORLD_UNITS = WORLD_SIZE * TILE;
 
@@ -366,6 +366,16 @@ export class EffectsRenderer {
   private readonly auraVisuals = new Map<Aura, AuraVisual>();
   private camTarget = new THREE.Vector3();
   private world: World | null = null;
+
+  /** The rune colour of the standing stone at tile (x, z), or `fallback` (no stone there). */
+  stoneColor(x: number, z: number, fallback: number): number {
+    for (const m of this.world?.monuments ?? []) {
+      if (Math.abs(wrapDelta(m.x - x, WORLD_SIZE)) < 1.5 && Math.abs(wrapDelta(m.z - z, WORLD_SIZE)) < 1.5) {
+        return (SPELL_LOOK[m.spell] ?? SPELL_LOOK_DEFAULT).glow;
+      }
+    }
+    return fallback;
+  }
   private swampAcc = 0;
   private burnAcc = 0;
   private readonly tmpV = new THREE.Vector3();
@@ -1179,10 +1189,29 @@ const HANDLERS: Record<string, Handler> = {
     fx.motes(x, z, 22, C.cyan, { radius: 1.5, rise: 3, swirl: 3, life: 1.6 });
   },
   unlock(fx, x, z) {
-    fx.ring(x, z, 0xffd75e, 9, 1.1, 4);
+    // a teaching stone gives up its spell: a burst in the spell's own colour
+    const col = fx.stoneColor(x, z, 0xffd36a);
+    fx.ring(x, z, col, 9, 1.1, 4);
     fx.ring(x, z, 0xffe9a8, 5, 0.8, 3);
-    fx.column(x, z, 0xffd36a, 1.6, 30, 2.2, 2);
-    fx.motes(x, z, 40, C.gold, { radius: 2.5, rise: 5, swirl: 2, life: 2.2 });
+    fx.column(x, z, col, 1.6, 30, 2.2, 2.5);
+    fx.motes(x, z, 50, lin(col), { radius: 2.5, rise: 5, swirl: 2, life: 2.2 });
+    fx.motes(x, z, 20, C.gold, { radius: 1.5, rise: 7, swirl: 3, life: 1.6, lift: 3 });
+    fx.flash(x, z, col, 900, 0.9, 4, 40);
+  },
+  communeStart(fx, x, z) {
+    // the stone wakes to the leader's touch
+    const col = fx.stoneColor(x, z, 0xffe9a8);
+    fx.ring(x, z, col, 4.5, 0.9, 3, 0.12);
+    fx.motes(x, z, 18, lin(col), { radius: 1.2, rise: 3, swirl: 2, life: 1.4, lift: 1 });
+  },
+  communeInterrupted(fx, x, z) {
+    // the thread snaps: a white crack of light, sparks flung outward, a puff of grit
+    fx.flash(x, z, 0xfff4e8, 700, 0.25, 3, 30);
+    fx.sparks(x, z, 30, 9, lin(0xfff0dc), 3, 0.3);
+    fx.sparks(x, z, 14, 6, lin(fx.stoneColor(x, z, 0xffd36a)), 2, 0.4);
+    fx.ring(x, z, 0xfff0dc, 5, 0.35, 5, 0.1);
+    fx.dust(x, z, 8, 1.6, 0xa8957a, 3);
+    fx.shake(0.25);
   },
   castFlash(fx, x, z) {
     fx.ring(x, z, 0xcfe8ff, 3, 0.5, 3);
@@ -1301,9 +1330,11 @@ const HANDLERS: Record<string, Handler> = {
     fx.scorch(x, z, 1.5, 0.6);
   },
   giftClaimed(fx, x, z) {
-    fx.ring(x, z, 0xffd36a, 6, 0.9, 4);
-    fx.column(x, z, 0xffd36a, 1.2, 18, 1.4, 2);
-    fx.motes(x, z, 40, C.gold, { radius: 1.2, rise: 7, swirl: 3, life: 1.6 });
+    const col = fx.stoneColor(x, z, 0xffd36a);
+    fx.ring(x, z, col, 6, 0.9, 4);
+    fx.column(x, z, col, 1.2, 18, 1.4, 2.5);
+    fx.motes(x, z, 40, lin(col), { radius: 1.2, rise: 7, swirl: 3, life: 1.6 });
+    fx.flash(x, z, col, 600, 0.7, 4, 30);
   },
   objectiveDone(fx, x, z) {
     fx.column(x, z, 0xffe9a8, 2, 40, 2.5, 2);

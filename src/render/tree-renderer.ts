@@ -39,6 +39,8 @@ import {
 import { sharedMaterials } from '../assets/models/materials';
 import { World } from '../sim/world-state';
 import { ModelFx } from './model-particles';
+import { isHighlighted } from './highlight';
+import { HIGHLIGHT } from './look';
 
 const WORLD_UNITS = WORLD_SIZE * TILE;
 const VIEW_RADIUS = 150;
@@ -255,7 +257,8 @@ export class TreeRenderer {
       const n = counts[st.species]++;
       im.setMatrixAt(n, this.m);
       const burning = (t.burning ?? 0) > 0;
-      im.setColorAt(n, burning ? CHARRED : st.tint);
+      const c = burning ? CHARRED : st.tint;
+      im.setColorAt(n, isHighlighted('tree', i) ? _lit.copy(c).multiplyScalar(HIGHLIGHT.treeBoost) : c);
       if (burning) {
         let a = this.fireAnchors.get(i);
         if (!a) {
@@ -371,3 +374,4 @@ function nearFactor(cl: Array<{ x: number; z: number; r: number }>, x: number, z
   return f;
 }
 const CHARRED = new THREE.Color(0.35, 0.3, 0.28);
+const _lit = new THREE.Color();

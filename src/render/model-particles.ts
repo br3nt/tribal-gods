@@ -175,6 +175,11 @@ export class ModelFx {
     this.fire = new ParticlePool(scene, 700, true);
   }
 
+  /** Whole particles due now from emitter (key, slot) at `rate` per second (for custom emitters). */
+  count(key: object, slot: number, rate: number, dt: number): number {
+    return this.tick(key, slot, rate, dt);
+  }
+
   /** Fractional emission accumulator per (anchor, slot) → whole particles due now. */
   private tick(key: object, slot: number, rate: number, dt: number): number {
     let arr = this.acc.get(key);

@@ -59,7 +59,9 @@ import * as THREE from 'three';
 import { CIVS, TILE, WORLD_SIZE } from '../config';
 import { curvatureDrop, curveObject } from '../world/curvature';
 import { surfaceHeight } from '../world/surface';
-import { buildingBaseY } from './building-renderer';
+import { buildingBaseY, communers } from './building-renderer';
+import { isHighlighted } from './highlight';
+import { highlightMaterial } from '../assets/models/buildings/index';
 import { wrapDelta } from '../core/util';
 import { buildUnitModel, FigureModel } from '../assets/models/registry';
 import { decalMaterial, disposeModelMaterial, fadeCopy, tickModelMaterials, tintedMaterial } from '../assets/models/materials';
@@ -116,6 +118,8 @@ interface Entry {
   /** The figure's own materials, and which status variant it wears. */
   baseMats: THREE.Material[];
   tint: StatusTint;
+  /** Wearing the hover highlight (render/highlight.ts). */
+  lit: boolean;
 }
 
 /** Where a unit is drawn: world-space feet (bent, nearest image) and tile coords. */
@@ -262,7 +266,7 @@ export class UnitRenderer {
           px: NaN, pz: NaN, speed: 0, yaw: u.heading, turn: 0, lodTick: u.id % 3, accDt: 0, tx: u.x, tz: u.z, inWater: false,
           drawn: new THREE.Vector3(), drawnFrame: -1, inp: { clip: 'idle', speed: 0, turnRate: 0 },
           lift: 0, liftV: 0, ox: 0, oz: 0, simX: u.x, simZ: u.z,
-          baseMats: fig.meshes.map((m) => m.material as THREE.Material), tint: 'none',
+          baseMats: fig.meshes.map((m) => m.material as THREE.Material), tint: 'none', lit: false,
         };
         this.entries.set(u.id, e);
       }
@@ -357,13 +361,17 @@ export class UnitRenderer {
       }
       e.fig.root.rotation.y = e.yaw;
 
-      // Stone Ward / Warsong: swap to a shared tinted variant.
+      // Stone Ward / Warsong: swap to a shared tinted variant; the hover
+      // highlight goes on top of whichever is worn.
       const tint = statusTint(u);
-      if (tint !== e.tint) {
+      const lit = isHighlighted('unit', u.id);
+      if (tint !== e.tint || lit !== e.lit) {
         e.tint = tint;
+        e.lit = lit;
         const base = e.baseMats;
         e.fig.meshes.forEach((m, i) => {
-          m.material = tint === 'none' ? base[i] : tintedMaterial(base[i], tint, UNIT_STATUS[tint]);
+          const worn = tint === 'none' ? base[i] : tintedMaterial(base[i], tint, UNIT_STATUS[tint]);
+          m.material = lit ? highlightMaterial(worn) : worn;
         });
       }
 
@@ -455,7 +463,8 @@ export class UnitRenderer {
     c.winner = winner;
     const pick = pickClip(u, c);
     const inp = e.inp;
-    inp.clip = pick.clip;
+    // A leader communing at a standing stone kneels in prayer (whatever the sim calls the task).
+    inp.clip = communers.has(u.id) && e.speed < 0.4 ? 'pray' : pick.clip;
     inp.speed = e.speed;
     inp.turnRate = e.turn;
     inp.phase = pick.phase;
