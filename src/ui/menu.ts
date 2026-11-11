@@ -6,7 +6,7 @@
  * not a wall in front of it.
  *
  * Screens:
- *   title     Campaign · Skirmish · Levels · Editor · Settings · How to play
+ *   title     [Continue] · Campaign · Skirmish · Levels · Editor · Settings · How to play
  *   skirmish  civilisation (config CIVS), difficulty, number of rivals (1–3)
  *   settings  ui/settings-panel.ts
  *   help      ui/help.ts, built from the real hotkey table
@@ -16,6 +16,7 @@
  * The menu owns no game logic. It collects GameSettings and calls hooks
  * that main.ts (and the campaign stream) fill in:
  *
+ *   menu.onContinue()           resume the autosaved game (shown when continueLabel() says one exists)
  *   menu.onSkirmish(settings)   start a random skirmish
  *   menu.onCampaign()           open the campaign (null = not available yet)
  *   menu.onLevels()             open the level library
@@ -46,6 +47,7 @@ css('menu', `
 .menu-nav .tg-btn svg { color: var(--gold); }
 .menu-nav .tg-btn.primary svg { color: inherit; }
 .menu-nav .tg-btn .soon { margin-left: auto; font-size: var(--t-xs); color: var(--text-3); font-weight: 500; }
+.menu-nav .tg-btn.primary .soon { color: inherit; opacity: 0.75; }
 .menu-foot { font-size: var(--t-xs); color: var(--text-3); }
 .menu-card { width: min(60rem, calc(100vw - 2rem)); max-height: calc(100vh - 3rem); display: flex; flex-direction: column; }
 .menu-card > header { display: flex; align-items: center; gap: 0.75rem; padding: 1rem 1.25rem; border-bottom: 1px solid var(--rim); }
@@ -88,6 +90,9 @@ export class Menu {
 
   /** Hooks, filled by main.ts and the campaign stream. */
   onSkirmish: ((settings: GameSettings) => void) | null = null;
+  onContinue: (() => void) | null = null;
+  /** What the Continue button says about the saved game ("Skirmish · 12:04"), or null when there is none. */
+  continueLabel: () => string | null = () => null;
   onCampaign: (() => void) | null = null;
   onLevels: (() => void) | null = null;
   onEditor: (() => void) | null = null;
@@ -184,8 +189,10 @@ export class Menu {
 
   private titleScreen(): HTMLElement {
     this.backTo = 'title';
+    const saved = this.onContinue ? this.continueLabel() : null;
     const nav = h('nav.menu-nav', { 'aria-label': 'Main menu' },
-      this.navBtn('Campaign', 'objective', this.onCampaign ? () => { this.hide(); this.onCampaign!(); } : null, !!this.onCampaign, this.onCampaign ? '' : 'coming soon'),
+      saved ? this.navBtn('Continue', 'play', () => { this.hide(); this.onContinue!(); }, true, saved) : null,
+      this.navBtn('Campaign', 'objective', this.onCampaign ? () => { this.hide(); this.onCampaign!(); } : null, !saved && !!this.onCampaign, this.onCampaign ? '' : 'coming soon'),
       this.navBtn('Skirmish', 'attack', () => this.show('skirmish'), !this.onCampaign),
       this.navBtn('Levels', 'book', () => { this.hide(); this.onLevels?.(); }),
       this.navBtn('Editor', 'hammer', () => { this.hide(); this.onEditor?.(); }),

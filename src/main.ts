@@ -22,29 +22,33 @@
 
 import * as THREE from 'three';
 import { startLoop } from './core/loop';
-import { unlockAudio } from './core/audio';
+import { uiClick, uiHover, unlockAudio } from './core/audio';
+import { Soundscape } from './core/sfx';
 import { LevelData } from './level/level-format';
 import type { ScenarioRules } from './sim/catalog';
 import { BuildingRenderer } from './render/building-renderer';
 import { CameraRig } from './render/camera-rig';
 import { EffectsRenderer } from './render/effects';
 import { Lighting } from './render/lighting';
-import { CAMERA, initialQuality, sunPreset } from './render/look';
+import { CAMERA, initialQuality, QUALITY, sunPreset } from './render/look';
 import { PostChain } from './render/post';
 import { Atmosphere, Sky } from './render/sky';
 import { TreeRenderer } from './render/tree-renderer';
 import { UnitRenderer } from './render/unit-renderer';
+import { restoreWorld, saveWorld } from './sim/save';
 import { World } from './sim/world-state';
 import './ui/theme.css';
 import { SculptBrush } from './ui/brush';
 import { appState } from './ui/app-state';
+import { clearSave, clock, readSave, writeSave } from './ui/autosave';
 import { CampaignController } from './ui/campaign';
 import { Editor } from './ui/editor';
 import { registerGameOverAction } from './ui/game-over';
 import { GameUi } from './ui/game-ui';
 import { LevelLibrary } from './ui/level-library';
 import { Menu } from './ui/menu';
-import { applyUiScale, settings as uiSettings, writeQualityToUrl } from './ui/settings';
+import { applyUiScale, QualitySetting, settings as uiSettings, writeQualityToUrl } from './ui/settings';
+import { toScreen } from './ui/project';
 import { toolState } from './ui/tools';
 import { curvatureUniforms } from './world/curvature';
 import { TerrainMesh } from './world/terrain-mesh';
@@ -111,6 +115,16 @@ post.onQualityChange = (q) => {
   quality = q;
   lighting.applyQuality(q);
 };
+/** Settings → Graphics, applied live. True if the terrain mesh still wants a reload for it. */
+const bootTerrain = { subdiv: quality.terrainSubdiv, detail: quality.terrainDetail };
+function applyQuality(q: QualitySetting): boolean {
+  const tier = QUALITY[q === 'auto' ? 'high' : q];
+  quality = tier;
+  post.setQuality(tier);
+  lighting.applyQuality(tier);
+  if (groundCover) groundCover.mesh.visible = tier.name !== 'low';
+  return tier.terrainSubdiv !== bootTerrain.subdiv || tier.terrainDetail !== bootTerrain.detail;
+}
 // Edge panning is a player setting; the rig reads a flag it otherwise takes from ?edgepan=1.
 const setEdgePan = (on: boolean) => {
   (rig as unknown as { edgePan: boolean }).edgePan = on || query.get('edgepan') === '1';
@@ -120,6 +134,37 @@ setEdgePan(uiSettings.edgePan);
 // Browsers mute pages until the user interacts — wake the synth on the
 // first click so the first Blast actually booms.
 addEventListener('pointerdown', unlockAudio, { once: true });
+addEventListener('keydown', unlockAudio, { once: true });
+const soundscape = new Soundscape();
+// A tiny tick on every HUD/menu button press, a softer one on hover (throttled).
+let lastHover = 0;
+addEventListener('click', (e) => {
+  if ((e.target as HTMLElement).closest?.('button, .tg-btn, select')) uiClick();
+}, true);
+addEventListener('pointerover', (e) => {
+  const el = (e.target as HTMLElement).closest?.('button:not(:disabled)');
+  if (!el || performance.now() - lastHover < 90) return;
+  lastHover = performance.now();
+  uiHover();
+}, true);
+/** Share of sea and of trees in the tiles around the camera target (for the ambient bed). */
+let ambientSample = { sea: 0, trees: 0, at: -1 };
+function ambientAround(tx: number, tz: number): { sea: number; trees: number } {
+  const now = performance.now();
+  if (now - ambientSample.at < 500) return ambientSample;
+  let sea = 0;
+  let n = 0;
+  for (let dz = -16; dz <= 16; dz += 4) {
+    for (let dx = -16; dx <= 16; dx += 4) {
+      n++;
+      if (world.map.heightAt(Math.round(tx + dx), Math.round(tz + dz)) < 0) sea++;
+    }
+  }
+  let trees = 0;
+  for (const t of world.trees) if (t.alive && Math.abs(t.x - tx) < 16 && Math.abs(t.z - tz) < 16) trees++;
+  ambientSample = { sea: sea / n, trees: Math.min(1, trees / 40), at: now };
+  return ambientSample;
+}
 
 // Open on your tribe, not a random patch of ocean (there are two leaders
 // on this planet — make sure we look at OURS).
@@ -159,6 +204,7 @@ menu.settingsHooks = {
   inGame: () => menu.inGame,
   onEdgePan: setEdgePan,
   onResetHints: () => ui?.resetHints(),
+  onQuality: applyQuality,
 };
 // The in-game menu pauses the sim while it's open and restores the speed after.
 let pausedBeforeMenu = false;
@@ -166,6 +212,7 @@ function openGameMenu(screen: 'pause' | 'help' = 'pause'): void {
   if (appState.mode !== 'game' || menu.visible) return;
   pausedBeforeMenu = appState.paused;
   appState.paused = true;
+  autosave();
   menu.openInGame(screen);
 }
 menu.onResume = () => {
@@ -190,6 +237,7 @@ function restart(): void {
   }
 }
 function quitToMenu(): void {
+  autosave();
   startToken++;
   campaign.leave();
   appState.mode = 'menu';
@@ -202,6 +250,55 @@ function showTitle(): void {
   rig.zoom = 0.78;
   menu.show('title');
 }
+
+// --- Save & Continue (ui/autosave.ts, sim/save.ts) -------------------------
+
+/** Save the game in progress (never a test-play, never a finished game). */
+function autosave(): void {
+  if (appState.mode !== 'game' || testingLevel) return;
+  if (world.gameOver) return clearSave();
+  if (world.elapsed < 5) return;
+  const kind = campaign.active ? 'campaign' : lastStart.level ? 'level' : 'skirmish';
+  const what = kind === 'campaign' ? campaign.titleOf(campaign.active!) : kind === 'level' ? lastStart.level!.name : 'Skirmish';
+  writeSave({
+    v: 1,
+    kind,
+    ...(kind === 'campaign' ? { campaign: campaign.active! } : {}),
+    ...(kind === 'level' ? { level: lastStart.level } : {}),
+    label: `${what} · ${clock(world.elapsed)}`,
+    world: saveWorld(world),
+  });
+}
+menu.continueLabel = () => readSave()?.label ?? null;
+menu.onContinue = () => {
+  const g = readSave();
+  if (!g) return showTitle();
+  startToken++;
+  campaign.leave();
+  try {
+    restoreWorld(world, g.world);
+  } catch (err) {
+    console.warn('saved game could not be restored', err);
+    clearSave();
+    return showTitle();
+  }
+  treeRenderer.rebuild(world);
+  ui?.reset();
+  lastStart = g.kind === 'level' && g.level ? { level: g.level } : { settings: world.settings };
+  testingLevel = null;
+  backBtn.style.display = 'none';
+  if (g.kind === 'campaign' && g.campaign) campaign.resume(g.campaign);
+  const at = world.leaderOf('player') ?? world.tribes.player?.home;
+  if (at) rig.target.set(at.x * 2, 0, at.z * 2);
+  rig.zoom = CAMERA.defaultZoom;
+  appState.mode = 'game';
+};
+addEventListener('visibilitychange', () => {
+  if (document.hidden) autosave();
+});
+addEventListener('pagehide', () => autosave());
+let autosaveClock = 0;
+let savedCleared = false;
 
 /** Bumped by every start/quit: a level load that finishes after the player moved on is dropped. */
 let startToken = 0;
@@ -316,7 +413,7 @@ const backBtn = document.createElement('button');
 backBtn.type = 'button';
 backBtn.className = 'tg-btn primary';
 backBtn.textContent = 'Back to the editor';
-backBtn.style.cssText = 'position: fixed; top: 4.4rem; left: 50%; transform: translateX(-50%); z-index: 15; display: none;';
+backBtn.style.cssText = 'position: fixed; top: calc(var(--edge, 1rem) + 4.2rem); left: var(--edge, 1rem); z-index: 15; display: none;';
 backBtn.addEventListener('click', () => {
   if (!lastEdit.level) return;
   backBtn.style.display = 'none';
@@ -363,7 +460,24 @@ const stats = startLoop({
     unitRenderer.sync(world, rig.target, alpha, dt, ui?.selection.units ?? new Set<number>());
     treeRenderer.sync(world, rig.target);
     buildingRenderer.sync(world, rig.target);
+    const camTx = rig.target.x / 2;
+    const camTz = rig.target.z / 2;
+    if (appState.mode === 'game') soundscape.hear(world.events, camTx, camTz, rig.distance); // before effects drain them
+    const amb = ambientAround(camTx, camTz);
+    soundscape.ambient({ seaFraction: amb.sea, treeFraction: amb.trees, camDistance: rig.distance, paused: appState.mode !== 'game' || appState.paused }, dt);
     effects.sync(world, rig.target, dt); // drains world.events (ui/alerts.ts diffs state instead)
+    if (appState.mode === 'game' && !appState.paused) {
+      autosaveClock += dt;
+      if (autosaveClock > 60) {
+        autosaveClock = 0;
+        autosave();
+      }
+    }
+    if (world.gameOver && appState.mode === 'game' && !savedCleared) {
+      savedCleared = true; // a finished game can't be continued
+      clearSave();
+    }
+    if (!world.gameOver) savedCleared = false;
     ui?.updateOverlay();
 
     post.render(dt);
@@ -381,6 +495,9 @@ ui = new GameUi(world, { camera: rig.camera, target: rig.target, map: world.map 
 // Automation handle (tools/shot.mjs, tests, the console). Not a game API.
 (window as unknown as { __tg: unknown }).__tg = {
   world, rig, appState, menu, startLevel, terrain, effects, post, scene, lighting, ui, toolState, newWorld, campaign,
+  autosave, applyQuality, soundscape,
+  /** Screen position (CSS px) of tile (x, z) at height h above the ground, or null if off screen. */
+  screenOf: (x: number, z: number, h = 0) => toScreen({ camera: rig.camera, target: rig.target, map: world.map }, x, z, h),
 };
 if (query.get('play') !== '1') rig.zoom = 0.78;
 if (query.get('play') === '1') {

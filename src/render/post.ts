@@ -143,6 +143,17 @@ export class PostChain {
     this.composer = composer;
   }
 
+  /** Switch tier now (Settings → Graphics): rebuilds the post chain and pixel ratio in place. */
+  setQuality(q: QualityTier): void {
+    this.quality = q;
+    this.slowFor = 0;
+    this.warmup = 4;
+    this.bloom = null;
+    this.grade = null;
+    this.fxaa = null;
+    this.build();
+  }
+
   setSize(w: number, h: number): void {
     this.renderer.setSize(w, h);
     this.composer?.setSize(w, h);

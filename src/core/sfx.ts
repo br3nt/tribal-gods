@@ -152,7 +152,7 @@ export class Soundscape {
       if (!this.bed) return;
     }
     // Zoomed out: wind only, a little lower; zoomed in: all layers.
-    const near = 1 - smooth(60, 260, ctx.camDistance);
+    const near = 1 - smooth(45, 125, ctx.camDistance);
     const live = ctx.paused ? 0 : 1;
     const wind = live * (0.55 + 0.45 * (1 - near) * 0.5 + 0.1 * near);
     const sea = live * near * Math.min(1, Math.max(0, ctx.seaFraction) * 1.6);
