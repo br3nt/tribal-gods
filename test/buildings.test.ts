@@ -214,6 +214,25 @@ describe('garrisons', () => {
     expect(eventsOf(w, 'denied')).toHaveLength(1);
   });
 
+  it('a fighter across a narrow channel from the door is refused, never let in from the far shore', () => {
+    const w = flatWorld();
+    const tower = w.spawnBuilding('player', 'tower', 40, 40);
+    const door = w.doorOf(tower);
+    // A 3-tile channel just past the door, and a second band of sea further
+    // round (the planet wraps), so the fighter's side is cut off entirely.
+    for (let x = 0; x < 128; x++) {
+      for (let z = door.z + 2; z <= door.z + 4; z++) w.map.heights[z * 128 + x] = -1;
+      for (let z = door.z + 30; z <= door.z + 34; z++) w.map.heights[(z % 128) * 128 + x] = -1;
+    }
+    w.map.version++;
+    const f = w.spawn('warrior', 'player', door.x, door.z + 6);
+    const r = w.orderGarrison([f.id], tower.id);
+    expect(r.refused).toEqual([f.id]);
+    run(w, 6);
+    expect(tower.garrison).toEqual([]);
+    expect(f.hidden).toBe(false);
+  });
+
   it('an empty tower does not shoot', () => {
     const w = flatWorld();
     w.spawnBuilding('player', 'tower', 40, 40);

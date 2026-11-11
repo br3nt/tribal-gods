@@ -324,7 +324,7 @@ export function flowField(
   }
   let radius = 0;
   for (const s of tiles) radius = Math.max(radius, heuristic(s.x, s.z, cx0, cz0));
-  const h = (x: number, z: number) => (first ? Math.max(0, heuristic(x, z, cx0, cz0) - radius - 1) : 0);
+  const h = (x: number, z: number) => (first ? Math.max(0, heuristic(x, z, cx0, cz0) - radius) : 0);
 
   let expansions = 0;
   while (flowHeap.size > 0 && expansions < maxExpansions && wanted.size > 0) {

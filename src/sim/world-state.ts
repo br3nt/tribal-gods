@@ -338,9 +338,20 @@ export class World implements SimQueries {
   /** pathStats.expansions at the start of this tick. */
   private tickExpansionsStart = 0;
 
-  /** Is there search budget left this tick for a unit choosing its own job? */
-  private canSearchIdle(): boolean {
-    return pathStats.expansions - this.tickExpansionsStart < World.IDLE_SEARCH_BUDGET;
+  /** Units that were made to wait last time: they jump the queue (units always tick in array order). */
+  private deferredIdle = new Set<number>();
+
+  /**
+   * Is there search budget left this tick for `u` choosing its own job?
+   * Someone already deferred gets double the budget, so the same people at
+   * the back of the unit list can't be starved tick after tick.
+   */
+  private canSearchIdle(u: Unit): boolean {
+    const limit = World.IDLE_SEARCH_BUDGET * (this.deferredIdle.has(u.id) ? 2 : 1);
+    const ok = pathStats.expansions - this.tickExpansionsStart < limit;
+    if (ok) this.deferredIdle.delete(u.id);
+    else this.deferredIdle.add(u.id);
+    return ok;
   }
 
   /** Tiles occupied by building footprints (pathfinding reads the same set). */
@@ -981,7 +992,7 @@ export class World implements SimQueries {
     }
 
     // Out of search budget this tick: stay idle, ask again next tick (see IDLE_SEARCH_BUDGET).
-    const canSearch = this.canSearchIdle();
+    const canSearch = this.canSearchIdle(u);
     if (u.kind === 'chanter' && u.tribe !== 'wild') {
       if (canSearch && u.task === 'none' && this.tryChant(u)) return;
     } else if (isFighterKind(u.kind) && u.task === 'none' && canSearch) {
@@ -1278,7 +1289,9 @@ export class World implements SimQueries {
       }
       case 'garrison': {
         const b = this.getBuilding(u.targetBuilding);
-        if (b && b.progress >= 1 && b.garrison.length < this.garrisonCap(b) && this.fitsGarrison(u, b)) {
+        // Only through the door: never from a shore across the water from it.
+        const atDoor = !!b && this.distTo(u, this.doorOf(b).x, this.doorOf(b).z) < 2;
+        if (b && atDoor && b.progress >= 1 && b.garrison.length < this.garrisonCap(b) && this.fitsGarrison(u, b)) {
           this.enter(u, b);
           b.garrison.push(u.id);
         } else this.abandonTask(u);
@@ -2120,7 +2133,8 @@ export class World implements SimQueries {
       u.task = 'garrison';
       u.targetBuilding = b.id;
       if (this.distTo(u, door.x, door.z) < 0.6) this.onArrive(u);
-      else if (!this.sendTo(u, door.x, door.z, b.tribe === 'player' ? World.PLAYER_EXPANSIONS : 4000)) {
+      // shoreRadius 0: across water the door is unreachable, not "near enough".
+      else if (!this.sendTo(u, door.x, door.z, b.tribe === 'player' ? World.PLAYER_EXPANSIONS : 4000, 0)) {
         this.abandonTask(u);
         refused.push(id);
         fitTurnedAway = true;
@@ -2298,7 +2312,12 @@ export class World implements SimQueries {
         const sz = this.map.wrap(Math.round(goal.z + oz));
         const route = field && cost < Infinity ? field.pathFrom(u.x, u.z) : null;
         if (!route) {
-          if (!this.sendTo(u, sx, sz, fallbackBudget, 24) && !this.sendTo(u, goal.x, goal.z, fallbackBudget, 24)) refused.push(u);
+          // The field searches until it reaches everyone or runs out of
+          // ground, so a member it missed has no route at all (the mark is
+          // walled in by buildings, say): refuse at once rather than prove it
+          // again with a full A* per unit. Only when there was no field (no
+          // walkable ground near the mark) does each unit try its own search.
+          if (field || !this.sendTo(u, goal.x, goal.z, fallbackBudget, 24)) refused.push(u);
           continue;
         }
         // Leave the shared route where it enters the gathering area.

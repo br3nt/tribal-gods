@@ -65,7 +65,7 @@ const world = new World();
 // Dev/automation hooks: ?seed=N fixes the planet, ?play=1 skips the menu,
 // ?level=<official id> loads a designed level (see tools/shot.mjs).
 const query = new URLSearchParams(location.search);
-const querySeed = query.has('seed') && Number.isFinite(Number(query.get('seed'))) ? Number(query.get('seed')) : null;
+const querySeed = query.get('seed')?.trim() && Number.isFinite(Number(query.get('seed'))) ? Number(query.get('seed')) : null;
 world.reset(querySeed ?? Math.floor(Math.random() * 1e9));
 
 // --- Renderer & scene (the look: render/look.ts, sky.ts, lighting.ts, post.ts) ---

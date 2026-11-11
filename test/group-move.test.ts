@@ -4,7 +4,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { WORLD_SIZE } from '../src/config';
-import { findPath } from '../src/sim/pathfinding';
+import { findPath, pathStats, tileIndex } from '../src/sim/pathfinding';
 import { World } from '../src/sim/world-state';
 import { flatWorld, run } from './helpers';
 
@@ -48,6 +48,19 @@ describe('group move', () => {
     run(w, 110);
     const far = ids.map((id) => w.unitById(id)!).filter((u) => Math.hypot(u.x - tx, u.z - tz) > 9);
     expect(far.map((u) => `${u.id}@${u.x.toFixed(0)},${u.z.toFixed(0)}`)).toEqual([]);
+  });
+
+  it('a mark walled in by buildings is refused with one search, not one per unit', () => {
+    const w = flatWorld();
+    // A closed ring of occupied tiles around (60, 60): same region (buildings don't split regions), no way in.
+    for (let d = -4; d <= 4; d++) {
+      for (const [x, z] of [[60 + d, 56], [60 + d, 64], [56, 60 + d], [64, 60 + d]]) w.obstacles.add(tileIndex(x, z));
+    }
+    const ids = army(w, 60, 20, 20);
+    const e0 = pathStats.expansions;
+    w.orderMove(ids, 60, 60);
+    expect(pathStats.expansions - e0).toBeLessThan(20_000); // was up to ~1.4M with two 12k fallbacks per unit
+    expect(w.events.filter((e) => e.type === 'denied')).toHaveLength(1);
   });
 
   it('a short group move gathers the group around the mark, not on one tile', () => {

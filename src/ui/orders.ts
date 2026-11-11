@@ -168,9 +168,15 @@ export class OrderControl {
    * fallback would select whoever happens to stand there.
    */
   private pickAt(px: number, py: number, tile: { x: number; z: number } | null, pred: (u: Unit) => boolean): { unit: Unit | null; building: Building | null } {
-    const hit = pickAtScreen(this.ctx.view, this.ctx.world.units, this.ctx.world.buildings, px, py, pred);
-    if (hit.unit || hit.building || !tile) return hit;
-    return { unit: this.unitNear(tile.x, tile.z, PICK_RADIUS, pred), building: null };
+    // Preferred people (e.g. your own) first, then anyone; only if NOTHING is
+    // drawn under the cursor does the ground-tile fallback run (preferred first).
+    const view = this.ctx.view;
+    const w = this.ctx.world;
+    const preferred = pickAtScreen(view, w.units, w.buildings, px, py, pred);
+    if (preferred.unit) return preferred;
+    const anyone = pickAtScreen(view, w.units, w.buildings, px, py, () => true);
+    if (anyone.unit || anyone.building || !tile) return anyone;
+    return { unit: this.unitNear(tile.x, tile.z, PICK_RADIUS, pred) ?? this.unitNear(tile.x, tile.z, PICK_RADIUS, () => true), building: null };
   }
 
   private monumentAt(x: number, z: number): number {
@@ -180,8 +186,7 @@ export class OrderControl {
   /** What a left click at (px, py) would pick (automation and debugging read this; same rule as clickSelect). */
   whatIsUnder(px: number, py: number): { unit: number | null; building: number | null } {
     const tile = this.groundTile(px, py);
-    const own = this.pickAt(px, py, tile, (u) => u.tribe === 'player');
-    const hit = own.unit ? own : this.pickAt(px, py, tile, () => true);
+    const hit = this.pickAt(px, py, tile, (u) => u.tribe === 'player');
     return { unit: hit.unit?.id ?? null, building: hit.building?.id ?? (hit.unit || !tile ? null : this.buildingAt(tile.x, tile.z)?.id ?? null) };
   }
 
@@ -194,8 +199,7 @@ export class OrderControl {
     if (tile && this.intercept?.(tile.x, tile.z)) return;
     // Screen-space picks first (a roof against the sky has no ground tile behind it).
     // Your own people win over anyone else's under the same pixel.
-    const ownHit = this.pickAt(px, py, tile, (u) => u.tribe === 'player');
-    const hit = ownHit.unit ? ownHit : this.pickAt(px, py, tile, () => true);
+    const hit = this.pickAt(px, py, tile, (u) => u.tribe === 'player');
     const any = hit.unit;
     const roof = hit.building;
     const now = performance.now();
@@ -291,7 +295,7 @@ export class OrderControl {
   /** Something is selected that a right-click would command. */
   private hasCommand(): boolean {
     const sel = this.ctx.selection;
-    if (sel.building !== null) return true;
+    if (sel.building !== null) return this.ctx.world.getBuilding(sel.building)?.tribe === 'player';
     return [...sel.units].some((id) => this.ctx.world.unitById(id)?.tribe === 'player');
   }
 

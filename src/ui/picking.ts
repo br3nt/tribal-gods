@@ -73,16 +73,19 @@ function buildingBox(view: View, b: Building, vp: Viewport) {
   let minX = Math.min(base.x, top.x);
   let maxX = Math.max(base.x, top.x);
   let maxY = base.y;
-  let nearDepth = base.depth;
+  // The footprint's own screen width (corners only): what can stand IN FRONT of a person.
+  let footMinX = base.x;
+  let footMaxX = base.x;
   for (const [dx, dz] of [[-half, -half], [half, -half], [-half, half], [half, half]]) {
     const c = probeScreen(view, b.x + dx, b.z + dz, 0, vp);
     if (!c) continue; // a corner behind the camera: the rest still bound it
     minX = Math.min(minX, c.x);
     maxX = Math.max(maxX, c.x);
     maxY = Math.max(maxY, c.y);
-    nearDepth = Math.min(nearDepth, c.depth);
+    footMinX = Math.min(footMinX, c.x);
+    footMaxX = Math.max(footMaxX, c.x);
   }
-  return { minX: minX - 4, maxX: maxX + 4, minY: Math.min(top.y, base.y) - 4, maxY: maxY + 4, depth: base.depth, nearDepth };
+  return { minX: minX - 4, maxX: maxX + 4, minY: Math.min(top.y, base.y) - 4, maxY: maxY + 4, depth: base.depth, footMinX, footMaxX };
 }
 
 /** The nearest-to-camera person whose body is under (px, py). */
@@ -123,14 +126,15 @@ export function buildingAtScreen(view: View, buildings: Iterable<Building>, px: 
 
 /**
  * Is this person drawn BEHIND this building from the camera's point of
- * view? A unit further from the camera than the building's centre, whose
- * body overlaps its silhouette, is hidden by the walls.
+ * view? Further from the camera than the building's centre AND standing
+ * within the footprint's screen width: the walls are in front. Someone
+ * beside a side wall, even a little further back, stays pickable.
  */
 export function hiddenBehind(view: View, u: Unit, b: Building, vp = screenViewport()): boolean {
   const ub = unitBox(view, u, vp);
   const bb = buildingBox(view, b, vp);
   if (!ub || !bb) return false;
-  return ub.foot.depth > bb.depth;
+  return ub.foot.depth > bb.depth && ub.foot.x > bb.footMinX && ub.foot.x < bb.footMaxX;
 }
 
 /** What is drawn under the cursor: the person or the building, whichever is in front. */
