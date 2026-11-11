@@ -1,0 +1,294 @@
+/*
+ * ui/theme.css — the design system every screen is drawn with.
+ *
+ * One look for the whole interface: dark "smoked glass" panels that sit on
+ * top of the bright, sunny world without fighting it (blurred backdrop, a
+ * thin light rim, a soft shadow), warm sunstone gold for anything active or
+ * selected, mana-cyan for spells, amber for wood. Every size is in rem, and
+ * the root font size follows --ui-scale, so one variable resizes the HUD.
+ *
+ * CSS variables (custom properties) below are the only place colours,
+ * spacing, radii, type sizes and motion timings are defined. Components
+ * reference them; nothing hard-codes a hex value it could take from here.
+ */
+
+:root {
+  --ui-scale: 1;
+
+  /* Colour */
+  --ink-0: rgba(13, 17, 24, 0.82);
+  --ink-1: rgba(16, 20, 28, 0.8);
+  --ink-2: rgba(255, 255, 255, 0.06);
+  --ink-3: rgba(255, 255, 255, 0.11);
+  --ink-solid: #141a24;
+  --rim: rgba(255, 255, 255, 0.12);
+  --rim-strong: rgba(255, 255, 255, 0.24);
+  --text: #eef1f5;
+  --text-2: #b4bccb;
+  --text-3: #7f8a9c;
+  --gold: #f4c66a;
+  --gold-soft: rgba(244, 198, 106, 0.18);
+  --mana: #72d8ff;
+  --mana-soft: rgba(114, 216, 255, 0.18);
+  --wood: #e2a564;
+  --good: #7fdc8c;
+  --warn: #ffb54d;
+  --bad: #ff6a5c;
+  --bad-soft: rgba(255, 106, 92, 0.18);
+  --tribe-player: #2f7fe6;
+  --tribe-red: #d9483b;
+  --tribe-gold: #e2a72e;
+  --tribe-violet: #9a5fd6;
+  --tribe-wild: #8a8273;
+
+  /* Space, radius, type, motion */
+  --s1: 0.25rem;
+  --s2: 0.5rem;
+  --s3: 0.75rem;
+  --s4: 1rem;
+  --s5: 1.5rem;
+  --s6: 2rem;
+  --r1: 0.375rem;
+  --r2: 0.625rem;
+  --r3: 0.875rem;
+  --r-pill: 999px;
+  --t-xs: 0.6875rem;
+  --t-sm: 0.75rem;
+  --t-md: 0.875rem;
+  --t-lg: 1.0625rem;
+  --t-xl: 1.5rem;
+  --t-xxl: 3.25rem;
+  --font: "Inter", "SF Pro Text", -apple-system, system-ui, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  --font-display: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --fast: 120ms;
+  --med: 220ms;
+  --shadow: 0 0.5rem 1.75rem rgba(0, 0, 0, 0.35), 0 0.0625rem 0 rgba(255, 255, 255, 0.06) inset;
+  --blur: blur(16px) saturate(0.55) brightness(0.85);
+  --edge: var(--s3);
+}
+
+html { font-size: calc(16px * var(--ui-scale)); }
+
+body {
+  margin: 0;
+  font-family: var(--font);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: "tnum" 1, "cv11" 1;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Everything the UI draws lives in #ui, which never eats world clicks
+   itself; only its panels do. */
+#ui {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 10;
+}
+/* pointer-events inherits: only real controls opt back in. */
+.tg-panel, .tg-btn, .tg-hit { pointer-events: auto; }
+.passthrough { pointer-events: none !important; }
+[hidden] { display: none !important; }
+
+/* ---------- Panels ------------------------------------------------------- */
+
+.tg-panel {
+  background: var(--ink-1);
+  backdrop-filter: var(--blur);
+  -webkit-backdrop-filter: var(--blur);
+  border: 1px solid var(--rim);
+  border-radius: var(--r3);
+  box-shadow: var(--shadow);
+  color: var(--text);
+}
+.tg-panel-head {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  font-size: var(--t-xs);
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+/* ---------- Buttons ------------------------------------------------------ */
+
+.tg-btn {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s2);
+  padding: var(--s2) var(--s3);
+  min-height: 2rem;
+  border-radius: var(--r2);
+  border: 1px solid var(--rim);
+  background: var(--ink-2);
+  color: var(--text);
+  font: 500 var(--t-sm) / 1 var(--font);
+  cursor: pointer;
+  transition: background var(--fast) var(--ease), border-color var(--fast) var(--ease), transform var(--fast) var(--ease);
+}
+.tg-btn:hover { background: var(--ink-3); border-color: var(--rim-strong); }
+.tg-btn:active { transform: translateY(1px); }
+.tg-btn:disabled { opacity: 0.45; cursor: default; }
+.tg-btn.primary {
+  background: linear-gradient(180deg, #ffd889, #eab454);
+  border-color: rgba(255, 230, 170, 0.9);
+  color: #2a1d06;
+  font-weight: 650;
+}
+.tg-btn.primary:hover { background: linear-gradient(180deg, #ffe29f, #f1c066); }
+.tg-btn.danger { color: var(--bad); }
+.tg-btn.danger:hover { background: var(--bad-soft); border-color: var(--bad); }
+.tg-btn.icon-only { padding: var(--s1); min-width: 2rem; }
+.tg-btn.on { background: var(--gold-soft); border-color: var(--gold); color: var(--gold); }
+.tg-btn svg { flex: none; }
+
+:focus { outline: none; }
+:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+}
+
+/* A hotkey badge, used on every control that has one. */
+.kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.05rem;
+  height: 1.05rem;
+  padding: 0 0.22rem;
+  border-radius: 0.3rem;
+  background: rgba(0, 0, 0, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  color: var(--text-2);
+  font: 600 0.625rem/1 var(--font);
+  letter-spacing: 0.02em;
+  box-sizing: border-box;
+}
+
+/* Bars (hp, progress) */
+.bar {
+  position: relative;
+  height: 0.375rem;
+  border-radius: var(--r-pill);
+  background: rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+}
+.bar > i {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0;
+  border-radius: inherit;
+  background: var(--good);
+  transition: width var(--fast) linear;
+}
+.bar.mana > i { background: linear-gradient(90deg, #47b8e8, var(--mana)); }
+.bar.gold > i { background: linear-gradient(90deg, #d9a443, var(--gold)); }
+.bar.warn > i { background: var(--warn); }
+.bar.bad > i { background: var(--bad); }
+
+/* ---------- Tooltip ------------------------------------------------------ */
+
+.tg-tip {
+  position: fixed;
+  z-index: 60;
+  max-width: 17.5rem;
+  padding: var(--s3);
+  pointer-events: none;
+  background: var(--ink-0);
+  backdrop-filter: var(--blur);
+  -webkit-backdrop-filter: var(--blur);
+  border: 1px solid var(--rim-strong);
+  border-radius: var(--r2);
+  box-shadow: var(--shadow);
+  font-size: var(--t-sm);
+  line-height: 1.45;
+  color: var(--text-2);
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity var(--fast) var(--ease), transform var(--fast) var(--ease);
+}
+.tg-tip.show { opacity: 1; transform: none; }
+.tg-tip h4 {
+  margin: 0 0 var(--s1);
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  font-size: var(--t-md);
+  font-weight: 650;
+  color: var(--text);
+}
+.tg-tip h4 .kbd { margin-left: auto; }
+.tg-tip .sub { color: var(--text-3); font-size: var(--t-xs); text-transform: uppercase; letter-spacing: 0.08em; }
+.tg-tip p { margin: var(--s1) 0 var(--s2); }
+.tg-tip .stats {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.125rem var(--s3);
+  font-size: var(--t-xs);
+}
+.tg-tip .stats dt { color: var(--text-3); }
+.tg-tip .stats dd { margin: 0; color: var(--text); }
+.tg-tip .why { margin-top: var(--s2); color: var(--bad); font-weight: 600; }
+.tg-tip .note { margin-top: var(--s2); color: var(--gold); }
+.tg-tip .hint { margin-top: var(--s2); color: var(--text-3); font-size: var(--t-xs); }
+
+/* ---------- Toasts near the cursor -------------------------------------- */
+
+.tg-toast {
+  position: fixed;
+  z-index: 55;
+  pointer-events: none;
+  padding: 0.3rem 0.6rem;
+  border-radius: var(--r1);
+  background: rgba(40, 10, 8, 0.86);
+  border: 1px solid rgba(255, 106, 92, 0.6);
+  color: #ffd9d4;
+  font: 600 var(--t-sm)/1.2 var(--font);
+  white-space: nowrap;
+  animation: tg-toast 1.6s var(--ease) forwards;
+}
+@keyframes tg-toast {
+  0% { opacity: 0; transform: translate(-50%, 4px); }
+  12% { opacity: 1; transform: translate(-50%, 0); }
+  75% { opacity: 1; }
+  100% { opacity: 0; transform: translate(-50%, -10px); }
+}
+
+/* Cursor-following hint while aiming or placing */
+.tg-cursor-note {
+  position: fixed;
+  z-index: 54;
+  pointer-events: none;
+  padding: 0.25rem 0.5rem;
+  border-radius: var(--r1);
+  background: var(--ink-0);
+  border: 1px solid var(--rim-strong);
+  font: 600 var(--t-xs)/1.2 var(--font);
+  color: var(--text);
+  white-space: nowrap;
+  transform: translate(14px, 14px);
+}
+.tg-cursor-note.bad { color: #ffd9d4; border-color: rgba(255, 106, 92, 0.7); background: rgba(40, 10, 8, 0.86); }
+.tg-cursor-note .kbd { margin-left: var(--s1); }
+
+/* Marquee */
+.tg-marquee {
+  position: fixed;
+  z-index: 5;
+  pointer-events: none;
+  border: 1px solid var(--gold);
+  background: rgba(244, 198, 106, 0.1);
+  border-radius: 2px;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.25);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: 1ms !important; transition-duration: 1ms !important; }
+}

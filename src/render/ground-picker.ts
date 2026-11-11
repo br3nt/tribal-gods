@@ -13,8 +13,9 @@
  *
  *   walk along the ray in small steps;
  *   at each step compare the ray's height against the curved terrain
- *   height under that point (heightmap sample minus the same CURVATURE·d²
- *   the vertex shader applies);
+ *   height under that point (heightmap sample minus the same drop the
+ *   vertex shader applies — curvatureDrop(), CURVATURE·d² plus the limb's
+ *   cubic fall-off far out, so far-edge clicks land where you point);
  *   the first step that dips below the surface brackets the hit —
  *   then a few rounds of bisection sharpen it to centimeters.
  *
@@ -24,7 +25,8 @@
  */
 
 import * as THREE from 'three';
-import { CURVATURE, TILE } from '../config';
+import { TILE } from '../config';
+import { curvatureDrop } from '../world/curvature';
 import { Heightmap } from '../world/heightmap';
 
 const MAX_DISTANCE = 450; // world units; past this the ray is pointing at sky
@@ -38,7 +40,7 @@ const ndc = new THREE.Vector2();
 function curvedHeight(map: Heightmap, x: number, z: number, camTarget: THREE.Vector3): number {
   const dx = x - camTarget.x;
   const dz = z - camTarget.z;
-  return map.sampleHeight(x / TILE, z / TILE) - CURVATURE * (dx * dx + dz * dz);
+  return map.sampleHeight(x / TILE, z / TILE) - curvatureDrop(dx, dz);
 }
 
 /**

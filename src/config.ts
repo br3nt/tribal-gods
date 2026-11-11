@@ -5,6 +5,8 @@
  * When you want to play god with the game itself, start here.
  */
 
+import { TRIBE_COLORS as CATALOG_TRIBE_COLORS } from './sim/catalog';
+
 // ---------------------------------------------------------------------------
 // The world grid
 // ---------------------------------------------------------------------------
@@ -12,7 +14,7 @@
 /**
  * The world is a square grid of height values, WORLD_SIZE tiles on a side,
  * that wraps at both edges (see world/heightmap.ts for why that makes a
- * "planet"). The original game used roughly this size. Bigger = a larger
+ * "planet"). 128 tiles a side is enough for a small planet. Bigger = a larger
  * planet that takes longer to walk around; must stay a power of two so the
  * tileable noise octaves in heightmap generation divide it evenly.
  */
@@ -31,14 +33,16 @@ export const MAX_HEIGHT = 18;
 
 /**
  * How hard the world bends away from the camera target. Vertices drop by
- * CURVATURE * distance² — so at 100 world units away, land sits
- * 0.0035 * 10000 = 35 units below where it "really" is.
+ * CURVATURE * distance² — so at 60 world units away, land sits
+ * 0.0045 * 3600 ≈ 16 units below where it "really" is. (v2 raised it from
+ * 0.0035 for the bigger camera range; past LIMB_START in render/look.ts the
+ * ground falls away faster still, so the far view ends in a round limb.)
  *
  * Raise it and the planet feels tiny and toy-like; lower it and the world
  * flattens out into an ordinary RTS map. 0 disables the illusion entirely
  * (try it — the game instantly loses its soul).
  */
-export const CURVATURE = 0.0035;
+export const CURVATURE = 0.0045;
 
 // ---------------------------------------------------------------------------
 // Rendering window
@@ -62,8 +66,8 @@ export const CAM_DIST_MAX = 130;
 
 /**
  * Camera pitch (radians above the horizon) at min / max zoom. Low and
- * cinematic up close, high and god-like zoomed out — exactly the original's
- * feel of swooping down into your village.
+ * cinematic up close, high and god-like zoomed out — the feel of swooping down
+ * into your village.
  */
 export const CAM_PITCH_MIN = 0.6; // ~34° when zoomed in
 export const CAM_PITCH_MAX = 1.1; // ~63° when zoomed out
@@ -114,8 +118,8 @@ export const CIVS: Record<CivId, Civ> = {
   forest: {
     id: 'forest',
     name: 'Forest Tribe',
-    leaderTitle: 'the Shaman',
-    blurb: 'Thatch, totems, and the old ways. The classic.',
+    leaderTitle: 'the Grove-Speaker',
+    blurb: 'Thatch, totems, and a leader who listens to the trees.',
     roof: 'thatch',
     roofColor: 0xc9a84c,
     wallColor: 0xb08d5e,
@@ -151,30 +155,30 @@ export type Difficulty = 'easy' | 'normal' | 'hard';
 
 /**
  * Difficulty tunes the AI's tempo, never its rules: it decides more or
- * less often (a slow god is a beatable god) and starts with more or less
- * of a head start in followers.
+ * less often (a slow god is a beatable god), waits longer or shorter
+ * between spells (`aiCastGap`, seconds), stops raising dwellings sooner or
+ * later (`aiDwellings` — an AI town is a size, not a flood), and starts
+ * with more or less of a head start in followers.
  */
-export const DIFFICULTIES: Record<Difficulty, { aiEvalSeconds: number; redStartBraves: number; label: string }> = {
-  easy: { aiEvalSeconds: 4, redStartBraves: 6, label: 'A patient, sleepy god' },
-  normal: { aiEvalSeconds: 2, redStartBraves: 8, label: 'An even match' },
-  hard: { aiEvalSeconds: 1.3, redStartBraves: 11, label: 'It dreams of your extinction' },
+export const DIFFICULTIES: Record<Difficulty, { aiEvalSeconds: number; aiCastGap: number; aiDwellings: number; redStartBraves: number; label: string }> = {
+  easy: { aiEvalSeconds: 4, aiCastGap: 16, aiDwellings: 6, redStartBraves: 6, label: 'A patient, sleepy god' },
+  normal: { aiEvalSeconds: 2, aiCastGap: 9, aiDwellings: 8, redStartBraves: 8, label: 'An even match' },
+  hard: { aiEvalSeconds: 1.3, aiCastGap: 5.5, aiDwellings: 11, redStartBraves: 11, label: 'It dreams of your extinction' },
 };
 
 // ---------------------------------------------------------------------------
-// Worship — spells must be earned at the stone heads
+// Gameplay tuning that is not per-kind content.
+//
+// Per-kind numbers (unit stats, building costs/hp/footprints, spell charge
+// costs, dwelling tiers, population economy) live in sim/catalog.ts — the
+// v2 contract. What stays here are the sim's global knobs.
 // ---------------------------------------------------------------------------
 
-/** Seconds the leader spends communing at a monument to claim its spell. */
+/** Seconds the leader spends communing at a monument to claim its gift. */
 export const WORSHIP_SECONDS = 6;
 
-/** Spells every tribe knows from the first sunrise. The other six wait
- *  inside monuments scattered across the planet — first god to worship
- *  there keeps the spell. The race for the volcano IS the mid-game. */
-export const STARTING_SPELLS = ['blast', 'convert'] as const;
-
-// ---------------------------------------------------------------------------
-// Walkability — what counts as ground a follower can cross
-// ---------------------------------------------------------------------------
+/** Seconds before a fallen leader returns at the home circle. */
+export const LEADER_RESPAWN_SECONDS = 15;
 
 /**
  * Land must be at least this high to walk on. Slightly above 0 so units
@@ -189,66 +193,19 @@ export const WALK_MIN_HEIGHT = 0.2;
  */
 export const MAX_WALK_STEP = 3.2;
 
-/** Movement speed per unit kind, in tiles per second. */
-export const UNIT_SPEED = {
-  brave: 1.8,
-  shaman: 2.2,
-  wildman: 1.3,
-  warrior: 1.9,
-  firewarrior: 1.7,
-} as const;
-
-// ---------------------------------------------------------------------------
-// War — who hits whom, how hard, from how far
-// ---------------------------------------------------------------------------
-
-/**
- * Combat stats per unit kind. The interesting design lever is `sight`:
- * units auto-engage enemies inside it. Braves get sight 0 — they never
- * pick fights (they flee instead); warriors brawl up close; firewarriors
- * out-range everything but melt if you reach them. Classic triangle.
- */
-export const COMBAT = {
-  brave: { hp: 10, dmg: 1.2, range: 1.1, cooldown: 1.4, sight: 0 },
-  warrior: { hp: 26, dmg: 4, range: 1.3, cooldown: 1.1, sight: 9 },
-  firewarrior: { hp: 14, dmg: 5, range: 6, cooldown: 1.7, sight: 10 },
-  shaman: { hp: 35, dmg: 0, range: 0, cooldown: 0, sight: 0 },
-  wildman: { hp: 10, dmg: 0, range: 0, cooldown: 0, sight: 0 },
-} as const;
-
-/** Guard towers: a stationary firewarrior with a better view. */
-export const TOWER = { dmg: 5, range: 8, cooldown: 1.9 };
-
-/** Wood cost to PLACE each building. */
-export const BUILD_COSTS = { hut: 5, warriorHut: 8, fireHut: 10, tower: 6 } as const;
-
-/** Wood cost to TRAIN one unit at the matching building. */
-export const TRAIN_COSTS = { warriorHut: 2, fireHut: 3 } as const;
-
-/** Seconds a brave spends inside a training hut becoming dangerous. */
-export const TRAIN_SECONDS = 4;
-
-/** Training pauses while a tribe has fewer braves than this — someone
- *  still has to chop the wood and build the huts. */
+/** AI tribes keep at least this many villagers out of training queues. */
 export const MIN_BRAVES = 4;
 
-/** Braves bolt for home when enemy soldiers get this close (tiles). */
+/** Villagers bolt for home when enemy soldiers get this close (tiles). */
 export const FLEE_RADIUS = 4.5;
 
-// ---------------------------------------------------------------------------
-// Settlement economy — the numbers that make the village breathe
-// ---------------------------------------------------------------------------
-
-/** Wood in the stockpile when a tribe starts (enough for one hut, barely). */
+/** Wood in the stockpile when a tribe starts (skirmish default). */
 export const START_WOOD = 8;
 
-/** Placing a hut site costs this much from the stockpile. */
-export const HUT_WOOD_COST = 5;
+/** Villagers in a default skirmish (AI tribes use the difficulty's count). */
+export const START_BRAVES = 8;
 
-/**
- * Idle braves keep chopping until the stockpile reaches this. Raise it and
- * the village logs harder; lower it and forests survive longer.
- */
+/** Idle villagers keep chopping until the stockpile reaches this. */
 export const WOOD_TARGET = 14;
 
 /** Seconds of axe-swinging to fell one tree (yields 1 wood). */
@@ -257,36 +214,49 @@ export const CHOP_SECONDS = 3.5;
 /** Seconds before a felled tree regrows. */
 export const TREE_REGROW_SECONDS = 100;
 
-/**
- * Total builder-seconds to raise a hut: one brave takes 30s, four braves
- * take 7.5s. The classic many-hands model.
- */
-export const HUT_BUILD_SECONDS = 30;
+/** Lumberyard: radius of its effect, chop speed bonus, regrow time factor. */
+export const LUMBERYARD = { radius: 12, chopBonus: 1.33, regrowFactor: 0.35 };
+
+/** At most this many villagers raise one building at once. */
 export const MAX_BUILDERS = 4;
 
-/** How many followers can live in one hut. */
-export const HUT_CAPACITY = 3;
-
-/** A lived-in hut produces a new brave roughly this often (seconds). */
-export const BREED_SECONDS = 22;
-
-/** Population cap: base + this per completed hut. Build to grow. */
-export const POP_BASE = 6;
-export const POP_PER_HUT = 4;
-
-/** Residents pop outside for a stroll about this often — pure theater, but
- *  it's the difference between a village and a storage unit. */
+/** Residents pop outside for a stroll about this often — village theatre. */
 export const OUTING_SECONDS = 16;
 
-/** Footprint height spread a hut site will tolerate (builders auto-flatten it). */
-export const HUT_FLAT_TOLERANCE = 2.4;
+/** Footprint height spread a building site will tolerate (builders flatten it). */
+export const BUILD_FLAT_TOLERANCE = 2.4;
 
-/** Mana pool cap, and the regeneration formula's coefficients —
- *  followers worship, housed followers worship HARDER (they're comfy). */
-export const MANA_CAP = 200;
+/**
+ * Mana income per second = (base + followers*k + housed*k2) — then
+ * multiplied by (1 + praying * ECONOMY.shrinePrayerBonus) — and poured
+ * evenly into the spells that are charging (see catalog.ts).
+ */
 export const MANA_BASE_RATE = 0.4;
 export const MANA_PER_FOLLOWER = 0.12;
 export const MANA_PER_RESIDENT = 0.35;
+
+/** Watchtower occupants: added reach (tiles) and damage multiplier. */
+export const TOWER_BONUS = { range: 3, minRange: 5, dmg: 1.5 };
+
+/** Warden vs buildings damage multiplier; share of spell damage wardens ignore. */
+export const WARDEN = { buildingBonus: 3, spellResist: 0.5 };
+
+/**
+ * Fire. A burning building loses `buildingDps` × its max hp per second for
+ * `buildingSeconds`, then burns out; it may light trees within `spreadRadius`.
+ * A burning tree burns `treeSeconds`, then falls.
+ */
+export const FIRE = {
+  buildingSeconds: 18,
+  buildingDps: 0.03,
+  treeSeconds: 5,
+  spreadRadius: 3.5,
+  spreadChancePerSecond: 0.25,
+  emberIgniteChance: 0.3,
+};
+
+/** Buff tuning for timed spells (radius/duration come from the catalog). */
+export const BUFFS = { wardFactor: 0.5, warsongFactor: 1.33, bloomHealPerSecond: 0.15 };
 
 // ---------------------------------------------------------------------------
 // Sculpting brush (the Phase 1 stand-in for god powers)
@@ -304,7 +274,7 @@ export const BRUSH_RATE = 10;
 export const FLATTEN_RATE = 4;
 
 // ---------------------------------------------------------------------------
-// Palette — the painted, saturated 1998 look lives in these numbers
+// Palette — the painted, saturated look lives in these numbers
 // ---------------------------------------------------------------------------
 
 export const COLOR_SKY = 0x8db8d8;
@@ -321,6 +291,7 @@ export const COLOR_SNOW = 0xe9eded; // high peaks
 export const COLOR_TEAM_PLAYER = 0x3a6fd0; // your tribe wears blue, as is right and proper
 export const COLOR_TEAM_RED = 0xc23b2e; // the enemy wears red, as is traditional
 export const TRIBE_COLORS: Record<string, number> = {
+  ...CATALOG_TRIBE_COLORS,
   player: COLOR_TEAM_PLAYER,
   red: COLOR_TEAM_RED,
 };

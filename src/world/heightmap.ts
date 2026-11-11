@@ -5,7 +5,7 @@
  * at both edges. Walk off the east edge and you arrive at the west edge.
  * Topologically that's a torus (a donut), but rendered with the curvature
  * trick (world/curvature.ts) it reads convincingly as a small planet — the
- * exact same sleight of hand the 1998 original used.
+ * cheap sleight of hand that sells a whole globe from a flat array.
  *
  * Everything interesting about the god game falls out of this one array:
  *   - Terrain rendering reads it (world/terrain-mesh.ts).

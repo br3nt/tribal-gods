@@ -110,12 +110,12 @@ async function assemble(
     if (walkable(map, x, z)) wildmen.push(x, z);
   }
   return {
-    v: 1,
+    v: 2,
     ...meta,
     author: 'Tribal Gods',
     terrain: await packTerrain(map.heights),
     trees,
-    monuments: monuments.map((m) => ({ ...placeNear(map, m.x, m.z), spell: m.spell })),
+    monuments: monuments.map((m) => ({ ...placeNear(map, m.x, m.z), spell: m.spell, mode: 'teach' as const })),
     homes,
     wildmen,
   };
@@ -151,7 +151,7 @@ export const OFFICIAL_LEVELS: OfficialLevel[] = [
     async build() {
       // Two tribes, one ocean between them: a channel carved straight
       // through the world. Nobody marches anywhere until somebody learns
-      // Landbridge — which sits on YOUR side. Use the head start.
+      // Causeway — which sits on YOUR side. Use the head start.
       const map = new Heightmap();
       map.generate(2002);
       // The carve: a sine-wavy band of deep water across the whole planet.
@@ -180,7 +180,7 @@ export const OFFICIAL_LEVELS: OfficialLevel[] = [
       return assemble(
         map,
         2002,
-        { name: 'The Strait', desc: 'An ocean apart. Landbridge is on your shore — claim it before the water stops protecting you.' },
+        { name: 'The Strait', desc: 'An ocean apart. Causeway is on your shore — claim it before the water stops protecting you.' },
         homes,
         [
           { x: homes.player.x + 9, z: homes.player.z + 5, spell: 'landbridge' },
