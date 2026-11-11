@@ -28,7 +28,7 @@ import { UiContext } from './context';
 import { css, h, setClass, worldLayer } from './dom';
 import { icon, spellIcon } from './icons';
 import { tribeCss } from './orders';
-import { STONE_HEIGHT } from './picking';
+import { stoneHeight } from './picking';
 import { toScreen } from './project';
 import { ritualAt } from './stones';
 
@@ -263,7 +263,7 @@ export class WorldOverlay {
     }
     this.stones.forEach((s, i) => {
       const m = world.monuments[i];
-      const p = m ? toScreen(view, m.x, m.z, STONE_HEIGHT + 1.4) : null;
+      const p = m ? toScreen(view, m.x, m.z, stoneHeight(m.spell) + 1.4) : null;
       if (!m || !p || this.covered(p)) {
         s.el.hidden = true;
         return;

@@ -193,7 +193,7 @@ export const scenario: CampaignScenario = {
         ],
         objectives: [
           { objective: { type: 'rescueStranded', count: KIN.brave + KIN.warrior }, text: 'Raise a Causeway to the kin on the sandbar' },
-          { objective: { type: 'convertWanderers', count: 4 }, text: 'Kindle the wanderers on the north meadow' },
+          { objective: { type: 'convertWanderers', count: 3 }, text: 'Kindle the wanderers on the north meadow' },
           { objective: { type: 'castSpell', spell: 'flatten', count: 2, x: slope.x, z: slope.z, radius: LAYOUT.slopeRadius }, text: 'Level the hillside (twice)', after: O.kin },
           { objective: { type: 'buildCount', kind: 'hut', count: HUTS }, text: `Raise ${HUTS} Dwellings`, after: O.level },
           { objective: { type: 'killUnits', tribe: 'violet', count: WAVE - 1 }, text: 'Drive the raiders off the Black Strand', after: O.huts },
