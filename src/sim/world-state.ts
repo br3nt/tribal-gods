@@ -374,8 +374,12 @@ const RALLY_RADIUS = 3.5;
 const HELPERS = 4;
 /** An attacker with a fellow fighter this close is a war band: villagers run rather than mob it. */
 const BAND_RADIUS = 5;
-/** How far a fleeing villager runs (tiles) when home is not the way out. */
+/** How far a fleeing villager runs (tiles) when no dwelling takes them in. */
 const FLEE_DISTANCE = 8;
+/** How far a holding host's fighter may chase from its mark before it turns back. */
+const HOLD_LEASH = 9;
+/** A fleeing villager shelters in a dwelling with a free bed within this many tiles (not one past the attacker). */
+const FLEE_SHELTER = 14;
 
 export class World implements SimQueries {
   readonly map = new Heightmap();
@@ -1427,11 +1431,24 @@ export class World implements SimQueries {
     return true;
   }
 
+  /**
+   * A host holding its beach fights what walks into it — but no further
+   * than HOLD_LEASH from its mark: chasing a villager home would carry two
+   * spears into the village a minute and a half before the host marches.
+   */
+  private leashed(u: Unit): boolean {
+    if (!u.holdAt || (u.holdUntil ?? 0) <= this.elapsed) return false;
+    if (this.distTo(u, u.holdAt.x, u.holdAt.z) <= HOLD_LEASH) return false;
+    this.abandonTask(u);
+    return true;
+  }
+
   private tickMoving(u: Unit, dt: number): void {
     if (u.castSpell && this.castTargetInRange(u)) {
       this.beginCast(u);
       return;
     }
+    if ((u.task === 'attack' || u.task === 'attackBuilding') && this.leashed(u)) return;
     if (u.task === 'attack') {
       const target = this.unitById(u.targetUnit);
       if (!target || target.hp <= 0 || target.hidden) {
@@ -1678,6 +1695,7 @@ export class World implements SimQueries {
   /** Toe to toe (or pitch range): face the target, count down, strike. */
   private tickFighting(u: Unit, dt: number): void {
     u.attackCooldown -= dt;
+    if (this.leashed(u)) return;
     const stats = UNITS[u.kind];
 
     if (u.task === 'attack') {
@@ -1940,21 +1958,33 @@ export class World implements SimQueries {
     });
   }
 
-  /** Run from `from`: toward the tribe's home circle if that is away from the danger, else straight away. */
+  /**
+   * Run from `from`: into a dwelling with a free bed that lies away from the
+   * danger (inside, nobody can reach them), else straight away from it.
+   */
   private flee(u: Unit, from: Unit): void {
     const ax = wrapDelta(u.x - from.x, WORLD_SIZE), az = wrapDelta(u.z - from.z, WORLD_SIZE);
     const len = Math.hypot(ax, az) || 1;
-    let tx = u.x + (ax / len) * FLEE_DISTANCE, tz = u.z + (az / len) * FLEE_DISTANCE;
-    const home = u.tribe !== 'wild' ? this.tribes[u.tribe]?.home : undefined;
-    if (home) {
-      const hx = wrapDelta(home.x - u.x, WORLD_SIZE), hz = wrapDelta(home.z - u.z, WORLD_SIZE);
-      if (hx * ax + hz * az > 0 && Math.hypot(hx, hz) > 3) {
-        tx = home.x;
-        tz = home.z;
+    this.abandonTask(u);
+    let shelter: Building | null = null;
+    let best = FLEE_SHELTER;
+    for (const b of this.buildings) {
+      if (b.tribe !== u.tribe || b.kind !== 'hut' || b.progress < 1 || b.residents >= this.dwellingCapacity(b)) continue;
+      const bx = wrapDelta(b.x - u.x, WORLD_SIZE), bz = wrapDelta(b.z - u.z, WORLD_SIZE);
+      const d = Math.hypot(bx, bz);
+      if (d < best && bx * ax + bz * az > -0.3 * d * len) {
+        best = d;
+        shelter = b;
       }
     }
-    this.abandonTask(u);
-    this.sendTo(u, Math.round(tx), Math.round(tz), 600);
+    if (shelter) {
+      const door = this.doorOf(shelter);
+      u.task = 'goHome';
+      u.targetBuilding = shelter.id;
+      if (this.sendTo(u, door.x, door.z, 600)) return;
+      this.abandonTask(u);
+    }
+    this.sendTo(u, Math.round(u.x + (ax / len) * FLEE_DISTANCE), Math.round(u.z + (az / len) * FLEE_DISTANCE), 600);
   }
 
   displaceUnit(u: Unit, dx: number, dz: number): void {

@@ -152,9 +152,36 @@ describe('villagers fight back', () => {
     expect(hit.task).not.toBe('attack');
     expect(hit.state).toBe('moving');
     expect(near.task).not.toBe('attack');
-    // running toward home (20,20), away from the blow
+    // no dwelling: straight away from the blow
     run(w, 2);
-    expect(Math.hypot(hit.x - 20, hit.z - 20)).toBeLessThan(Math.hypot(40 - 20, 40 - 20));
+    expect(Math.hypot(hit.x - 40.8, hit.z - 39.4)).toBeGreaterThan(2.5);
+  });
+
+  it('a fleeing villager shelters in a dwelling with a free bed, away from the attacker', () => {
+    const w = flatWorld(rulesFor([{ id: 'player', ai: false }, { id: 'violet', ai: false }], { objectives: [{ objective: { type: 'survive', seconds: 99999 }, text: 'wait' }] }));
+    const hut = w.spawnBuilding('player', 'hut', 40, 48);
+    const hit = w.spawn('brave', 'player', 40, 42);
+    const a = w.spawn('warrior', 'violet', 40, 40.8);
+    w.spawn('warrior', 'violet', 41, 39);
+    run(w, 1 / 15);
+    w.hurtUnit(hit, 1, { by: a });
+    expect(hit.task).toBe('goHome');
+    expect(hit.targetBuilding).toBe(hut.id);
+    run(w, 9);
+    expect(hit.hidden).toBe(true);
+    expect(hut.residents).toBe(1);
+  });
+
+  it('a host holding its beach chases no further than its leash: no early spears in the village', () => {
+    const w = flatWorld(rulesFor([{ id: 'player', ai: false }, { id: 'violet', ai: false }], { objectives: [{ objective: { type: 'survive', seconds: 99999 }, text: 'wait' }] }));
+    const spear = w.spawn('warrior', 'violet', 60, 60);
+    spear.holdAt = { x: 60, z: 60 };
+    spear.holdUntil = 200;
+    const villager = w.spawn('brave', 'player', 66, 60);
+    w.orderMove([villager.id], 20, 60); // walks home, away from the beach
+    run(w, 30);
+    expect(w.distTo(spear, 60, 60)).toBeLessThan(12);
+    expect(villager.hp).toBeGreaterThan(0);
   });
 });
 

@@ -71,7 +71,8 @@ const WALL_SLOPE = 2.4;
 const SHINGLE = 1.8;
 const WAVE = 4;
 export const HUTS = 4;
-const HOST = { warrior: 12, firewarrior: 2 };
+/** The great fleet: big enough to read as a host on the strand, small enough to be broken without the Volcano by a player who missed it. */
+const HOST = { warrior: 10, firewarrior: 2 };
 export const HOST_HOLD = 95;
 /** Seconds from the first raid's end to the host coming ashore (the fleet is on the horizon meanwhile). */
 const FLEET_DELAY = 60;
@@ -217,7 +218,7 @@ export const scenario: CampaignScenario = {
           { objective: { type: 'buildCount', kind: 'hut', count: HUTS }, text: `Raise ${HUTS} Dwellings`, after: O.level },
           { objective: { type: 'killUnits', tribe: 'violet', count: WAVE - 1 }, text: 'Drive the raiders off the Black Strand', after: O.huts },
           { objective: { type: 'claimMonument', index: 1 }, text: 'Kneel at the headland stone', after: O.raid },
-          { objective: { type: 'killUnits', tribe: 'violet', count: 10 }, text: 'Break the Unmoored host', after: O.raid },
+          { objective: { type: 'killUnits', tribe: 'violet', count: 9 }, text: 'Break the Unmoored host', after: O.raid },
           { objective: { type: 'castSpell', spell: 'volcano', x: strand.x, z: strand.z, radius: 9 }, text: 'Bury the host under a mountain', optional: true, after: O.raid },
           { objective: { type: 'loseAtMost', count: 0, kind: 'brave' }, text: 'Lose no villagers', optional: true },
           { objective: { type: 'convertWanderers', count: 8 }, text: 'Kindle every wanderer on the Hook', optional: true },
