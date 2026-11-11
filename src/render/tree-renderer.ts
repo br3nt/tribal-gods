@@ -217,7 +217,6 @@ export class TreeRenderer {
         let a = this.fireAnchors.get(i);
         if (!a) {
           a = new THREE.Object3D();
-          a.userData.gpuCurved = true; // we already applied the full drop
           this.scene.add(a);
           this.fireAnchors.set(i, a);
         }

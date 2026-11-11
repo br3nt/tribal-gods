@@ -78,7 +78,6 @@ export class BuildingRenderer {
       if (!t) {
         const built = buildTotem(id as Tribe, civ);
         t = { ...built, civ: civ.id };
-        t.root.userData.gpuCurved = true; // full drop applied here (curvatureDrop)
         this.scene.add(t.root);
         this.totems.set(id, t);
       }
@@ -98,7 +97,6 @@ export class BuildingRenderer {
     // Monuments.
     while (this.monuments.length < world.monuments.length) {
       const m = buildMonument();
-      m.root.userData.gpuCurved = true;
       this.scene.add(m.root);
       this.monuments.push(m);
     }
@@ -130,7 +128,6 @@ export class BuildingRenderer {
       if (!e) {
         const model = buildBuildingModel(b.kind, b.tribe as Tribe, civOf(world, b.tribe), tier);
         // turn every model so its door faces the sim's door (south, +Z): already the case
-        model.root.userData.gpuCurved = true;
         this.scene.add(model.root);
         e = { model, kind: b.kind, tribe: b.tribe, tier };
         this.entries.set(b.id, e);

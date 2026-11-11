@@ -17,7 +17,8 @@
  *    them. Either way: no animation, no draw.
  *
  * 4. CURVE — terrain bends down with distance in its vertex shader; figures
- *    are small, so we drop the whole figure by curvatureDrop() on the CPU
+ *    are small, so we drop the whole figure by curvatureDrop() on the CPU —
+ *    the FULL drop, limb included, so far figures sit on the planet's edge
  *    (sub-pixel error at this size, and no per-vertex shader patch needed).
  *
  * 5. ANIMATE — pick a clip from the unit's state/task (chooseClip), feed
@@ -214,9 +215,6 @@ export class UnitRenderer {
         const ring = new THREE.Mesh(this.ringGeo, this.ringMat(u.tribe));
         ring.renderOrder = 1;
         ring.visible = false;
-        // We apply the full planet drop (curvatureDrop) ourselves: opt out of main.ts's limb pass.
-        fig.root.userData.gpuCurved = true;
-        ring.userData.gpuCurved = true;
         ring.scale.setScalar(fig.height * 0.36);
         this.scene.add(fig.root, ring);
         e = {

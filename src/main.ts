@@ -46,7 +46,7 @@ import { LevelLibrary } from './ui/level-library';
 import { Menu } from './ui/menu';
 import { applyUiScale, settings as uiSettings, writeQualityToUrl } from './ui/settings';
 import { toolState } from './ui/tools';
-import { applyLimbToCpuCurved, curvatureUniforms } from './world/curvature';
+import { curvatureUniforms } from './world/curvature';
 import { TerrainMesh } from './world/terrain-mesh';
 import { GroundCover } from './world/ground-cover';
 import { Water } from './world/water';
@@ -363,7 +363,6 @@ const stats = startLoop({
     unitRenderer.sync(world, rig.target, alpha, dt, ui?.selection.units ?? new Set<number>());
     treeRenderer.sync(world, rig.target);
     buildingRenderer.sync(world, rig.target);
-    applyLimbToCpuCurved(scene, rig.target); // until the CPU-curved renderers use curvatureDrop()
     effects.sync(world, rig.target, dt); // drains world.events (ui/alerts.ts diffs state instead)
     ui?.updateOverlay();
 
