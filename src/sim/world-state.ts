@@ -40,7 +40,6 @@ import {
   WARDEN,
   WOOD_TARGET,
   WORLD_SIZE,
-  WORSHIP_SECONDS,
 } from '../config';
 import { hash2 } from '../core/noise';
 import { wrapDelta } from '../core/util';
@@ -55,8 +54,12 @@ import {
   BuildState,
   DWELLING_TIERS,
   ECONOMY,
+  COMMUNE,
+  communeSecondsFor,
   MonumentDef,
   ObjectiveState,
+  START_CHARGES,
+  WorldMessage,
   ScenarioRules,
   SimQueries,
   spellDef,
@@ -71,11 +74,12 @@ import {
 import { breakChant, tickChant } from './chant';
 import { initObjectives, ObjectiveMemory, tickObjectives } from './objectives';
 import { findNearestWalkable, findPath, flowField, obstaclesOf, pathStats, tileIndex, walkable } from './pathfinding';
-import { isMajor, regionAt } from './regions';
+import { isMajor, regionAt, regionNear } from './regions';
 import { UnitGrid } from './spatial';
 import { Rng } from './rng';
 import { ALL_BUILDINGS, skirmishRules, STARTER_SPELLS } from './rules';
 import { EventMemory, initEventMemory, tickScenarioEvents } from './scenario-events';
+import { finishHeldObjectives } from './objectives';
 import { hasCast, manaIncome, newSpellBook, pourMana, slotState, SpellBook, spendCast } from './spellbook';
 import { Aura, castSpell, SpellJob, tickJobs } from './spells';
 
@@ -125,6 +129,31 @@ export interface Monument {
   opensAt?: number;
   /** The first tribe ever to commune here (for `monumentTaken`). */
   firstClaimer?: TribeId;
+  /** Asleep until a scripted `openStone` (MonumentDef.asleep). */
+  asleep?: boolean;
+  /** Ritual length override (else by tier, catalog COMMUNE). */
+  communeSeconds?: number;
+  /** Guardians placed here (MonumentDef.guards) — kept so a captured level keeps them. */
+  guards?: Partial<Record<UnitKind, number>>;
+  // --- The ritual, as plain data for the renderer / UI (all optional on old saves) ---
+  /** 0..1 of the ritual done. Drains while nobody is communing. */
+  communeProgress?: number;
+  /**
+   * The tribe whose ritual `communeProgress` belongs to (null = none). This
+   * sim always writes a TribeId (the unit is `communerId`); the type admits a
+   * number only so renderer code that also accepts a unit id type-checks.
+   */
+  communer?: TribeId | number | null;
+  /** Unit id of the leader communing (-1 = none). */
+  communerId?: number;
+  /** True while the leader is kneeling and the ritual is live (paused counts as live). */
+  communing?: boolean;
+  /** True while hostile fighters inside the ring hold the ritual still. */
+  contested?: boolean;
+  /** True while this stone's guardians are fighting. */
+  guardsAwake?: boolean;
+  /** Seconds the guardians have had nobody to fight (they sleep again after a while). */
+  guardsCalm?: number;
 }
 
 export interface GameEvent {
@@ -187,6 +216,16 @@ export interface Unit {
   /** Chanter whose chant this unit is hearing (-1 none) and for how long. */
   chantBy: number;
   chantProgress: number;
+  /**
+   * STRANDED: belongs to no one ('wild') until a walking route links it to
+   * this tribe's home — then it joins. Renderer: draw in that tribe's colours, beckoning.
+   */
+  joins?: TribeId | null;
+  /** Holding at `holdAt` until this sim time (a massing host): its god leaves it be. */
+  holdUntil?: number;
+  holdAt?: { x: number; z: number } | null;
+  /** Guardian of world.monuments[guardOf] (-1 / undefined = not a guardian). */
+  guardOf?: number;
 }
 
 export interface Tree {
@@ -228,6 +267,27 @@ export interface Building {
   wardTime: number;
   /** 'start' = stood up by a loadout's startBuildings (the level's rules make it, so a captured level must not). */
   origin?: 'start';
+  /**
+   * SITE LEVELLING: a placed site levels its footprint to `levelTo` (with a
+   * blended skirt) over its first seconds. `levelT` 0..1; `levelFrom` =
+   * [tile, height, weight, ...] snapshot. Absent on finished/old buildings.
+   */
+  levelTo?: number;
+  levelT?: number;
+  levelFrom?: number[];
+}
+
+/** What a tribe has done, for objectives and triggers. */
+export interface TribeStats {
+  /** Spells its leader cast (latest 200). */
+  casts: Array<{ spell: SpellId; x: number; z: number; at: number }>;
+  /** Wanderers it Kindled. */
+  converted: number;
+  /** Stranded people who joined it. */
+  joined: number;
+  /** Its people who died, by kind, and in all (leaders not counted in `total`). */
+  lost: Partial<Record<UnitKind, number>>;
+  lostTotal: number;
 }
 
 export interface AiState {
@@ -243,6 +303,8 @@ export interface AiState {
   castCooldown: number;
   /** The gap it is bridging to reach its target (sim/crossing.ts), re-planned as land rises. */
   crossing?: { from: { x: number; z: number }; to: { x: number; z: number }; kind: 'water' | 'cliff'; width: number; at: number; wait?: number } | null;
+  /** Rival communes it has already answered ("stone:communerId"). */
+  answered?: string[];
 }
 
 /** Everything one tribe owns that isn't a unit or a building. */
@@ -275,12 +337,22 @@ export interface TribeState {
   ai: AiState | null;
   /** How its AI behaves (empty = the standard rival). */
   personality: AiPersonality;
+  /** Running tallies (see TribeStats). May be missing on an old save — read through world.statsOf(). */
+  stats?: TribeStats;
 }
 
 const wrapf = (v: number) => ((v % WORLD_SIZE) + WORLD_SIZE) % WORLD_SIZE;
 const half = (b: { size: number }) => (b.size - 1) / 2;
 const isFighterKind = (k: UnitKind) => UNITS[k].dmg > 0 && UNITS[k].sight > 0;
 const MAX_EVENTS = 4000;
+/** Tiles kept clear between a home circle's centre and a footprint's edge (+ the footprint's half-width). */
+export const HOME_CLEAR = 4;
+/** Relief a site may have before it is too rough to build on (sites level themselves). */
+const SITE_TOLERANCE = BUILD_FLAT_TOLERANCE * 1.35;
+/** Site levelling: seconds it takes, skirt width in tiles, the relief past which a skirt tile is a cliff and left alone. */
+export const SITE_LEVEL_SECONDS = 2.5;
+const SITE_SKIRT = 2;
+const SITE_CLIFF = 4.5;
 
 export interface HurtOptions {
   /** Damage from a spell: Wardens shrug off half. */
@@ -310,7 +382,7 @@ export class World implements SimQueries {
   /** Seconds of sim time since the scenario began. */
   elapsed = 0;
   /** Lines the scenario said to the player (scripted events), oldest first. */
-  messages: Array<{ at: number; text: string }> = [];
+  messages: WorldMessage[] = [];
   /** Lines ever said this scenario (messages keeps only the last 50; readers diff against this). */
   messageSeq = 0;
   /** Running memory for rules.events (scenario-events.ts). */
@@ -416,14 +488,15 @@ export class World implements SimQueries {
   }
 
   /** A scenario line for the player (the UI shows world.messages). */
-  say(text: string): void {
-    this.messages.push({ at: this.elapsed, text });
+  say(text: string, focus?: { x: number; z: number }): void {
+    this.messages.push(focus ? { at: this.elapsed, text, focus: { x: focus.x, z: focus.z } } : { at: this.elapsed, text });
     this.messageSeq++;
     if (this.messages.length > 50) this.messages.shift();
   }
 
   endGame(result: 'victory' | 'defeat', reason: string): void {
     if (this.gameOver) return;
+    if (result === 'victory') finishHeldObjectives(this);
     this.gameOver = result;
     this.gameOverReason = reason;
   }
@@ -473,10 +546,7 @@ export class World implements SimQueries {
       this.trees.push({ x: level.trees[i], z: level.trees[i + 1], alive: true, regrow: 0, burning: 0 });
     }
     this.treesVersion++;
-    this.monuments = level.monuments.map((m) => ({
-      x: m.x, z: m.z, spell: m.spell, mode: m.mode ?? 'teach', charges: m.charges, cooldown: m.cooldown,
-      claimedBy: null, claimer: null, sleep: 0, ...(m.opensAt !== undefined ? { opensAt: m.opensAt } : {}),
-    }));
+    this.monuments = level.monuments.map((m) => World.monumentFrom(m));
 
     const r = rules ?? level.rules ?? skirmishRules(1);
     const homes: Partial<Record<TribeId, { x: number; z: number }>> = {};
@@ -493,12 +563,45 @@ export class World implements SimQueries {
     }
     for (const p of level.units ?? []) {
       if (p.tribe !== 'wild' && !this.tribes[p.tribe]) continue;
+      if (p.joins && !this.tribes[p.joins]) continue;
       for (let i = 0; i < (p.count ?? 1); i++) {
         const a = i * 2.4;
         const rr = i === 0 ? 0 : 0.8 + Math.sqrt(i) * 0.9;
-        this.spawnNearWalkable(p.kind, p.tribe, p.x + Math.cos(a) * rr, p.z + Math.sin(a) * rr);
+        const u = this.spawnNearWalkable(p.kind, p.joins ? 'wild' : p.tribe, p.x + Math.cos(a) * rr, p.z + Math.sin(a) * rr, !!p.joins);
+        if (u && p.joins) u.joins = p.joins;
       }
     }
+    this.spawnGuards();
+  }
+
+  /** A live stone from its level definition. */
+  static monumentFrom(m: MonumentDef): Monument {
+    const out: Monument = {
+      x: m.x, z: m.z, spell: m.spell, mode: m.mode ?? 'teach', charges: m.charges, cooldown: m.cooldown,
+      claimedBy: null, claimer: null, sleep: 0,
+      communeProgress: 0, communer: null, communerId: -1, communing: false, contested: false, guardsAwake: false, guardsCalm: 0,
+    };
+    if (m.opensAt !== undefined) out.opensAt = m.opensAt;
+    if (m.asleep) out.asleep = true;
+    if (m.communeSeconds !== undefined) out.communeSeconds = m.communeSeconds;
+    if (m.guards) out.guards = { ...m.guards };
+    return out;
+  }
+
+  /** Stand each stone's guardians around it (wild fighters, asleep until a commune). */
+  spawnGuards(): void {
+    this.monuments.forEach((m, index) => {
+      let slot = 0;
+      for (const [kind, n] of Object.entries(m.guards ?? {}) as Array<[UnitKind, number]>) {
+        for (let i = 0; i < n; i++) {
+          const a = slot * 2.1 + 0.6;
+          const r = 2.6 + (slot % 2) * 0.9;
+          slot++;
+          const u = this.spawnNearWalkable(kind, 'wild', m.x + Math.cos(a) * r, m.z + Math.sin(a) * r);
+          if (u) u.guardOf = index;
+        }
+      }
+    });
   }
 
   /** What the loaded level carried beyond the live world (captureLevel writes it back). */
@@ -548,6 +651,9 @@ export class World implements SimQueries {
         if (m.charges !== undefined) d.charges = m.charges;
         if (m.cooldown !== undefined) d.cooldown = m.cooldown;
         if (m.opensAt !== undefined) d.opensAt = m.opensAt;
+        if (m.asleep) d.asleep = true;
+        if (m.communeSeconds !== undefined) d.communeSeconds = m.communeSeconds;
+        if (m.guards) d.guards = { ...m.guards };
         return d;
       }),
       homes,
@@ -556,7 +662,7 @@ export class World implements SimQueries {
     };
     if (this.levelExtras.rules) level.rules = this.levelExtras.rules;
     if (buildings.length) level.buildings = buildings;
-    const tribeUnits = (this.levelExtras.units ?? []).filter((u) => u.tribe !== 'wild');
+    const tribeUnits = (this.levelExtras.units ?? []).filter((u) => u.tribe !== 'wild' || u.joins);
     if (tribeUnits.length) level.units = tribeUnits.map((u) => ({ ...u }));
     return level;
   }
@@ -584,7 +690,18 @@ export class World implements SimQueries {
     }
     this.setupTribes(r, homes);
     this.placeMonuments();
-    for (let i = 0; i < 14; i++) {
+    this.spawnGuards();
+    // An errand on the doorstep: two small bands of wanderers a short walk
+    // from every home (on the same land), then the usual scatter.
+    for (const id of this.activeTribes()) {
+      const home = this.tribes[id]!.home;
+      for (let band = 0; band < 2; band++) {
+        const spot = this.findMonumentSpot(home, 9, 17, []);
+        if (!spot) continue;
+        for (let i = 0; i < 3; i++) this.spawnNearWalkable('wildman', 'wild', spot.x + (i % 2) * 1.5 - 0.7, spot.z + (i >> 1) * 1.5 - 0.7);
+      }
+    }
+    for (let i = 0; i < 10; i++) {
       const spot = this.findSettleSite(false, []);
       this.spawnNearWalkable('wildman', 'wild', spot.x, spot.z);
     }
@@ -678,7 +795,7 @@ export class World implements SimQueries {
       }
       return !this.activeTribes().some((id) => {
         const h = this.tribes[id]!.home;
-        return Math.abs(wrapDelta(x - h.x, WORLD_SIZE)) < half + 3 && Math.abs(wrapDelta(z - h.z, WORLD_SIZE)) < half + 3;
+        return Math.abs(wrapDelta(x - h.x, WORLD_SIZE)) < half + HOME_CLEAR && Math.abs(wrapDelta(z - h.z, WORLD_SIZE)) < half + HOME_CLEAR;
       });
     };
     for (let r = r0; r <= r0 + 12; r += 2) {
@@ -710,6 +827,11 @@ export class World implements SimQueries {
     for (const [id, n] of Object.entries(lo.extraCharges ?? {}) as Array<[SpellId, number]>) spells[id].bonus += n;
     for (const [id, k] of Object.entries(lo.chargeCost ?? {}) as Array<[SpellId, number]>) spells[id].cost = Math.max(0.05, k);
     for (const [id, n] of Object.entries(lo.gifts ?? {}) as Array<[SpellId, number]>) spells[id].gifted += n;
+    // The first seconds are playable: every known spell starts with a charge or two (by tier).
+    for (const id of known) {
+      const want = lo.startCharges?.[id] ?? START_CHARGES[spellDef(id).tier];
+      spells[id].charges = Math.max(0, Math.min(spellDef(id).maxCharges + spells[id].bonus, want));
+    }
     const personality = { ...(t.personality ?? {}) };
     const state: TribeState = {
       id: t.id,
@@ -730,6 +852,7 @@ export class World implements SimQueries {
       everBuilt: new Set(),
       ai: t.ai ? { state: 'grow', evalTimer: 2, target: null, awake: !personality.passive, castCooldown: 0, crossing: null } : null,
       personality,
+      stats: World.freshStats(),
     };
     this.tribes[t.id] = state;
     return state;
@@ -780,14 +903,22 @@ export class World implements SimQueries {
     const nearPool: SpellId[] = this.rng.shuffle(['flatten', 'landbridge', 'swamp', 'lightning', 'ward', 'bloom', 'warsong']);
     const giftPool: SpellId[] = this.rng.shuffle(['emberfall', 'sink', 'cyclone']);
     const homes = this.activeTribes().map((t) => this.tribes[t]!.home);
-    const add = (spot: { x: number; z: number } | null, spell: SpellId, mode: 'teach' | 'gift' = 'teach') => {
-      if (!spot) return;
-      this.monuments.push({
-        ...spot, spell, mode, claimedBy: null, claimer: null, sleep: 0,
-        ...(mode === 'gift' ? { charges: 1, cooldown: 120 } : {}),
-      });
+    // Neutral stones are guarded, the more so the greater the spell.
+    const guardsFor = (spell: SpellId): Partial<Record<UnitKind, number>> | undefined => {
+      const tier = spellDef(spell).tier;
+      return tier === 3 ? { warrior: 3, warden: 1 } : tier === 2 ? { warrior: 2 } : undefined;
     };
-    for (const home of homes) add(this.findMonumentSpot(home, 8, 16, homes), nearPool.pop()!);
+    const add = (spot: { x: number; z: number } | null, spell: SpellId, mode: 'teach' | 'gift' = 'teach', guarded = true) => {
+      if (!spot) return;
+      const guards = guarded ? guardsFor(spell) : undefined;
+      this.monuments.push(World.monumentFrom({
+        ...spot, spell, mode,
+        ...(mode === 'gift' ? { charges: 1, cooldown: 120 } : {}),
+        ...(guards ? { guards } : {}),
+      }));
+    };
+    // Each home's own stone: a short walk, on its own land, unguarded.
+    for (const home of homes) add(this.findMonumentSpot(home, 8, 16, homes), nearPool.pop()!, 'teach', false);
     for (const spell of [nearPool.pop()!, nearPool.pop()!, 'earthquake', 'volcano'] as SpellId[]) {
       add(this.findMonumentSpot(null, 0, 0, homes), spell);
     }
@@ -816,6 +947,8 @@ export class World implements SimQueries {
         if (nearHome && attempt < 250) continue; // neutral ground only (relaxed if the planet is crowded)
       }
       if (!walkable(this.map, x, z)) continue;
+      // Near a home means reachable from it on foot.
+      if (anchor && attempt < 250 && regionNear(this.map, x, z) !== regionNear(this.map, anchor.x, anchor.z)) continue;
       if (this.monuments.some((m) => Math.hypot(wrapDelta(m.x - x, WORLD_SIZE), wrapDelta(m.z - z, WORLD_SIZE)) < 10)) continue;
       return { x: this.map.wrap(x), z: this.map.wrap(z) };
     }
@@ -889,6 +1022,10 @@ export class World implements SimQueries {
     this.tickBuildings(dt);
     this.tickTrees(dt);
     this.tickMonuments(dt);
+    if (Math.floor(this.elapsed) !== this.strandedSecond) {
+      this.strandedSecond = Math.floor(this.elapsed);
+      this.tickStranded();
+    }
     tickScenarioEvents(this);
     tickJobs(this, dt);
     tickAi(this, dt);
@@ -915,7 +1052,7 @@ export class World implements SimQueries {
     for (const id of this.activeTribes()) {
       const t = this.tribes[id]!;
       t.threatTimer = Math.max(0, t.threatTimer - dt);
-      t.income = manaIncome(this.tribePopulation(id), this.housedPopulation(id), praying[id] ?? 0);
+      t.income = manaIncome(this.tribePopulation(id), this.housedPopulation(id), praying[id] ?? 0, this.elapsed);
       t.manaRate = pourMana(t.spells, t.known, t.income, dt);
 
       if (t.shamanRespawn > 0 && this.tribeAlive(id)) {
@@ -946,6 +1083,11 @@ export class World implements SimQueries {
     if (dead.length === 0) return;
     for (const u of dead) {
       this.events.push({ type: 'death', x: u.x, z: u.z });
+      if (u.tribe !== 'wild' && this.tribes[u.tribe]) {
+        const st = this.statsOf(u.tribe);
+        st.lost[u.kind] = (st.lost[u.kind] ?? 0) + 1;
+        if (u.kind !== 'shaman') st.lostTotal++;
+      }
       if (u.hidden && u.garrison < 0) {
         const b = this.getBuilding(u.home);
         if (b) b.residents--;
@@ -964,6 +1106,65 @@ export class World implements SimQueries {
       }
     }
     this.units = this.units.filter((u) => u.hp > 0);
+  }
+
+  static freshStats(): TribeStats {
+    return { casts: [], converted: 0, joined: 0, lost: {}, lostTotal: 0 };
+  }
+
+  /** A tribe's running tallies (created on first use — an old save has none). */
+  statsOf(id: TribeId): TribeStats {
+    const t = this.tribe(id);
+    t.stats ??= World.freshStats();
+    return t.stats;
+  }
+
+  /**
+   * Stranded people join their tribe the moment a walking route links them
+   * to its home (a Causeway reached them, the tide went out, a cliff was
+   * Levelled). Checked once a second; regions are cached per map version.
+   */
+  /** The whole second tickStranded last ran in (a counter, not elapsed − dt: float drift skips seconds). */
+  private strandedSecond = -1;
+
+  private tickStranded(): void {
+    for (const u of this.units) {
+      const id = u.joins;
+      if (!id || u.hidden) continue;
+      const t = this.tribes[id];
+      if (!t) continue;
+      const mine = regionNear(this.map, u.x, u.z);
+      if (!mine || mine !== regionNear(this.map, t.home.x, t.home.z, 3)) continue;
+      u.joins = null;
+      u.tribe = id;
+      u.kind = u.kind === 'wildman' ? 'brave' : u.kind;
+      this.abandonTask(u);
+      this.statsOf(id).joined++;
+      this.events.push({ type: 'rescued', x: u.x, z: u.z, tribe: id });
+      this.sendTo(u, t.home.x + this.random() * 4 - 2, t.home.z + this.random() * 4 - 2);
+    }
+  }
+
+  /** Is this unit a stone's guardian, and awake? */
+  guardAwake(u: Unit): boolean {
+    const g = u.guardOf ?? -1;
+    return g >= 0 && u.tribe === 'wild' && !!this.monuments[g]?.guardsAwake;
+  }
+
+  /**
+   * Would `tribe`'s people fight unit `q`? Tribes by their allegiances;
+   * a stone's guardians, awake, fight (and are fought by) every tribe.
+   */
+  foeOfTribe(tribe: Tribe, q: Unit): boolean {
+    if (tribe === 'wild') return false;
+    if (q.tribe === 'wild') return this.guardAwake(q);
+    return this.hostile(tribe, q.tribe);
+  }
+
+  /** Would these two units fight each other? */
+  foes(a: Unit, b: Unit): boolean {
+    if (a.tribe === 'wild') return b.tribe !== 'wild' && this.guardAwake(a);
+    return this.foeOfTribe(a.tribe, b);
   }
 
   tribeAlive(id: TribeId): boolean {
@@ -993,6 +1194,19 @@ export class World implements SimQueries {
 
     // Out of search budget this tick: stay idle, ask again next tick (see IDLE_SEARCH_BUDGET).
     const canSearch = this.canSearchIdle(u);
+    if (u.tribe === 'wild' && (u.guardOf ?? -1) >= 0) {
+      this.tickGuard(u, canSearch);
+      return;
+    }
+    // A host holding its beach: fights what walks into it, else drifts back to the mark.
+    if (u.holdAt && (u.holdUntil ?? 0) > this.elapsed && u.task === 'none') {
+      if (canSearch && isFighterKind(u.kind) && this.acquireTarget(u)) return;
+      if (u.idleTime > 2 && this.distTo(u, u.holdAt.x, u.holdAt.z) > 3.5) {
+        u.idleTime = 0;
+        this.sendTo(u, u.holdAt.x + this.random() * 3 - 1.5, u.holdAt.z + this.random() * 3 - 1.5, 1500);
+      }
+      return;
+    }
     if (u.kind === 'chanter' && u.tribe !== 'wild') {
       if (canSearch && u.task === 'none' && this.tryChant(u)) return;
     } else if (isFighterKind(u.kind) && u.task === 'none' && canSearch) {
@@ -1025,6 +1239,18 @@ export class World implements SimQueries {
         this.sendTo(u, Math.round(u.x + (this.random() * 2 - 1) * range), Math.round(u.z + (this.random() * 2 - 1) * range), 600);
         u.idleTime = 0;
       }
+    }
+  }
+
+  /** A stone's guardian: stands its post asleep; awake, fights whoever is in sight. */
+  private tickGuard(u: Unit, canSearch: boolean): void {
+    const m = this.monuments[u.guardOf!];
+    if (!m) return;
+    if (m.guardsAwake && canSearch && u.task === 'none' && this.acquireTarget(u)) return;
+    if (u.idleTime > 2.5 && this.distTo(u, m.x, m.z) > 4.5) {
+      u.idleTime = 0;
+      const a = (u.id % 7) * 0.9;
+      this.sendTo(u, m.x + Math.cos(a) * 2.8, m.z + Math.sin(a) * 2.8, 1500);
     }
   }
 
@@ -1316,10 +1542,10 @@ export class World implements SimQueries {
       }
       case 'worship': {
         const m = this.monuments[u.targetMonument];
-        if (m && this.monumentAvailable(m) && this.distTo(u, m.x, m.z) < 3) {
+        if (m && this.canCommune(m, u.tribe as TribeId) && this.distTo(u, m.x, m.z) < 3) {
           u.state = 'working';
-          u.workTimer = WORSHIP_SECONDS;
           u.heading = Math.atan2(wrapDelta(m.x - u.x, WORLD_SIZE), wrapDelta(m.z - u.z, WORLD_SIZE));
+          this.beginCommune(m, u);
         } else this.abandonTask(u);
         return;
       }
@@ -1341,6 +1567,9 @@ export class World implements SimQueries {
         u.state = 'idle';
         if (tribe && spendCast(tribe.spells, tribe.known, spell)) {
           castSpell(this, spell, target.x, target.z, u.x, u.z, tribe.id);
+          const casts = this.statsOf(tribe.id).casts;
+          casts.push({ spell, x: target.x, z: target.z, at: this.elapsed });
+          if (casts.length > 200) casts.shift();
         } else if (u.tribe === 'player') {
           this.events.push({ type: 'denied', x: target.x, z: target.z });
         }
@@ -1385,19 +1614,26 @@ export class World implements SimQueries {
       const step = Math.min(1 - b.progress, dt / def.buildSeconds);
       b.progress += step;
       b.hp = Math.min(b.maxHp, b.hp + b.maxHp * 0.9 * step);
-      if (b.progress < 0.4) this.map.flatten(b.x, b.z, half(b) + 1.5, dt * 0.5);
       if (b.progress >= 1 - 1e-9) this.completeBuilding(b);
       return;
     }
 
     if (u.task === 'worship') {
       const m = this.monuments[u.targetMonument];
-      if (!m || !this.monumentAvailable(m)) {
+      if (!m || !this.monumentAvailable(m) || m.communerId !== u.id) {
         this.abandonTask(u);
         return;
       }
-      u.workTimer -= dt;
-      if (u.workTimer <= 0) {
+      // Hostile fighters inside the ring hold the ritual still.
+      m.contested = this.anyUnitNear(m.x, m.z, COMMUNE.ring, (q) => isFighterKind(q.kind) && this.foeOfTribe(u.tribe, q));
+      if (m.contested) return;
+      m.communeProgress = Math.min(1, (m.communeProgress ?? 0) + dt / communeSecondsFor(m));
+      if (m.communeProgress >= 1) {
+        m.communeProgress = 0;
+        m.communing = false;
+        m.communer = null;
+        m.communerId = -1;
+        m.contested = false;
         this.commune(m, u.tribe as TribeId);
         this.abandonTask(u);
       }
@@ -1418,7 +1654,7 @@ export class World implements SimQueries {
 
     if (u.task === 'attack') {
       const target = this.unitById(u.targetUnit);
-      if (!target || target.hp <= 0 || target.hidden || !this.hostile(u.tribe, target.tribe)) {
+      if (!target || target.hp <= 0 || target.hidden || !this.foes(u, target)) {
         this.abandonTask(u);
         return;
       }
@@ -1478,7 +1714,7 @@ export class World implements SimQueries {
     // Cheapest test first: distance (via the spatial hash), then allegiance,
     // and only for someone actually in sight the unreachable-memory lookup
     // (which builds a string key).
-    const best = this.nearestUnit(u.x, u.z, sight, (q) => this.hostile(u.tribe, q.tribe) && !this.isUnreachable(u, `u${q.id}`));
+    const best = this.nearestUnit(u.x, u.z, sight, (q) => this.foes(u, q) && !this.isUnreachable(u, `u${q.id}`));
     if (best) {
       u.task = 'attack';
       u.targetUnit = best.id;
@@ -1500,7 +1736,7 @@ export class World implements SimQueries {
   }
 
   private enemySoldierNear(u: Unit, radius: number): boolean {
-    return this.anyUnitNear(u.x, u.z, radius, (q) => isFighterKind(q.kind) && this.hostile(u.tribe, q.tribe));
+    return this.anyUnitNear(u.x, u.z, radius, (q) => isFighterKind(q.kind) && this.foes(u, q));
   }
 
   abandonTask(u: Unit): void {
@@ -1547,13 +1783,16 @@ export class World implements SimQueries {
     const t = this.tribes[tribe];
     const leader = this.leaderOf(tribe);
     if (!t || !leader || leader.hidden) return 'Your leader is not here';
+    if (leader.task === 'worship' && leader.state === 'working') return 'Your leader is communing';
     if (!hasCast(t.spells, t.known, spell)) return t.known.has(spell) ? 'No charges ready' : 'Spell not known';
     const def = spellDef(spell);
     const x = this.map.wrap(Math.round(tx));
     const z = this.map.wrap(Math.round(tz));
     if (!def.anywhere && this.map.heightAt(x, z) < WALK_MIN_HEIGHT) return 'Must target land';
     if (this.distTo(leader, x, z) <= def.range) return null;
-    const path = findPath(this.map, leader.x, leader.z, x, z);
+    // A spell that may land on water / another shore (Causeway at an islet):
+    // walk to the nearest of OUR ground that puts the mark in range.
+    const path = findPath(this.map, leader.x, leader.z, x, z, 4000, World.approachRadius(spell));
     const end = path && path.length > 0 ? path[path.length - 1] : null;
     if (!end || Math.hypot(wrapDelta(end.x - x, WORLD_SIZE), wrapDelta(end.z - z, WORLD_SIZE)) > def.range) {
       return 'Out of range';
@@ -1577,13 +1816,19 @@ export class World implements SimQueries {
     leader.castSpell = spell;
     leader.castTarget = { x: this.map.wrap(Math.round(tx)), z: this.map.wrap(Math.round(tz)) };
     if (this.castTargetInRange(leader)) this.beginCast(leader);
-    else if (!this.sendTo(leader, tx, tz)) {
+    else if (!this.sendTo(leader, tx, tz, 4000, World.approachRadius(spell))) {
       leader.castSpell = null;
       leader.castTarget = null;
       if (tribe === 'player') this.events.push({ type: 'denied', x: tx, z: tz });
       return 'Out of range';
     }
     return null;
+  }
+
+  /** How far from an unreachable mark the leader may stop and still cast `spell` (its range, if it can land anywhere). */
+  private static approachRadius(spell: SpellId): number {
+    const def = spellDef(spell);
+    return def.anywhere ? Math.max(8, Math.floor(def.range) - 1) : 8;
   }
 
   private castTargetInRange(u: Unit): boolean {
@@ -1609,6 +1854,8 @@ export class World implements SimQueries {
    */
   hurtUnit(u: Unit, amount: number, opts: HurtOptions = {}): void {
     let a = amount;
+    const kneeling = u.task === 'worship' && u.state === 'working';
+    if (kneeling) a *= COMMUNE.vulnerability;
     if (opts.spell && u.kind === 'warden') a *= 1 - WARDEN.spellResist;
     a *= 1 - UNITS[u.kind].armor;
     if (u.wardTime > 0) a *= BUFFS.wardFactor;
@@ -1618,6 +1865,10 @@ export class World implements SimQueries {
       if (t) t.threatTimer = 8;
     }
     if (u.kind === 'chanter' && a > 0) breakChant(this, u);
+    // A blow breaks the ritual; a hurt guardian wakes its stone.
+    if (kneeling && a > 0) this.abandonTask(u);
+    const g = u.guardOf ?? -1;
+    if (g >= 0 && u.tribe === 'wild' && a > 0 && this.monuments[g]) this.wakeGuards(this.monuments[g]);
   }
 
   displaceUnit(u: Unit, dx: number, dz: number): void {
@@ -1734,6 +1985,7 @@ export class World implements SimQueries {
 
   private tickBuildings(dt: number): void {
     for (const b of [...this.buildings]) {
+      if (b.levelFrom && (b.levelT ?? 1) < 1) this.tickSiteLevel(b, dt);
       if (b.wardTime > 0) b.wardTime = Math.max(0, b.wardTime - dt);
       if (b.burning > 0) this.tickFire(b, dt);
       if (b.progress < 1 || !this.buildings.includes(b)) continue;
@@ -1873,7 +2125,7 @@ export class World implements SimQueries {
       if (u.attackCooldown > 0) continue;
       const stats = UNITS[u.kind];
       const reach = Math.max(stats.range, TOWER_BONUS.minRange) + TOWER_BONUS.range;
-      const best = this.nearestUnit(b.x, b.z, reach, (q) => this.hostile(b.tribe, q.tribe));
+      const best = this.nearestUnit(b.x, b.z, reach, (q) => this.foeOfTribe(b.tribe, q));
       if (best) {
         u.attackCooldown = this.unitCooldown(u);
         this.events.push({ type: 'fireball', x: b.x, z: b.z, x2: best.x, z2: best.z });
@@ -1941,7 +2193,8 @@ export class World implements SimQueries {
         hi = Math.max(hi, h);
       }
     }
-    if (hi - lo > BUILD_FLAT_TOLERANCE * (r > 1 ? 1.5 : 1)) return false;
+    // Sites level their own footprint (see levelSite), so rough ground is fine — up to a point.
+    if (hi - lo > SITE_TOLERANCE * (r > 1 ? 1.5 : 1)) return false;
     // A one-tile lane around every building keeps doors and paths open.
     for (let dz = -r - 1; dz <= r + 1; dz++) {
       for (let dx = -r - 1; dx <= r + 1; dx++) {
@@ -1950,7 +2203,8 @@ export class World implements SimQueries {
     }
     for (const id of this.activeTribes()) {
       const home = this.tribes[id]!.home;
-      if (Math.abs(wrapDelta(cx - home.x, WORLD_SIZE)) < r + 3 && Math.abs(wrapDelta(cz - home.z, WORLD_SIZE)) < r + 3) return false;
+      // The home circle (a ring of standing stones) keeps a clear yard round it.
+      if (Math.abs(wrapDelta(cx - home.x, WORLD_SIZE)) < r + HOME_CLEAR && Math.abs(wrapDelta(cz - home.z, WORLD_SIZE)) < r + HOME_CLEAR) return false;
     }
     return true;
   }
@@ -1965,6 +2219,69 @@ export class World implements SimQueries {
     this.tribes[tribe]!.wood -= BUILDINGS[kind].wood;
     this.spawnBuilding(tribe, kind, cx, cz, { complete: false });
     return true;
+  }
+
+  /**
+   * SITE LEVELLING. A building stands on one flat height: its footprint
+   * goes to the footprint's mean (never below dry land), and a skirt of
+   * SITE_SKIRT tiles beyond it blends from that height back to the ground.
+   * The skirt leaves water, other buildings' footprints and cliffs (more
+   * than SITE_CLIFF of relief) alone. `seconds` 0 = at once (scenario
+   * start); otherwise the edit plays out over that long (tickSiteLevel).
+   */
+  levelSite(b: Building, seconds = SITE_LEVEL_SECONDS): void {
+    const r = half(b);
+    let sum = 0;
+    let n = 0;
+    for (let dz = -r; dz <= r; dz++) {
+      for (let dx = -r; dx <= r; dx++) {
+        sum += this.map.heightAt(b.x + dx, b.z + dz);
+        n++;
+      }
+    }
+    const level = Math.max(WALK_MIN_HEIGHT + 0.5, sum / n);
+    const mine = new Set<number>();
+    for (let dz = -r; dz <= r; dz++) for (let dx = -r; dx <= r; dx++) mine.add(tileIndex(b.x + dx, b.z + dz));
+    const from: number[] = [];
+    const R = r + SITE_SKIRT;
+    for (let dz = -R; dz <= R; dz++) {
+      for (let dx = -R; dx <= R; dx++) {
+        const i = tileIndex(b.x + dx, b.z + dz);
+        const h = this.map.heights[i];
+        const ring = Math.max(Math.abs(dx), Math.abs(dz)) - r; // 0 inside, 1..SKIRT outside
+        let w = 1;
+        if (ring > 0) {
+          if (this.obstacles.has(i) && !mine.has(i)) continue; // a neighbour's footprint
+          if (h < WALK_MIN_HEIGHT || Math.abs(h - level) > SITE_CLIFF) continue; // the sea, a cliff
+          w = 1 - ring / (SITE_SKIRT + 1);
+        }
+        if (Math.abs(h - level) < 1e-3) continue;
+        from.push(i, h, w);
+      }
+    }
+    b.levelTo = level;
+    b.levelFrom = from;
+    b.levelT = 0;
+    if (from.length === 0) {
+      b.levelT = 1;
+      return;
+    }
+    if (seconds <= 0) this.tickSiteLevel(b, 1, 1);
+    else this.events.push({ type: 'siteLevel', x: b.x, z: b.z, magnitude: b.size });
+  }
+
+  private tickSiteLevel(b: Building, dt: number, seconds = SITE_LEVEL_SECONDS): void {
+    const from = b.levelFrom!;
+    const t = Math.min(1, (b.levelT ?? 0) + dt / seconds);
+    b.levelT = t;
+    const k = t * t * (3 - 2 * t);
+    const level = b.levelTo!;
+    for (let j = 0; j + 2 < from.length; j += 3) {
+      const h0 = from[j + 1];
+      this.map.heights[from[j]] = h0 + (level - h0) * from[j + 2] * k;
+    }
+    this.map.version++;
+    if (t >= 1) b.levelFrom = undefined;
   }
 
   /**
@@ -2003,6 +2320,8 @@ export class World implements SimQueries {
     this.buildingIndex.set(b.id, b);
     this.buildingIndexLen++;
     this.blockFootprint(b);
+    // Finished at the start: stand it on flat ground now. A new site levels itself over its first seconds.
+    this.levelSite(b, complete ? 0 : SITE_LEVEL_SECONDS);
     for (const t of this.trees) {
       if (Math.abs(wrapDelta(t.x - b.x, WORLD_SIZE)) <= half(b) && Math.abs(wrapDelta(t.z - b.z, WORLD_SIZE)) <= half(b)) {
         t.alive = false;
@@ -2181,6 +2500,7 @@ export class World implements SimQueries {
   // -------------------------------------------------------------------------
 
   monumentAvailable(m: Monument): boolean {
+    if (m.asleep) return false;
     if (m.opensAt !== undefined && this.elapsed < m.opensAt) return false;
     return m.mode === 'teach' ? m.claimedBy === null : m.sleep <= 0;
   }
@@ -2201,15 +2521,64 @@ export class World implements SimQueries {
     }
   }
 
+  /** May `tribe` start (or resume) a ritual here? One tribe at a stone at a time. */
+  canCommune(m: Monument, tribe: TribeId): boolean {
+    if (!this.monumentAvailable(m)) return false;
+    if (!m.communing || !m.communer || m.communer === tribe) return true;
+    // A live ritual by someone else: only if its leader has gone.
+    const other = this.unitById(m.communerId ?? -1);
+    return !other || other.task !== 'worship';
+  }
+
+  /** The leader kneels: the ritual starts (or resumes its drained progress), rivals hear of it, guardians wake. */
+  private beginCommune(m: Monument, u: Unit): void {
+    const tribe = u.tribe as TribeId;
+    if (m.communer !== tribe) m.communeProgress = 0;
+    m.communer = tribe;
+    m.communerId = u.id;
+    m.communing = true;
+    m.contested = false;
+    this.events.push({ type: 'communeStart', x: m.x, z: m.z, tribe, magnitude: spellDef(m.spell).tier });
+    if (m.guards && Object.keys(m.guards).length) this.wakeGuards(m);
+  }
+
+  wakeGuards(m: Monument): void {
+    m.guardsAwake = true;
+    m.guardsCalm = 0;
+  }
+
   private tickMonuments(dt: number): void {
-    for (const m of this.monuments) {
-      if (m.mode !== 'gift' || m.sleep <= 0) continue;
-      m.sleep -= dt;
-      if (m.sleep <= 0) {
-        m.sleep = 0;
-        m.claimedBy = null;
+    this.monuments.forEach((m, i) => {
+      if (m.mode === 'gift' && m.sleep > 0) {
+        m.sleep -= dt;
+        if (m.sleep <= 0) {
+          m.sleep = 0;
+          m.claimedBy = null;
+        }
       }
-    }
+      // A ritual whose leader stopped kneeling (hurt, shoved, ordered away, dead) breaks off…
+      if (m.communing) {
+        const u = this.unitById(m.communerId ?? -1);
+        if (!u || u.task !== 'worship' || u.targetMonument !== i || u.state !== 'working') {
+          m.communing = false;
+          m.contested = false;
+          this.events.push({ type: 'communeInterrupted', x: m.x, z: m.z, tribe: typeof m.communer === 'string' ? m.communer : undefined, magnitude: m.communeProgress ?? 0 });
+        }
+      } else if ((m.communeProgress ?? 0) > 0) {
+        // …and what it had gathered drains away, slowly: a guarded leader can come back to it.
+        m.communeProgress = Math.max(0, (m.communeProgress ?? 0) - dt * COMMUNE.decayPerSecond);
+        if (m.communeProgress <= 0) {
+          m.communer = null;
+          m.communerId = -1;
+        }
+      }
+      // Guardians go back to sleep once nobody has been near the stone for a while.
+      if (m.guardsAwake) {
+        const near = this.units.some((q) => !q.hidden && q.tribe !== 'wild' && Math.hypot(wrapDelta(q.x - m.x, WORLD_SIZE), wrapDelta(q.z - m.z, WORLD_SIZE)) < 10);
+        m.guardsCalm = near || m.communing ? 0 : (m.guardsCalm ?? 0) + dt;
+        if ((m.guardsCalm ?? 0) > 20) m.guardsAwake = false;
+      }
+    });
   }
 
   // -------------------------------------------------------------------------
@@ -2368,6 +2737,12 @@ export class World implements SimQueries {
     const m = this.monuments[monumentIdx];
     if (!m || !this.monumentAvailable(m)) return;
     for (const id of ids) {
+      const leader = this.unitById(id);
+      if (leader && leader.tribe !== 'wild' && !this.canCommune(m, leader.tribe)) {
+        if (leader.tribe === 'player') this.events.push({ type: 'denied', x: m.x, z: m.z });
+        return;
+      }
+      if (leader?.task === 'worship' && leader.targetMonument === monumentIdx) return; // already on it
       const u = this.unitById(id);
       if (!u || u.hidden || u.kind !== 'shaman') continue;
       this.abandonTask(u);
@@ -2387,7 +2762,7 @@ export class World implements SimQueries {
     for (const id of ids) {
       const u = this.unitById(id);
       if (!u || u.hidden) continue;
-      if (UNITS[u.kind].dmg > 0 && this.hostile(u.tribe, target.tribe)) {
+      if (UNITS[u.kind].dmg > 0 && this.foes(u, target)) {
         this.abandonTask(u);
         u.task = 'attack';
         u.targetUnit = targetId;
@@ -2541,12 +2916,13 @@ export class World implements SimQueries {
     return u;
   }
 
-  spawnNearWalkable(kind: UnitKind, tribe: Tribe, x: number, z: number): Unit | null {
+  spawnNearWalkable(kind: UnitKind, tribe: Tribe, x: number, z: number, anyGround = false): Unit | null {
     // Never onto a stranded scrap (a cliff-ringed ridge-top): the nearest
     // ground that belongs to a real stretch of land, else any ground at all.
+    // (`anyGround`: the scrap is the point — stranded people on a sandbar.)
     const major = (tx: number, tz: number) => isMajor(this.map, regionAt(this.map, tx, tz));
     const spot =
-      findNearestWalkable(this.map, Math.round(x), Math.round(z), 16, major) ??
+      (anyGround ? null : findNearestWalkable(this.map, Math.round(x), Math.round(z), 16, major)) ??
       findNearestWalkable(this.map, Math.round(x), Math.round(z));
     if (!spot) return null;
     return this.spawn(kind, tribe, spot.x + this.random() * 0.6 - 0.3, spot.z + this.random() * 0.6 - 0.3);

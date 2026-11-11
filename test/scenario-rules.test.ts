@@ -40,10 +40,10 @@ describe('loadout extras', () => {
     run(w, 200);
     expect(w.spellState('player', 'blast').charges).toBe(spellDef('blast').maxCharges + 1);
     // Fresh world: compare charge speed of convert with and without the cost.
-    const a = setupFlat(rulesFor([{ id: 'player', ai: false, loadout: { spells: ['convert'], chargeCost: { convert: 2 } } }, { id: 'red', ai: false }]));
-    const b = setupFlat(rulesFor([{ id: 'player', ai: false, loadout: { spells: ['convert'] } }, { id: 'red', ai: false }]));
-    run(a, 5);
-    run(b, 5);
+    const a = setupFlat(rulesFor([{ id: 'player', ai: false, loadout: { spells: ['convert'], chargeCost: { convert: 2 }, startCharges: { convert: 0 } } }, { id: 'red', ai: false }]));
+    const b = setupFlat(rulesFor([{ id: 'player', ai: false, loadout: { spells: ['convert'], startCharges: { convert: 0 } } }, { id: 'red', ai: false }]));
+    run(a, 3); // (short of a full Kindle charge for either: the boosted opening income is quick)
+    run(b, 3);
     const pa = a.spellState('player', 'convert');
     const pb = b.spellState('player', 'convert');
     expect(pa.charges + pa.progress).toBeCloseTo((pb.charges + pb.progress) / 2, 1);
@@ -190,7 +190,7 @@ describe('scripted events', () => {
 describe('objectives & fails added for the campaign', () => {
   it('chargeSpell completes once the spell holds a charge', () => {
     const w = setupFlat(
-      rulesFor([{ id: 'player', ai: false, loadout: { spells: ['blast'] } }, { id: 'red', ai: false }], {
+      rulesFor([{ id: 'player', ai: false, loadout: { spells: ['blast'], startCharges: { blast: 0 } } }, { id: 'red', ai: false }], {
         objectives: [{ objective: { type: 'chargeSpell', spell: 'blast' }, text: 'charge' }],
       }),
     );
@@ -208,7 +208,7 @@ describe('objectives & fails added for the campaign', () => {
         fail: [{ type: 'monumentTaken', index: 0 }],
       }),
     );
-    w.monuments = [{ x: 84, z: 88, spell: 'volcano', mode: 'teach', claimedBy: null, claimer: null, sleep: 0 }];
+    w.monuments = [{ x: 84, z: 88, spell: 'volcano', mode: 'teach', claimedBy: null, claimer: null, sleep: 0, communeSeconds: 6 }];
     w.orderWorship([w.leaderOf('red')!.id], 0);
     run(w, 12);
     expect(w.gameOver).toBe('defeat');
@@ -217,7 +217,7 @@ describe('objectives & fails added for the campaign', () => {
 
   it('a stone with opensAt sleeps until then', () => {
     const w = setupFlat(rulesFor());
-    w.monuments = [{ x: 24, z: 20, spell: 'ward', mode: 'teach', claimedBy: null, claimer: null, sleep: 0, opensAt: 20 }];
+    w.monuments = [{ x: 24, z: 20, spell: 'ward', mode: 'teach', claimedBy: null, claimer: null, sleep: 0, opensAt: 20, communeSeconds: 6 }];
     expect(w.monumentAvailable(w.monuments[0])).toBe(false);
     w.orderWorship([w.leaderOf('player')!.id], 0);
     run(w, 8);

@@ -36,10 +36,26 @@ export function newSpellBook(): SpellBook {
   return book;
 }
 
-/** Raw income per second from a tribe's people. */
-export function manaIncome(followers: number, housed: number, praying: number): number {
+/**
+ * The opening is generous: for the first two minutes every tribe's income
+ * is multiplied by `boost`, easing back to normal by `fadeEnd` seconds.
+ * A tiny tribe can't feed its spells yet, and the first minutes are when
+ * a leader most needs something to do. Mid-game is untouched.
+ */
+export const OPENING_MANA = { boost: 1.8, fadeStart: 120, fadeEnd: 300 };
+
+export function openingBoost(elapsed: number): number {
+  const { boost, fadeStart, fadeEnd } = OPENING_MANA;
+  if (elapsed <= fadeStart) return boost;
+  if (elapsed >= fadeEnd) return 1;
+  const t = (elapsed - fadeStart) / (fadeEnd - fadeStart);
+  return boost + (1 - boost) * t * t * (3 - 2 * t);
+}
+
+/** Raw income per second from a tribe's people (`elapsed` = scenario seconds, for the opening boost). */
+export function manaIncome(followers: number, housed: number, praying: number, elapsed = Infinity): number {
   return (MANA_BASE_RATE + followers * MANA_PER_FOLLOWER + housed * MANA_PER_RESIDENT) *
-    (1 + praying * ECONOMY.shrinePrayerBonus);
+    (1 + praying * ECONOMY.shrinePrayerBonus) * openingBoost(elapsed);
 }
 
 /** Slots currently soaking up mana. */

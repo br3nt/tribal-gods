@@ -1,10 +1,16 @@
 /**
  * Chapter 2 — The Speaking Stones. First stones, first raiders.
  *
- * Teaches: leaders commune at standing stones to learn spells (Bloom on
- * this bank, Level across the river); a garrisoned Watchtower and Blast
- * hold off a raid. Tests: walking the leader out while the village is
- * under threat.
+ * Teaches: communing is a ritual, not a click — the leader kneels,
+ * helpless, and any blow breaks it. Each stone is a small set piece:
+ *   - the Bloom stone in the old wood has GUARDIANS — wood-wights that
+ *     sleep until someone kneels. Bring the two spear-bearers (or Blast
+ *     them first).
+ *   - the Level stone across the river takes a long ritual, and the
+ *     Unmoored see it: the moment she kneels, a boat beaches below the
+ *     knoll and its crew run at her. Guard the leader or lose the ritual.
+ * Then a garrisoned Watchtower and Blast hold the ford through the raids.
+ * First minute: Kindle the wanderers on the near bank (two charges ready).
  *
  * The map: "Riverholm", a long island split by a cold river running from
  * the northern fells to the southern sea. The one ford sits mid-island.
@@ -22,6 +28,10 @@ export const LAYOUT = {
   level: { x: 88, z: 60 },
   ford: { x: 63, z: 64 },
   landing: { x: 106, z: 74 },
+  /** Wanderers' camp on our bank: the first-minute Kindle. */
+  camp: { x: 44, z: 80 },
+  /** Where the boat that saw the ritual beaches. */
+  cove: { x: 104, z: 58 },
   river: [
     { x: 66, z: 30 },
     { x: 60, z: 52 },
@@ -65,15 +75,15 @@ export const scenario: CampaignScenario = {
       terrain: t,
       homes: { player: home, violet: LAYOUT.landing },
       monuments: [
-        { x: bloom.x, z: bloom.z, spell: 'bloom', mode: 'teach' },
-        { x: level.x, z: level.z, spell: 'flatten', mode: 'teach' },
+        { x: bloom.x, z: bloom.z, spell: 'bloom', mode: 'teach', guards: { warrior: 2 } },
+        { x: level.x, z: level.z, spell: 'flatten', mode: 'teach', communeSeconds: 25 },
       ],
-      wildmen: wanderers(t.map, 21, 86, 78, 10, 5).concat(wanderers(t.map, 22, 40, 86, 6, 2)),
+      wildmen: wanderers(t.map, 21, 86, 78, 10, 5).concat(wanderers(t.map, 22, LAYOUT.camp.x, LAYOUT.camp.z, 3, 4)),
       rules: {
         tribes: [
           {
             id: 'player', name: 'the Lantern-folk', ai: false,
-            loadout: { spells: ['blast', 'convert'], buildings: ['hut', 'lumberyard', 'tower'], startUnits: { brave: 7, warrior: 2 }, startWood: 12 },
+            loadout: { spells: ['blast', 'convert'], buildings: ['hut', 'lumberyard', 'tower'], startUnits: { brave: 7, warrior: 4 }, startWood: 12 },
           },
           { id: 'violet', name: 'the Unmoored', ...RAIDER_TRIBE },
         ],
@@ -83,8 +93,17 @@ export const scenario: CampaignScenario = {
           { objective: { type: 'survive', seconds: 600 }, text: 'Weather the raids (10 minutes)' },
           { objective: { type: 'buildCount', kind: 'tower', count: 1 }, text: 'Raise a Watchtower by the ford', optional: true },
           { objective: { type: 'reachPopulation', count: 30 }, text: 'Grow the tribe to 30', optional: true },
+          { objective: { type: 'convertWanderers', count: 4 }, text: 'Kindle the wanderers by the shore', optional: true },
         ],
         events: [
+          { when: { type: 'time', at: 2 }, message: 'Wanderers camped by the shore, a short walk south. Kindle them into the tribe.', focus: LAYOUT.camp, actions: [] },
+          { when: { type: 'time', at: 25 }, message: 'The stone in the old wood is watched. Whoever kneels there wakes its keepers — bring spears.', focus: LAYOUT.bloom, actions: [] },
+          {
+            when: { type: 'commune', index: 1, tribe: 'player' },
+            message: 'A boat below the knoll — the Unmoored have seen the ritual! Guard the leader: one blow and it breaks.',
+            focus: LAYOUT.cove,
+            actions: [{ type: 'spawn', tribe: 'violet', units: { warrior: 2 }, x: LAYOUT.cove.x, z: LAYOUT.cove.z, march: LAYOUT.level, hold: 40 }],
+          },
           raid(170, 2, 'Sails on the eastern beach — the Unmoored are coming for the ford.'),
           raid(340, 3, 'More Unmoored boats. They smell the smoke of your hearths.'),
           raid(510, 4, 'The largest boat yet. Hold the ford!'),
@@ -97,8 +116,8 @@ export const scenario: CampaignScenario = {
             'One stands in the wood on our bank; the other crowns a knoll across the cold river. ' +
             'We are not the first boats to find this island. The Unmoored, whose isles drowned before ours, raid every shore that smokes — and the only crossing is the ford.',
           tips: [
-            'Send your leader to a stone: she sits, she learns, and the spell joins your book for the rest of the scenario.',
-            'Your two spear-bearers fight best from a Watchtower — order them inside, near the ford.',
+            'At a stone your leader kneels for a while and learns its spell — but a kneeling leader is helpless, and one blow breaks the ritual.',
+            'Your spear-bearers fight best from a Watchtower — order them inside, near the ford.',
             'Blast throws raiders clear; thrown into the river, they drown.',
           ],
         },

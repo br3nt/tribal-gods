@@ -90,6 +90,8 @@ describe('save / resume', () => {
     player.spells.sink.gifted += 1;
     player.spells.swamp.gifted += 1;
     const leader = w.leaderOf('player')!;
+    w.abandonTask(leader); // (the bot may be kneeling at a stone)
+    w.tribes.player!.ai = null;
     expect(w.orderCast('player', 'sink', leader.x + 3, leader.z)).toBeNull();
     for (let i = 0; i < 15 * 10 && !w.jobs.some((j) => j.spell === 'sink'); i++) w.tick(1 / 15);
     const sink = w.jobs.find((j) => j.spell === 'sink')!;

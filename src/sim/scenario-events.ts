@@ -12,7 +12,9 @@
  * counting from its first firing.
  */
 
-import { ScenarioAction, ScenarioEvent, TribeId, UnitKind } from './catalog';
+import { ScenarioAction, ScenarioEvent, ScenarioTrigger, TribeId, UnitKind } from './catalog';
+import { wrapDelta } from '../core/util';
+import { WORLD_SIZE } from '../config';
 import { castSpell } from './spells';
 import type { World } from './world-state';
 
@@ -21,24 +23,63 @@ export interface EventMemory {
   fired: number;
   /** Sim time of the next repeat (when fired > 0). */
   next: number;
+  /** Sim time the trigger first held (events with a `delay`). */
+  armedAt?: number;
 }
 
 export function initEventMemory(events: ScenarioEvent[] | undefined): EventMemory[] {
   return (events ?? []).map(() => ({ fired: 0, next: 0 }));
 }
 
-function triggered(world: World, ev: ScenarioEvent): boolean {
-  const w = ev.when;
+function holds(world: World, w: ScenarioTrigger): boolean {
   switch (w.type) {
     case 'time':
       return world.elapsed >= w.at;
     case 'zone': {
       const tribe = w.tribe ?? 'player';
-      return world.units.some((u) => u.tribe === tribe && !u.hidden && world.distTo(u, w.x, w.z) <= w.radius);
+      const want = w.count ?? 1;
+      let n = 0;
+      for (const u of world.units) {
+        if (u.tribe !== tribe || u.hidden || (w.kind && u.kind !== w.kind) || world.distTo(u, w.x, w.z) > w.radius) continue;
+        if (++n >= want) return true;
+      }
+      return false;
     }
     case 'objective':
       return !!world.objectives[w.index]?.done;
+    case 'spellCast': {
+      const tribe = w.tribe ?? 'player';
+      if (!world.tribes[tribe]) return false;
+      return world.statsOf(tribe).casts.some((c) => (!w.spell || c.spell === w.spell) &&
+        (w.x === undefined || w.z === undefined || Math.hypot(wrapDelta(c.x - w.x, WORLD_SIZE), wrapDelta(c.z - w.z, WORLD_SIZE)) <= (w.radius ?? 0)));
+    }
+    case 'joined': {
+      const tribe = w.tribe ?? 'player';
+      return !!world.tribes[tribe] && world.statsOf(tribe).joined >= w.count;
+    }
+    case 'killed': {
+      if (!world.tribes[w.tribe]) return false;
+      const st = world.statsOf(w.tribe);
+      return (w.kind ? st.lost[w.kind] ?? 0 : st.lostTotal) >= w.count;
+    }
+    case 'commune': {
+      const m = world.monuments[w.index];
+      return !!m && (!!m.communing || (m.communeProgress ?? 0) > 0 || !!m.claimer) && (!w.tribe || m.communer === w.tribe || m.claimer === w.tribe);
+    }
+    case 'any':
+      return w.of.some((t) => holds(world, t));
+    default:
+      return false;
   }
+}
+
+function triggered(world: World, ev: ScenarioEvent, mem: EventMemory): boolean {
+  if (!ev.delay) return holds(world, ev.when);
+  if (mem.armedAt === undefined) {
+    if (!holds(world, ev.when)) return false;
+    mem.armedAt = world.elapsed;
+  }
+  return world.elapsed >= mem.armedAt + ev.delay;
 }
 
 export function tickScenarioEvents(world: World): void {
@@ -49,10 +90,10 @@ export function tickScenarioEvents(world: World): void {
     if (!mem) return;
     const times = ev.repeat?.times ?? 1;
     if (mem.fired >= times) return;
-    if (mem.fired === 0 ? !triggered(world, ev) : world.elapsed < mem.next) return;
+    if (mem.fired === 0 ? !triggered(world, ev, mem) : world.elapsed < mem.next) return;
     mem.fired++;
     mem.next = world.elapsed + (ev.repeat?.every ?? 0);
-    if (ev.message) world.say(ev.message);
+    if (ev.message) world.say(ev.message, ev.focus);
     for (const a of ev.actions) runAction(world, a);
   });
 }
@@ -67,12 +108,23 @@ export function runAction(world: World, a: ScenarioAction): void {
           const ang = slot * 2.4;
           const r = 1 + Math.sqrt(slot) * 1.1;
           slot++;
-          const u = world.spawnNearWalkable(kind, a.tribe, a.x + Math.cos(ang) * r, a.z + Math.sin(ang) * r);
+          const u = world.spawnNearWalkable(kind, a.tribe, a.x + Math.cos(ang) * r, a.z + Math.sin(ang) * r, !!a.joins);
           if (u) spawned.push(u);
+        }
+      }
+      for (const u of spawned) {
+        if (a.joins) {
+          u.tribe = 'wild';
+          u.joins = a.joins;
+        }
+        if (a.march && a.hold) {
+          u.holdAt = { x: a.march.x, z: a.march.z };
+          u.holdUntil = world.elapsed + a.hold;
         }
       }
       if (a.march) {
         for (const u of spawned) world.sendTo(u, a.march.x + (world.random() * 4 - 2), a.march.z + (world.random() * 4 - 2));
+        if (spawned.length) world.events.push({ type: 'landing', x: a.x, z: a.z, x2: a.march.x, z2: a.march.z, magnitude: spawned.length, tribe: a.tribe });
       }
       return;
     }
@@ -109,7 +161,15 @@ export function runAction(world: World, a: ScenarioAction): void {
       return;
     }
     case 'message':
-      world.say(a.text);
+      world.say(a.text, a.focus);
+      return;
+    case 'openStone': {
+      const m = world.monuments[a.index];
+      if (m) m.asleep = false;
+      return;
+    }
+    case 'defeat':
+      world.endGame('defeat', a.reason);
       return;
   }
 }

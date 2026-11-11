@@ -161,6 +161,8 @@ export function castSpell(
         if (dist(u.x, u.z, x, z) > R) continue;
         u.kind = 'brave';
         u.tribe = casterTribe;
+        u.joins = null;
+        world.statsOf(casterTribe).converted++;
         u.hp = u.maxHp = UNITS.brave.hp;
         world.events.push({ type: 'convert', x: u.x, z: u.z });
       }
@@ -177,7 +179,7 @@ export function castSpell(
         hit.add(u.id);
       }
       const arcs = world.units
-        .filter((u) => !u.hidden && !hit.has(u.id) && u.tribe !== 'wild' && world.hostile(casterTribe, u.tribe))
+        .filter((u) => !u.hidden && !hit.has(u.id) && world.foeOfTribe(casterTribe, u))
         .map((u) => ({ u, d: dist(u.x, u.z, x, z) }))
         .filter((c) => c.d < 6)
         .sort((a, b) => a.d - b.d)

@@ -6,9 +6,17 @@
  * you held the hill). Victory = every non-optional objective done. Defeat =
  * the player's tribe is gone (always implied) or any listed fail condition
  * trips. world.gameOver latches the first result, with a reason string.
+ *
+ * A story in steps: an objective with `after: i` stays inactive (hidden,
+ * not evaluated) until objective i is done; counting objectives (casts,
+ * kindlings, kills, rescues) count from the moment they become active.
+ * HELD objectives (loseAtMost, winWithin) are true until broken: `failed`
+ * latches when they break, and the survivors are marked done at victory.
  */
 
 import { BUILDINGS, FailCondition, Objective, ObjectiveState, ScenarioRules, TribeId } from './catalog';
+import { wrapDelta } from '../core/util';
+import { WORLD_SIZE } from '../config';
 import type { World } from './world-state';
 
 export const ME: TribeId = 'player';
@@ -16,6 +24,9 @@ export const ME: TribeId = 'player';
 /** Per-objective running memory (hold timers). Parallel to world.objectives. */
 export interface ObjectiveMemory {
   hold: number;
+  /** Sim time it became active, and the tally it counts from (counting objectives). */
+  since?: number;
+  base?: number;
 }
 
 export function initObjectives(rules: ScenarioRules): { states: ObjectiveState[]; memory: ObjectiveMemory[] } {
@@ -26,6 +37,8 @@ export function initObjectives(rules: ScenarioRules): { states: ObjectiveState[]
       done: false,
       progress: 0,
       optional: !!o.optional,
+      active: o.after === undefined,
+      failed: false,
     })),
     memory: rules.objectives.map(() => ({ hold: 0 })),
   };
@@ -35,7 +48,32 @@ function rivalsOf(world: World, me: TribeId): TribeId[] {
   return world.activeTribes().filter((t) => t !== me && world.hostile(me, t));
 }
 
-function evaluate(world: World, o: Objective, mem: ObjectiveMemory, dt: number): { done: boolean; progress: number } {
+const isHeld = (o: Objective) => o.type === 'loseAtMost' || o.type === 'winWithin';
+
+/** The running tally a counting objective counts (null = not a counting objective). */
+function tally(world: World, o: Objective): number | null {
+  const st = world.tribes[ME] ? world.statsOf(ME) : null;
+  switch (o.type) {
+    case 'castSpell': {
+      if (!st) return 0;
+      const r = o.radius ?? 0;
+      return st.casts.filter((c) => c.spell === o.spell && (o.x === undefined || o.z === undefined ||
+        Math.hypot(wrapDelta(c.x - o.x, WORLD_SIZE), wrapDelta(c.z - o.z, WORLD_SIZE)) <= r)).length;
+    }
+    case 'convertWanderers': return st?.converted ?? 0;
+    case 'rescueStranded': return st?.joined ?? 0;
+    case 'killUnits': return world.tribes[o.tribe] ? world.statsOf(o.tribe).lostTotal : 0;
+    default: return null;
+  }
+}
+
+function evaluate(world: World, o: Objective, mem: ObjectiveMemory, dt: number): { done: boolean; progress: number; failed?: boolean } {
+  const counted = tally(world, o);
+  if (counted !== null) {
+    const want = o.type === 'castSpell' ? o.count ?? 1 : (o as { count: number }).count;
+    const n = counted - (mem.base ?? 0);
+    return { done: n >= want, progress: Math.min(1, n / Math.max(1, want)) };
+  }
   switch (o.type) {
     case 'destroyTribe': {
       const done = !world.tribes[o.tribe] || !world.tribeAlive(o.tribe);
@@ -84,11 +122,33 @@ function evaluate(world: World, o: Objective, mem: ObjectiveMemory, dt: number):
       if (!s.known) return { done: false, progress: 0 };
       return { done: s.charges >= want, progress: Math.min(1, (s.charges + s.progress) / want) };
     }
+    case 'loseAtMost': {
+      const st = world.statsOf(ME);
+      const lost = o.kind ? st.lost[o.kind] ?? 0 : st.lostTotal;
+      return { done: false, progress: lost <= o.count ? 1 : 0, failed: lost > o.count };
+    }
+    case 'winWithin':
+      return { done: false, progress: world.elapsed <= o.seconds ? 1 - world.elapsed / o.seconds : 0, failed: world.elapsed > o.seconds };
+    default:
+      return { done: false, progress: 0 };
+  }
+}
+
+/** Victory: every held objective that was never broken is met. (World.endGame calls this.) */
+export function finishHeldObjectives(world: World): void {
+  for (const s of world.objectives) {
+    if (!s.active || s.done || s.failed || !isHeld(s.objective)) continue;
+    const o = s.objective;
+    if (o.type === 'winWithin' && world.elapsed > o.seconds) continue;
+    s.done = true;
+    s.progress = 1;
   }
 }
 
 function failReason(world: World, f: FailCondition): string | null {
   switch (f.type) {
+    default:
+      return null;
     case 'tribeDestroyed':
       return null; // checked unconditionally below
     case 'leaderDies':
@@ -109,9 +169,21 @@ export function tickObjectives(world: World, dt: number): void {
   const me = world.tribes[ME];
 
   world.objectives.forEach((state, i) => {
-    if (state.done) return;
-    const r = evaluate(world, state.objective, world.objectiveMemory[i], dt);
+    const mem = (world.objectiveMemory[i] ??= { hold: 0 });
+    if (state.active === undefined) state.active = true; // an old save
+    if (!state.active) {
+      const after = world.rules.objectives[i]?.after;
+      if (after === undefined || world.objectives[after]?.done) {
+        state.active = true;
+        mem.since = world.elapsed;
+        mem.base = tally(world, state.objective) ?? 0;
+      } else return;
+    }
+    if (state.done || state.failed) return;
+    if (mem.base === undefined) mem.base = 0;
+    const r = evaluate(world, state.objective, mem, dt);
     state.progress = r.done ? 1 : r.progress;
+    if (r.failed) state.failed = true;
     if (r.done) {
       state.done = true;
       const home = me?.home ?? { x: 0, z: 0 };
