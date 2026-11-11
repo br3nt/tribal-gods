@@ -9,6 +9,7 @@
  * enough. Per-chapter hooks add the one thing each scenario asks for.
  */
 import { BUILDINGS, BuildingKind, SpellId, spellDef, TribeId, UNITS } from '../src/sim/catalog';
+import { findPath } from '../src/sim/pathfinding';
 import { regionNear } from '../src/sim/regions';
 import type { Unit, World } from '../src/sim/world-state';
 import { wrapDelta } from '../src/core/util';
@@ -73,7 +74,8 @@ export class PlayerScript {
         const a = (k / 20) * Math.PI * 2 + r;
         const x = Math.round(home.x + Math.cos(a) * r);
         const z = Math.round(home.z + Math.sin(a) * r);
-        if (w.canPlaceBuilding('player', kind, x, z) && regionNear(w.map, x, z) === regionNear(w.map, home.x, home.z)) {
+        if (w.canPlaceBuilding('player', kind, x, z) && regionNear(w.map, x, z) === regionNear(w.map, home.x, home.z) &&
+          findPath(w.map, home.x, home.z, x, z + (BUILDINGS[kind].size - 1) / 2 + 1, 2500, 0)) {
           return w.placeBuilding('player', kind, x, z);
         }
       }
@@ -230,8 +232,8 @@ export class PlayerScript {
  */
 export function landfallExtra(layout: { sandbar: { x: number; z: number }; home: { x: number; z: number }; strand: { x: number; z: number } }) {
   const levelAt = [
-    { x: layout.home.x + 8, z: layout.home.z + 3 },
-    { x: layout.home.x + 7, z: layout.home.z - 6 },
+    { x: layout.home.x + 6, z: layout.home.z + 2 },
+    { x: layout.home.x + 2, z: layout.home.z - 6 },
   ];
   return (w: World, s: PlayerScript): void => {
     const leader = w.leaderOf('player');

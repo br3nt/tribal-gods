@@ -31,19 +31,21 @@
  * beach in the south-east, watched by a stone on a headland.
  */
 
+import { hash2 } from '../../core/noise';
 import type { ScenarioEvent } from '../../sim/catalog';
+import { smoothstep } from '../../core/util';
 import { dist, inside, lineDist, Terrain, wanderers } from '../terrain-kit';
 import { CampaignScenario, makeLevel, RAIDER_TRIBE } from './common';
 
 export const LAYOUT = {
   home: { x: 46, z: 66 },
   /** The kin's sandbar, across the channel to the west. */
-  sandbar: { x: 22, z: 64 },
+  sandbar: { x: 25, z: 64 },
   /** Where the leader stands to raise the Causeway (west shore). */
   shore: { x: 39, z: 65 },
   meadow: { x: 50, z: 47 },
   meadow2: { x: 73, z: 47 },
-  /** The rumpled slope east of the landing — the building ground, once Levelled. */
+  /** The hillside east of the landing — the building ground, once Levelled. */
   slope: { x: 57, z: 70 },
   slopeRadius: 15,
   /** Stone above the strand: Lightning (gift). */
@@ -56,8 +58,12 @@ export const LAYOUT = {
 };
 
 const KIN = { brave: 4, warrior: 2 };
-/** Peak-to-peak of the rumple (a 3×3 site spans it; neighbours differ by half). */
-const RUMPLE = 3.6;
+/** The crater walls: they start WALL_IN tiles from home, climb WALL_SLOPE per tile for WALL_W tiles, then fall away as steeply. */
+const WALL_IN = 3.5;
+const WALL_W = 4;
+const WALL_SLOPE = 2.4;
+/** How steeply the floor falls to the sea through the gap (per tile). */
+const SHINGLE = 1.8;
 const WAVE = 4;
 export const HUTS = 4;
 const HOST = { warrior: 12, firewarrior: 2 };
@@ -83,22 +89,23 @@ export const scenario: CampaignScenario = {
       const bar = inside(dist(x, z, sandbar.x, sandbar.z) + t.wobble(x, z, 3) * 1.2, 5, 2.5);
       return Math.max(main, cape, bar);
     }, { base: 2.6, roll: 0.9 });
-    // The rumple: an egg-crate of hummocks over the whole island but the
-    // landing itself. Neighbouring tiles differ by under half a step (easy
-    // walking) but every 3×3 patch spans more relief than a Dwelling allows
-    // — nowhere to build until Level smooths it. The phase wanders a little
-    // so it reads as ground, not a grid.
-    const tri = (v: number) => {
-      const f = ((v % 4) + 4) % 4;
-      return f < 2 ? f / 2 : (4 - f) / 2;
-    };
+    // The cove: the landing sits at the bottom of an old crater whose west
+    // wall the sea broke long ago. The walls rise steadily all round — easy
+    // to climb, nowhere flat enough for a Dwelling — until Level cuts shelves
+    // into them. (Cone profile: a constant slope has no flat spots, unlike a
+    // rounded hill's crown and foot.)
     t.apply((x, z, h) => {
       if (h < 0.3) return h;
-      const wx = x + t.wobble(x, z, 7) * 0.6;
-      const wz = z + t.wobble(x, z, 8) * 0.6;
-      const crate = (tri(wx) + tri(wz) - 0.5) * RUMPLE;
-      const keep = 1 - inside(dist(x, z, home.x, home.z), 3, 1.5); // the landing stays smooth
-      return h + (crate + Math.max(0, x - home.x) * 0.04) * keep;
+      const d = dist(x, z, home.x, home.z);
+      const c = Math.cos(Math.atan2(z - home.z, x - home.x)); // −1 = due west, the sea gap
+      const f = smoothstep(-0.97, -0.82, c);
+      const up = Math.min(Math.max(0, d - WALL_IN), WALL_W) - Math.max(0, d - WALL_IN - WALL_W);
+      const wall = Math.max(0, up) * WALL_SLOPE;
+      const stony = (hash2(x, z, 5151) - 0.5) * 0.8;
+      const walled = h + (wall + (wall > 0 ? stony : 0)) * f;
+      // Through the gap the cove floor drops straight to the water: a steep shingle, no building ground.
+      const shingle = Math.min(walled, 2.8 - SHINGLE * Math.max(0, d - WALL_IN));
+      return walled + (shingle - walled) * (1 - f);
     });
     t.pad(home.x, home.z, 3, 2.8, 1.5);
     // The sandbar: low and flat — the tide is at its edges.
@@ -116,7 +123,7 @@ export const scenario: CampaignScenario = {
       { when: { type: 'time', at: 20 }, message: 'Wanderers on the north meadow. Kindle them into the tribe.', focus: meadow, actions: [] },
       {
         when: { type: 'objective', index: O.kin },
-        message: 'The kin are home — and they remember the Levelling chant. Smooth the rumpled slope so the village can rise.',
+        message: 'The kin are home — and they remember the Levelling chant. Cut shelves into the hillside so the village can rise.',
         focus: slope,
         actions: [{ type: 'teach', tribe: 'player', spell: 'flatten' }, { type: 'gift', tribe: 'player', spell: 'flatten', charges: 2 }],
       },
@@ -187,7 +194,7 @@ export const scenario: CampaignScenario = {
         objectives: [
           { objective: { type: 'rescueStranded', count: KIN.brave + KIN.warrior }, text: 'Raise a Causeway to the kin on the sandbar' },
           { objective: { type: 'convertWanderers', count: 4 }, text: 'Kindle the wanderers on the north meadow' },
-          { objective: { type: 'castSpell', spell: 'flatten', count: 2, x: slope.x, z: slope.z, radius: LAYOUT.slopeRadius }, text: 'Level the rumpled slope (twice)', after: O.kin },
+          { objective: { type: 'castSpell', spell: 'flatten', count: 2, x: slope.x, z: slope.z, radius: LAYOUT.slopeRadius }, text: 'Level the hillside (twice)', after: O.kin },
           { objective: { type: 'buildCount', kind: 'hut', count: HUTS }, text: `Raise ${HUTS} Dwellings`, after: O.level },
           { objective: { type: 'killUnits', tribe: 'violet', count: WAVE - 1 }, text: 'Drive the raiders off the Black Strand', after: O.huts },
           { objective: { type: 'claimMonument', index: 1 }, text: 'Kneel at the headland stone', after: O.raid },

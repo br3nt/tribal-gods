@@ -341,6 +341,8 @@ const wrapf = (v: number) => ((v % WORLD_SIZE) + WORLD_SIZE) % WORLD_SIZE;
 const half = (b: { size: number }) => (b.size - 1) / 2;
 const isFighterKind = (k: UnitKind) => UNITS[k].dmg > 0 && UNITS[k].sight > 0;
 const MAX_EVENTS = 4000;
+/** Tiles kept clear between a home circle's centre and a footprint's edge (+ the footprint's half-width). */
+export const HOME_CLEAR = 4;
 /** Relief a site may have before it is too rough to build on (sites level themselves). */
 const SITE_TOLERANCE = BUILD_FLAT_TOLERANCE * 1.35;
 /** Site levelling: seconds it takes, skirt width in tiles, the relief past which a skirt tile is a cliff and left alone. */
@@ -561,7 +563,7 @@ export class World implements SimQueries {
       for (let i = 0; i < (p.count ?? 1); i++) {
         const a = i * 2.4;
         const rr = i === 0 ? 0 : 0.8 + Math.sqrt(i) * 0.9;
-        const u = this.spawnNearWalkable(p.kind, p.joins ? 'wild' : p.tribe, p.x + Math.cos(a) * rr, p.z + Math.sin(a) * rr);
+        const u = this.spawnNearWalkable(p.kind, p.joins ? 'wild' : p.tribe, p.x + Math.cos(a) * rr, p.z + Math.sin(a) * rr, !!p.joins);
         if (u && p.joins) u.joins = p.joins;
       }
     }
@@ -789,7 +791,7 @@ export class World implements SimQueries {
       }
       return !this.activeTribes().some((id) => {
         const h = this.tribes[id]!.home;
-        return Math.abs(wrapDelta(x - h.x, WORLD_SIZE)) < half + 3 && Math.abs(wrapDelta(z - h.z, WORLD_SIZE)) < half + 3;
+        return Math.abs(wrapDelta(x - h.x, WORLD_SIZE)) < half + HOME_CLEAR && Math.abs(wrapDelta(z - h.z, WORLD_SIZE)) < half + HOME_CLEAR;
       });
     };
     for (let r = r0; r <= r0 + 12; r += 2) {
@@ -1784,7 +1786,9 @@ export class World implements SimQueries {
     const z = this.map.wrap(Math.round(tz));
     if (!def.anywhere && this.map.heightAt(x, z) < WALK_MIN_HEIGHT) return 'Must target land';
     if (this.distTo(leader, x, z) <= def.range) return null;
-    const path = findPath(this.map, leader.x, leader.z, x, z);
+    // A spell that may land on water / another shore (Causeway at an islet):
+    // walk to the nearest of OUR ground that puts the mark in range.
+    const path = findPath(this.map, leader.x, leader.z, x, z, 4000, World.approachRadius(spell));
     const end = path && path.length > 0 ? path[path.length - 1] : null;
     if (!end || Math.hypot(wrapDelta(end.x - x, WORLD_SIZE), wrapDelta(end.z - z, WORLD_SIZE)) > def.range) {
       return 'Out of range';
@@ -1808,13 +1812,19 @@ export class World implements SimQueries {
     leader.castSpell = spell;
     leader.castTarget = { x: this.map.wrap(Math.round(tx)), z: this.map.wrap(Math.round(tz)) };
     if (this.castTargetInRange(leader)) this.beginCast(leader);
-    else if (!this.sendTo(leader, tx, tz)) {
+    else if (!this.sendTo(leader, tx, tz, 4000, World.approachRadius(spell))) {
       leader.castSpell = null;
       leader.castTarget = null;
       if (tribe === 'player') this.events.push({ type: 'denied', x: tx, z: tz });
       return 'Out of range';
     }
     return null;
+  }
+
+  /** How far from an unreachable mark the leader may stop and still cast `spell` (its range, if it can land anywhere). */
+  private static approachRadius(spell: SpellId): number {
+    const def = spellDef(spell);
+    return def.anywhere ? Math.max(8, Math.floor(def.range) - 1) : 8;
   }
 
   private castTargetInRange(u: Unit): boolean {
@@ -2189,7 +2199,8 @@ export class World implements SimQueries {
     }
     for (const id of this.activeTribes()) {
       const home = this.tribes[id]!.home;
-      if (Math.abs(wrapDelta(cx - home.x, WORLD_SIZE)) < r + 3 && Math.abs(wrapDelta(cz - home.z, WORLD_SIZE)) < r + 3) return false;
+      // The home circle (a ring of standing stones) keeps a clear yard round it.
+      if (Math.abs(wrapDelta(cx - home.x, WORLD_SIZE)) < r + HOME_CLEAR && Math.abs(wrapDelta(cz - home.z, WORLD_SIZE)) < r + HOME_CLEAR) return false;
     }
     return true;
   }
@@ -2901,12 +2912,13 @@ export class World implements SimQueries {
     return u;
   }
 
-  spawnNearWalkable(kind: UnitKind, tribe: Tribe, x: number, z: number): Unit | null {
+  spawnNearWalkable(kind: UnitKind, tribe: Tribe, x: number, z: number, anyGround = false): Unit | null {
     // Never onto a stranded scrap (a cliff-ringed ridge-top): the nearest
     // ground that belongs to a real stretch of land, else any ground at all.
+    // (`anyGround`: the scrap is the point — stranded people on a sandbar.)
     const major = (tx: number, tz: number) => isMajor(this.map, regionAt(this.map, tx, tz));
     const spot =
-      findNearestWalkable(this.map, Math.round(x), Math.round(z), 16, major) ??
+      (anyGround ? null : findNearestWalkable(this.map, Math.round(x), Math.round(z), 16, major)) ??
       findNearestWalkable(this.map, Math.round(x), Math.round(z));
     if (!spot) return null;
     return this.spawn(kind, tribe, spot.x + this.random() * 0.6 - 0.3, spot.z + this.random() * 0.6 - 0.3);

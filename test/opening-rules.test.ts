@@ -8,7 +8,7 @@
 import { describe, expect, it } from 'vitest';
 import { communeSecondsFor, spellDef, START_CHARGES } from '../src/sim/catalog';
 import { openingBoost } from '../src/sim/spellbook';
-import { SITE_LEVEL_SECONDS, World } from '../src/sim/world-state';
+import { HOME_CLEAR, SITE_LEVEL_SECONDS, World } from '../src/sim/world-state';
 import type { Monument } from '../src/sim/world-state';
 import { regionNear } from '../src/sim/regions';
 import { eventsOf, flatWorld, rulesFor as baseRules, run } from './helpers';
@@ -124,6 +124,18 @@ describe('building sites level their own ground', () => {
     expect(after).toEqual(before);
     expect(w.map.heightAt(37, 40)).toBe(-2);
     expect(old.hp).toBeGreaterThan(0);
+  });
+
+  it('the home circle keeps a clear yard: no footprint within HOME_CLEAR tiles of its centre', () => {
+    const w = flatWorld();
+    const h = w.tribes.player!.home;
+    expect(HOME_CLEAR).toBe(4);
+    expect(w.siteFree('hut', h.x + 4, h.z)).toBe(false); // its west edge would sit 3 tiles out
+    expect(w.siteFree('hut', h.x + 5, h.z)).toBe(true);
+    expect(w.siteFree('shrine', h.x + 5, h.z + 2)).toBe(false);
+    expect(w.siteFree('shrine', h.x + 6, h.z)).toBe(true);
+    const b = w.placeStartBuilding('player', 'hut')!;
+    expect(Math.max(Math.abs(b.x - h.x), Math.abs(b.z - h.z))).toBeGreaterThanOrEqual(5);
   });
 
   it('a building stood up complete is levelled at once', () => {

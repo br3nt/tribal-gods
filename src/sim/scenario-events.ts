@@ -108,7 +108,7 @@ export function runAction(world: World, a: ScenarioAction): void {
           const ang = slot * 2.4;
           const r = 1 + Math.sqrt(slot) * 1.1;
           slot++;
-          const u = world.spawnNearWalkable(kind, a.tribe, a.x + Math.cos(ang) * r, a.z + Math.sin(ang) * r);
+          const u = world.spawnNearWalkable(kind, a.tribe, a.x + Math.cos(ang) * r, a.z + Math.sin(ang) * r, !!a.joins);
           if (u) spawned.push(u);
         }
       }

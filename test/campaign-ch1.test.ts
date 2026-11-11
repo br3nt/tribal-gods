@@ -15,7 +15,8 @@ import { landfallExtra, PlayerScript } from './player-script';
 function sites(w: World): number {
   const home = homeOf(w, 'player');
   let n = 0;
-  for (let dz = -16; dz <= 16; dz += 2) for (let dx = -16; dx <= 20; dx += 2) if (w.siteFree('hut', home.x + dx, home.z + dz)) n++;
+  // Inside the cove (the crater round the landing): every tile a Dwelling could be centred on.
+  for (let dz = -9; dz <= 9; dz++) for (let dx = -9; dx <= 9; dx++) if (Math.hypot(dx, dz) <= 9 && w.siteFree('hut', home.x + dx, home.z + dz)) n++;
   return n;
 }
 
@@ -36,14 +37,18 @@ describe('chapter 1, Landfall: the map', () => {
     expect(w.spellState('player', 'blast').charges).toBeGreaterThanOrEqual(1);
     expect(w.spellState('player', 'convert').charges).toBeGreaterThanOrEqual(1);
     // The rumple: (almost) no Dwelling site near the landing until the ground is Levelled.
-    expect(sites(w)).toBeLessThanOrEqual(4);
+    const before = sites(w);
+    console.log('c01 cove sites before Level', before);
+    expect(before).toBeLessThanOrEqual(16); // a few spots on the rim crests: a hut or two, no village
     w.tribes.player!.known.add('flatten');
     w.tribes.player!.spells.flatten.gifted = 2;
-    for (const p of [{ x: home.x + 8, z: home.z + 3 }, { x: home.x + 7, z: home.z - 6 }]) {
+    for (const p of [{ x: home.x + 6, z: home.z + 2 }, { x: home.x + 2, z: home.z - 6 }]) {
       expect(w.orderCast('player', 'flatten', p.x, p.z)).toBeNull();
       run(w, 5);
     }
-    expect(sites(w)).toBeGreaterThanOrEqual(16);
+    const after = sites(w);
+    console.log('c01 cove sites after two Levels', after);
+    expect(after).toBeGreaterThanOrEqual(before + 20);
   });
 
   it('fails when ten villagers fall', async () => {
