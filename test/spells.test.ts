@@ -118,3 +118,25 @@ describe('new spells', () => {
     }
   });
 });
+
+describe('craters', () => {
+  it('a Blast on a causeway dents it but leaves it walkable land (a fight on a bridge does not sink it)', async () => {
+    const { regionNear } = await import('../src/sim/regions');
+    const w = world();
+    // Sea everywhere but a 3-wide causeway along z = 40 between two shores.
+    for (let z = 0; z < 128; z++) for (let x = 0; x < 128; x++) w.map.heights[z * 128 + x] = x < 30 || x > 60 ? 2 : Math.abs(z - 40) <= 1 ? 1.8 : -2.5;
+    w.map.version++;
+    expect(regionNear(w.map, 20, 40)).toBe(regionNear(w.map, 70, 40));
+    cast(w, 'blast', 45, 40);
+    expect(w.map.heightAt(45, 40)).toBeGreaterThan(0.2);
+    expect(w.map.heightAt(45, 40)).toBeLessThan(1.8);
+    expect(regionNear(w.map, 20, 40)).toBe(regionNear(w.map, 70, 40));
+  });
+
+  it('a Blast still digs a real crater in open ground', () => {
+    const w = world();
+    const before = w.map.heightAt(80, 80);
+    cast(w, 'blast', 80, 80);
+    expect(w.map.heightAt(80, 80)).toBeLessThan(before - 1);
+  });
+});

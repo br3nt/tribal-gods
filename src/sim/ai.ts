@@ -53,8 +53,8 @@ const MAX_ARMY = 24;
 
 /** The order an AI wants its town in: [kind, how many]. */
 const PLAN: Array<[BuildingKind, number]> = [
-  ['hut', 2], ['lumberyard', 1], ['warriorHut', 1], ['hut', 3], ['tower', 1], ['shrine', 1],
-  ['fireHut', 1], ['hut', 4], ['chantHall', 1], ['wardenHall', 1], ['hut', 6], ['warriorHut', 2], ['tower', 2], ['hut', 8],
+  ['hut', 3], ['lumberyard', 1], ['hut', 4], ['warriorHut', 1], ['hut', 5], ['tower', 1], ['shrine', 1],
+  ['fireHut', 1], ['hut', 6], ['chantHall', 1], ['wardenHall', 1], ['hut', 7], ['warriorHut', 2], ['tower', 2], ['hut', 8],
 ];
 
 /** Spells the AI doesn't charge unless it needs them (bridging switches them on). */
@@ -129,7 +129,8 @@ function think(world: World, id: TribeId, tribe: TribeState): void {
     buildTown(world, id, tribe);
     staffShrines(world, id);
   }
-  queueTraining(world, id, tribe, army.length);
+  // The army cap counts everyone: towers' garrisons and trainees inside too.
+  queueTraining(world, id, tribe, world.countUnits((u) => u.tribe === id && (isFighter(u) || u.kind === 'chanter')));
 
   // Across the water? An awake god with an army to send makes land.
   const across = !!enemyHome &&
@@ -199,17 +200,18 @@ function think(world: World, id: TribeId, tribe: TribeState): void {
 /** Next step of the plan that isn't done yet; places it if it can. */
 function buildTown(world: World, id: TribeId, tribe: TribeState): void {
   const mine = world.buildings.filter((b) => b.tribe === id);
-  const site = mine.find((b) => b.progress < 1);
-  if (site) {
-    // One project at a time keeps villagers efficient — but a site nobody
-    // has touched in a minute is abandoned (cut off, or cursed ground).
+  const huts = mine.filter((b) => b.kind === 'hut').length;
+  const sites = mine.filter((b) => b.progress < 1);
+  if (sites.length) {
+    // A site nobody has touched in a minute is abandoned (cut off, or cursed ground).
+    const site = sites[0];
     const ai = tribe.ai!;
     if (ai.site?.id !== site.id || site.progress > ai.site.progress) ai.site = { id: site.id, progress: site.progress, since: world.elapsed };
     else if (world.elapsed - ai.site.since > 60) world.demolish(site.id);
-    return;
+    // One project at a time while the village is small; two once it can staff them.
+    if (sites.length >= (huts >= 3 ? 2 : 1)) return;
   }
   const maxHuts = tribe.personality.maxDwellings ?? DIFFICULTIES[world.settings.difficulty].aiDwellings;
-  const huts = mine.filter((b) => b.kind === 'hut').length;
   for (const [kind, n] of PLAN) {
     if (mine.filter((b) => b.kind === kind).length >= n) continue;
     if (kind === 'hut' && huts >= maxHuts) continue;
@@ -259,7 +261,13 @@ function queueTraining(world: World, id: TribeId, tribe: TribeState, armySize: n
       .sort((a, b) => order.indexOf(BUILDINGS[a.kind].trains!) - order.indexOf(BUILDINGS[b.kind].trains!));
   }
   const queued = halls.reduce((s, b) => s + b.queue, 0);
-  const spare = braves - (MIN_BRAVES + 2) - queued;
+  if (armySize + queued >= (p.maxArmy ?? MAX_ARMY)) return; // queued recruits count against the cap
+  // Roofs before spears: a village under three dwellings trains only when threatened.
+  const huts = world.buildings.filter((b) => b.tribe === id && b.kind === 'hut').length;
+  if (huts < 3 && tribe.threatTimer <= 0 && tribe.allowed.has('hut') && (p.builds ?? true)) return;
+  // Half the tribe stays villagers: an army with no economy behind it is a raid, not a rival.
+  const pop = world.tribePopulation(id);
+  const spare = braves - Math.max(MIN_BRAVES + 2, Math.ceil(pop * 0.45)) - queued;
   if (spare <= 0) return;
   const chanters = world.countUnits((u) => u.tribe === id && u.kind === 'chanter');
   // A recruit per think, more when villagers are plentiful (a big village

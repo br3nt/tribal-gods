@@ -100,7 +100,7 @@ export const scenario: CampaignScenario = {
             id: 'player', name: 'the Lantern-folk', ai: false,
             loadout: {
               spells: ['blast', 'convert', 'ward', 'volcano'],
-              chargeCost: { volcano: 8 },
+              chargeCost: { volcano: 32 },
               buildings: ['hut', 'lumberyard', 'warriorHut', 'tower', 'shrine'],
               startUnits: { brave: 10, warrior: 3 },
               startWood: 16,
