@@ -27,6 +27,7 @@ import { clamp } from '../core/util';
 import { pickGroundTile } from '../render/ground-picker';
 import { Heightmap } from '../world/heightmap';
 import { appState } from './app-state';
+import { brushSizeStep } from './hotkeys';
 import { toolState } from './tools';
 
 export class SculptBrush {
@@ -64,10 +65,8 @@ export class SculptBrush {
 
     // --- Size hotkeys (tool switching lives in ui/tools.ts) ---
     addEventListener('keydown', (e) => {
-      // In play, [ ] are game speed; they size the brush only in the editor or with F3 debug on.
-      if (appState.mode !== 'editor' && !appState.debug) return;
-      if (e.code === 'BracketLeft') this.radius = clamp(this.radius - 1, BRUSH_RADIUS_MIN, BRUSH_RADIUS_MAX);
-      if (e.code === 'BracketRight') this.radius = clamp(this.radius + 1, BRUSH_RADIUS_MIN, BRUSH_RADIUS_MAX);
+      const step = brushSizeStep(e, appState.mode, appState.debug);
+      if (step) this.radius = clamp(this.radius + step, BRUSH_RADIUS_MIN, BRUSH_RADIUS_MAX);
     });
 
     // --- Indicator ring ---

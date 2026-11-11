@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { BUILD_ORDER, SPELLS } from '../src/sim/catalog';
-import { CAMERA_CODES, DEBUG_CODES, codeLabel, HOTKEYS, keyLabel, labelFor, matchHotkey } from '../src/ui/hotkeys';
+import { brushSizeStep, CAMERA_CODES, DEBUG_CODES, codeLabel, HOTKEYS, keyLabel, labelFor, matchHotkey } from '../src/ui/hotkeys';
 
 const ev = (code: string, mods: Partial<{ shiftKey: boolean; ctrlKey: boolean; metaKey: boolean; altKey: boolean }> = {}) => ({
   code, shiftKey: false, ctrlKey: false, metaKey: false, altKey: false, ...mods,
@@ -47,5 +47,19 @@ describe('hotkey table', () => {
     expect(codeLabel('Period')).toBe('.');
     expect(keyLabel({ action: 'pause', code: 'Digit2', shift: true, group: 'Build', desc: '' })).toBe('⇧2');
     expect(keyLabel({ action: 'pause', code: 'Digit2', ctrl: true, group: 'Build', desc: '' })).toBe('Ctrl 2');
+  });
+});
+
+describe('debug brush keys', () => {
+  it('in play with F3 on, [ ] are speed only and Shift+[ ] size the brush', () => {
+    expect(matchHotkey(ev('BracketLeft'))?.action).toBe('speed-down');
+    expect(brushSizeStep(ev('BracketLeft'), 'game', true)).toBe(0);
+    expect(brushSizeStep(ev('BracketRight', { shiftKey: true }), 'game', true)).toBe(1);
+    expect(matchHotkey(ev('BracketRight', { shiftKey: true }))).toBeNull();
+    expect(brushSizeStep(ev('BracketRight', { shiftKey: true }), 'game', false)).toBe(0);
+  });
+  it('in the editor, plain [ ] size the brush', () => {
+    expect(brushSizeStep(ev('BracketLeft'), 'editor', false)).toBe(-1);
+    expect(brushSizeStep(ev('BracketRight'), 'editor', false)).toBe(1);
   });
 });

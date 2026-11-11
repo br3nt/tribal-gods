@@ -3,7 +3,8 @@
  *
  * Frame rate, sim ticks, unit counts, what each AI god is thinking, the
  * current tool. While it's open, - and = arm the raw raise/lower sculpt
- * brush ([ and ] size it) — a developer toy, not a game verb, so it lives
+ * brush (Shift+[ and Shift+] size it; plain [ ] stay game speed) — a
+ * developer toy, not a game verb, so it lives
  * here and nowhere a player will trip over it.
  */
 
@@ -45,7 +46,7 @@ export class DebugOverlay {
       `tool   ${toolState.tool}${toolState.tool === 'raise' || toolState.tool === 'lower' ? ` r${this.brushRadius()}` : ''}`,
       `units  ${w.units.length} (${selected} selected)  bldgs ${w.buildings.length}`,
       ...ais,
-      `-/= sculpt brush · [ ] size`,
+      `-/= sculpt brush · ⇧[ ⇧] size · [ ] speed`,
     ].join('\n');
   }
 }
