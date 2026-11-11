@@ -71,6 +71,7 @@ import {
 import { breakChant, tickChant } from './chant';
 import { initObjectives, ObjectiveMemory, tickObjectives } from './objectives';
 import { findNearestWalkable, findPath, obstaclesOf, tileIndex, walkable } from './pathfinding';
+import { isMajor, regionAt } from './regions';
 import { Rng } from './rng';
 import { ALL_BUILDINGS, skirmishRules, STARTER_SPELLS } from './rules';
 import { EventMemory, initEventMemory, tickScenarioEvents } from './scenario-events';
@@ -2245,7 +2246,12 @@ export class World implements SimQueries {
   }
 
   spawnNearWalkable(kind: UnitKind, tribe: Tribe, x: number, z: number): Unit | null {
-    const spot = findNearestWalkable(this.map, Math.round(x), Math.round(z));
+    // Never onto a stranded scrap (a cliff-ringed ridge-top): the nearest
+    // ground that belongs to a real stretch of land, else any ground at all.
+    const major = (tx: number, tz: number) => isMajor(this.map, regionAt(this.map, tx, tz));
+    const spot =
+      findNearestWalkable(this.map, Math.round(x), Math.round(z), 16, major) ??
+      findNearestWalkable(this.map, Math.round(x), Math.round(z));
     if (!spot) return null;
     return this.spawn(kind, tribe, spot.x + this.random() * 0.6 - 0.3, spot.z + this.random() * 0.6 - 0.3);
   }

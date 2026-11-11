@@ -27,10 +27,14 @@
  *     untouched. Clearing 16k cells per path would cost more than the path.
  */
 
-import { MAX_WALK_STEP, WALK_MIN_HEIGHT, WORLD_SIZE } from '../config';
+import { WORLD_SIZE } from '../config';
 import { MinHeap } from '../core/heap';
 import { wrapDelta } from '../core/util';
 import { Heightmap } from '../world/heightmap';
+import { groundWalkable, regionAt } from './regions';
+
+/** Search effort of the last findPath calls (tests and the debug readout read it). */
+export const pathStats = { expansions: 0, searches: 0 };
 
 const N = WORLD_SIZE;
 const SQRT2 = Math.SQRT2;
@@ -76,15 +80,8 @@ const DIRS = [
 /** Can a unit stand on this tile? Above water, unoccupied, and no cliff-step to any neighbor. */
 export function walkable(map: Heightmap, x: number, z: number): boolean {
   if (obstaclesOf(map).has(tileIndex(x, z))) return false;
-  const h = map.heightAt(x, z);
-  if (h < WALK_MIN_HEIGHT) return false;
-  // Steepness = worst height step to the 4 cardinal neighbors.
-  return (
-    Math.abs(map.heightAt(x + 1, z) - h) < MAX_WALK_STEP &&
-    Math.abs(map.heightAt(x - 1, z) - h) < MAX_WALK_STEP &&
-    Math.abs(map.heightAt(x, z + 1) - h) < MAX_WALK_STEP &&
-    Math.abs(map.heightAt(x, z - 1) - h) < MAX_WALK_STEP
-  );
+  // Steepness = worst height step to the 4 cardinal neighbors (sim/regions.ts).
+  return groundWalkable(map, x, z);
 }
 
 /**
@@ -107,16 +104,25 @@ export function findNearestWalkable(
   x: number,
   z: number,
   maxRadius = 8,
+  accept: (x: number, z: number) => boolean = () => true,
 ): { x: number; z: number } | null {
-  if (walkable(map, x, z)) return { x: map.wrap(x), z: map.wrap(z) };
+  const ok = (tx: number, tz: number) => walkable(map, tx, tz) && accept(map.wrap(tx), map.wrap(tz));
+  if (ok(x, z)) return { x: map.wrap(x), z: map.wrap(z) };
   for (let r = 1; r <= maxRadius; r++) {
-    // Walk the square ring at radius r.
+    // Walk the square ring at radius r, nearest-first along the ring's sides.
+    let best: { x: number; z: number } | null = null;
+    let bestD = Infinity;
     for (let dz = -r; dz <= r; dz++) {
       for (let dx = -r; dx <= r; dx++) {
         if (Math.max(Math.abs(dx), Math.abs(dz)) !== r) continue; // ring only
-        if (walkable(map, x + dx, z + dz)) return { x: map.wrap(x + dx), z: map.wrap(z + dz) };
+        const d = dx * dx + dz * dz;
+        if (d < bestD && ok(x + dx, z + dz)) {
+          bestD = d;
+          best = { x: map.wrap(x + dx), z: map.wrap(z + dz) };
+        }
       }
     }
+    if (best) return best;
   }
   return null;
 }
@@ -140,8 +146,18 @@ export function findPath(
 
   // Rescue unwalkable endpoints (clicked in the sea; standing in a fresh crater).
   const start = findNearestWalkable(map, sx, sz, 4);
-  const goal = findNearestWalkable(map, map.wrap(Math.round(gx)), map.wrap(Math.round(gz)));
+  let goal = findNearestWalkable(map, map.wrap(Math.round(gx)), map.wrap(Math.round(gz)));
   if (!start || !goal) return null;
+  pathStats.searches++;
+
+  // Different region (another island, a cliff-ringed ridge-top): no path can
+  // exist. Settle for the nearest ground on OUR side within reach of the
+  // goal, or refuse at once — never flood-fill the budget to prove it.
+  const home = regionAt(map, start.x, start.z);
+  if (home && regionAt(map, goal.x, goal.z) !== home) {
+    goal = findNearestWalkable(map, map.wrap(Math.round(gx)), map.wrap(Math.round(gz)), 8, (x, z) => regionAt(map, x, z) === home);
+    if (!goal) return null;
+  }
 
   const startIdx = start.z * N + start.x;
   const goalIdx = goal.z * N + goal.x;
@@ -160,6 +176,7 @@ export function findPath(
     if (closedStamp[cur] === stamp) continue; // stale duplicate heap entry — skip
     closedStamp[cur] = stamp;
     expansions++;
+    pathStats.expansions++;
 
     if (cur === goalIdx) {
       // Walk the breadcrumb trail backwards, then flip it.
