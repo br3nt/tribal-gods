@@ -332,7 +332,7 @@ function answerRituals(world: World, id: TribeId, tribe: TribeState, army: Unit[
   if (!aggressive(tribe)) return;
   const ai = tribe.ai!;
   world.monuments.forEach((m, i) => {
-    if (!m.communing || !m.communer || m.communer === id || !world.hostile(id, m.communer)) return;
+    if (!m.communing || typeof m.communer !== 'string' || m.communer === id || !world.hostile(id, m.communer)) return;
     const key = `${i}:${m.communerId}`;
     if (ai.answered?.includes(key)) return;
     if (dist(m.x, m.z, tribe.home.x, tribe.home.z) > 70) return;
@@ -465,7 +465,7 @@ function leaderCasts(world: World, id: TribeId, tribe: TribeState): void {
 
   // A rival leader kneeling at a stone, in reach: break the ritual.
   for (const m of world.monuments) {
-    if (!m.communing || !m.communer || m.communer === id || !world.hostile(id, m.communer)) continue;
+    if (!m.communing || typeof m.communer !== 'string' || m.communer === id || !world.hostile(id, m.communer)) continue;
     const kneeler = world.unitById(m.communerId ?? -1);
     if (!kneeler || kneeler.hidden) continue;
     for (const spell of ['lightning', 'blast'] as SpellId[]) {

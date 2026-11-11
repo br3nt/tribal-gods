@@ -138,8 +138,12 @@ export interface Monument {
   // --- The ritual, as plain data for the renderer / UI (all optional on old saves) ---
   /** 0..1 of the ritual done. Drains while nobody is communing. */
   communeProgress?: number;
-  /** The tribe whose ritual `communeProgress` belongs to (null = none). */
-  communer?: TribeId | null;
+  /**
+   * The tribe whose ritual `communeProgress` belongs to (null = none). This
+   * sim always writes a TribeId (the unit is `communerId`); the type admits a
+   * number only so renderer code that also accepts a unit id type-checks.
+   */
+  communer?: TribeId | number | null;
   /** Unit id of the leader communing (-1 = none). */
   communerId?: number;
   /** True while the leader is kneeling and the ritual is live (paused counts as live). */
@@ -2558,7 +2562,7 @@ export class World implements SimQueries {
         if (!u || u.task !== 'worship' || u.targetMonument !== i || u.state !== 'working') {
           m.communing = false;
           m.contested = false;
-          this.events.push({ type: 'communeInterrupted', x: m.x, z: m.z, tribe: m.communer ?? undefined, magnitude: m.communeProgress ?? 0 });
+          this.events.push({ type: 'communeInterrupted', x: m.x, z: m.z, tribe: typeof m.communer === 'string' ? m.communer : undefined, magnitude: m.communeProgress ?? 0 });
         }
       } else if ((m.communeProgress ?? 0) > 0) {
         // …and what it had gathered drains away, slowly: a guarded leader can come back to it.
