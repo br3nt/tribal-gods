@@ -42,7 +42,7 @@ import { World } from './sim/world-state';
 import './ui/theme.css';
 import { SculptBrush } from './ui/brush';
 import { appState } from './ui/app-state';
-import { clearSave, clock, readSave, writeSave } from './ui/autosave';
+import { clearSave, clock, readSave, savedTally, writeSave } from './ui/autosave';
 import { CampaignController } from './ui/campaign';
 import { Editor } from './ui/editor';
 import { registerGameOverAction } from './ui/game-over';
@@ -283,6 +283,7 @@ function autosave(): void {
     ...(kind === 'level' ? { level: lastStart.level } : {}),
     label: `${what} · ${clock(world.elapsed)}`,
     world: saveWorld(world),
+    ...(ui ? { tally: { ...ui.alerts.tally } } : {}),
   });
 }
 menu.continueLabel = () => readSave()?.label ?? null;
@@ -300,6 +301,9 @@ menu.onContinue = () => {
   }
   worldChanged();
   ui?.reset();
+  // Game-over numbers carry on from where the save left them.
+  const tally = savedTally(g);
+  if (ui && tally) Object.assign(ui.alerts.tally, tally);
   lastStart = g.kind === 'level' && g.level ? { level: g.level } : { settings: world.settings };
   testingLevel = null;
   backBtn.style.display = 'none';
