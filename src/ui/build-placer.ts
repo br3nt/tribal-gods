@@ -136,7 +136,7 @@ export class BuildPlacer {
     this.rim.quad(view, cx - e, cz - e, cx - e + t, cz - e, cx - e + t, cz + e, cx - e, cz + e);
     this.rim.quad(view, cx + e - t, cz - e, cx + e, cz - e, cx + e, cz + e, cx + e - t, cz + e);
     // The door (bottom-centre tile stays open in the sim): a small mark.
-    this.rim.ring(view, cx, cz + r, 0.12, 0.3);
+    this.rim.ring(view, cx, cz + r + 0.3, 0.06, 0.16);
     this.fill.end();
     this.rim.end();
     this.candidate = { kind, x: cx, z: cz, ok, why };

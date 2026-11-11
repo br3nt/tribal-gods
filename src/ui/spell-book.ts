@@ -54,7 +54,9 @@ css('spell-book', `
 .sb-pips i.on { background: var(--mana); box-shadow: 0 0 0.375rem rgba(114,216,255,0.8); }
 .sb-gift { position: absolute; top: 0.1875rem; right: 0.1875rem; z-index: 2; display: flex; align-items: center; gap: 1px;
   padding: 0 0.2rem 0 0.1rem; height: 0.9rem; border-radius: var(--r-pill); background: var(--gold); color: #2a1d06; font: 800 0.5625rem/1 var(--font); }
-.sb-eta { position: absolute; bottom: 0.875rem; left: 0; right: 0; z-index: 2; text-align: center; font: 700 0.625rem/1 var(--font); color: var(--text); text-shadow: 0 1px 2px #000; }
+.sb-eta { position: absolute; inset: 0 0 0.35rem; z-index: 2; display: grid; place-items: center; font: 700 0.8125rem/1 var(--font); color: var(--text); text-shadow: 0 1px 3px #000, 0 0 6px #000; pointer-events: none; }
+.sb-eta:empty { display: none; }
+.sb-slot.counting > svg { opacity: 0.3; }
 .sb-toggle { position: absolute; right: 0.125rem; bottom: 0.125rem; z-index: 3; width: 1rem; height: 1rem; padding: 0; border-radius: 50%;
   border: 1px solid var(--rim-strong); background: var(--ink-solid); color: var(--mana); display: none; place-items: center; cursor: pointer; }
 .sb-slot:hover .sb-toggle, .sb-slot:focus-within .sb-toggle, .sb-slot.off .sb-toggle { display: grid; }
@@ -250,6 +252,7 @@ export class SpellBook {
       }
       const showEta = s.known && !usable && s.charging && Number.isFinite(s.eta);
       setText(slot.eta, showEta ? fmtEta(s.eta) : '');
+      setClass(slot.el, 'counting', showEta);
       setClass(slot.el, 'locked', locked);
       setClass(slot.el, 'ready', usable && !locked);
       setClass(slot.el, 'empty', !usable && !locked);

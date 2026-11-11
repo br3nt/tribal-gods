@@ -25,7 +25,7 @@
  */
 
 import * as THREE from 'three';
-import { WORLD_SIZE } from '../config';
+import { TILE, WORLD_SIZE } from '../config';
 import { wrapDelta } from '../core/util';
 import { pickGroundTile } from '../render/ground-picker';
 import { TERRAIN, WATER } from '../render/look';
@@ -39,6 +39,10 @@ css('minimap', `
 .mm canvas { display: block; width: 12.5rem; height: 12.5rem; border-radius: var(--r2); cursor: crosshair; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.4); }
 `);
 
+/** How far (world units) the eye reaches over the curved horizon, for the view outline. */
+const HORIZON_REACH = 72;
+const ray = new THREE.Raycaster();
+const ndc = new THREE.Vector2();
 const hex = (c: number) => `#${c.toString(16).padStart(6, '0')}`;
 const rgb = (c: number): [number, number, number] => [(c >> 16) & 255, (c >> 8) & 255, c & 255];
 const mix = (a: [number, number, number], b: [number, number, number], t: number): [number, number, number] => [
@@ -157,8 +161,17 @@ export class Minimap {
     for (let i = n - 1; i >= 1; i--) edge.push([0, (H * i) / n]);
     const c = viewCentreTile(target);
     for (const [px, py] of edge) {
-      const hit = pickGroundTile(px, py, camera as THREE.Camera, map, target);
-      if (hit) pts.push({ x: c.x + wrapDelta(hit.x - c.x, WORLD_SIZE), z: c.z + wrapDelta(hit.z - c.z, WORLD_SIZE) });
+      let hit = pickGroundTile(px, py, camera as THREE.Camera, map, target);
+      if (!hit) {
+        // Looking at sky above the horizon: clamp to the visible ground's reach.
+        ndc.set((px / innerWidth) * 2 - 1, -(py / innerHeight) * 2 + 1);
+        ray.setFromCamera(ndc, camera as THREE.Camera);
+        const d = ray.ray.direction;
+        const len = Math.hypot(d.x, d.z) || 1;
+        const reach = HORIZON_REACH / TILE;
+        hit = { x: target.x / TILE + (d.x / len) * reach, z: target.z / TILE + (d.z / len) * reach };
+      }
+      pts.push({ x: c.x + wrapDelta(hit.x - c.x, WORLD_SIZE), z: c.z + wrapDelta(hit.z - c.z, WORLD_SIZE) });
     }
     this.frustum = pts;
   }
@@ -240,6 +253,7 @@ export class Minimap {
     if (this.frame++ % 3 === 0) this.computeFrustum();
     if (this.frustum.length > 2) {
       g.strokeStyle = 'rgba(255,255,255,0.95)';
+      g.fillStyle = 'rgba(255,255,255,0.08)';
       g.lineWidth = 1.5 * (px / 200);
       g.lineJoin = 'round';
       for (const ox of [-WORLD_SIZE, 0, WORLD_SIZE]) {
@@ -247,6 +261,7 @@ export class Minimap {
           g.beginPath();
           this.frustum.forEach((p, i) => (i ? g.lineTo((p.x + ox) * s, (p.z + oz) * s) : g.moveTo((p.x + ox) * s, (p.z + oz) * s)));
           g.closePath();
+          g.fill();
           g.stroke();
         }
       }

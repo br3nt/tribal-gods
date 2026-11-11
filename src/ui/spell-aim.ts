@@ -86,7 +86,7 @@ export class SpellAim {
 
     // Range ring around the leader.
     if (leader && !leader.hidden) {
-      this.rim.ring(view, leader.x, leader.z, def.range - 0.1, def.range + 0.1, 3);
+      this.rim.ring(view, leader.x, leader.z, def.range - 0.16, def.range + 0.16, 3);
     }
 
     let walking = false;

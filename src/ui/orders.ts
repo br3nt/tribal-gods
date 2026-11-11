@@ -31,7 +31,7 @@ import { BUILDINGS, TRIBE_COLORS, UNITS } from '../sim/catalog';
 import { ATTACK_PICK_RADIUS, Building, Unit } from '../sim/world-state';
 import { appState } from './app-state';
 import { UiContext } from './context';
-import { css, h, uiRoot } from './dom';
+import { css, h, uiRoot, worldLayer } from './dom';
 import { UI_ICONS } from './icons';
 import { tileDist, toScreen } from './project';
 import { toolState } from './tools';
@@ -300,7 +300,7 @@ export class OrderControl {
 
   private mark(kind: OrderKind, x: number, z: number): void {
     const el = h('div', { class: `order-mark ${kind}` });
-    uiRoot().appendChild(el);
+    worldLayer().appendChild(el);
     this.marks.push({ el, x, z, until: performance.now() + 700 });
   }
 

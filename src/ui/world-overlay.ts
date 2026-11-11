@@ -15,7 +15,7 @@
 
 import { BUILDINGS, UNITS } from '../sim/catalog';
 import { UiContext } from './context';
-import { css, h, uiRoot } from './dom';
+import { css, h, worldLayer } from './dom';
 import { icon } from './icons';
 import { tribeCss } from './orders';
 import { toScreen } from './project';
@@ -67,7 +67,7 @@ export class WorldOverlay {
       const tr = h('div.tr', {}, trFill);
       const marks = h('div.marks');
       const el = h('div.wo', {}, marks, tr, hp);
-      uiRoot().appendChild(el);
+      worldLayer().appendChild(el);
       it = { el, hp, hpFill, tr, trFill, marks, marksSig: '' };
       this.pool.push(it);
     }
@@ -96,8 +96,17 @@ export class WorldOverlay {
     it.marks.innerHTML = marks.join('');
   }
 
+  /** Screen rects of the HUD panels: marks that would sit under one are skipped. */
+  private blockers: DOMRect[] = [];
+
+  private covered(p: { x: number; y: number }): boolean {
+    for (const r of this.blockers) if (p.x >= r.left && p.x <= r.right && p.y >= r.top - 6 && p.y <= r.bottom + 6) return true;
+    return false;
+  }
+
   update(): void {
     this.used = 0;
+    this.blockers = [...document.querySelectorAll('#ui .tg-panel')].map((e) => e.getBoundingClientRect()).filter((r) => r.width > 0);
     const { world, view, selection } = this.ctx;
     const camD = view.camera.position.distanceTo(view.target);
     // Zoomed far out, only selected things get bars (otherwise: confetti).
@@ -111,7 +120,7 @@ export class WorldOverlay {
       const buffed = u.wardTime > 0 || u.warsongTime > 0;
       if (!sel && !(showHurt && (hurt || (buffed && u.tribe === 'player')))) continue;
       const p = toScreen(view, u.x, u.z, UNITS[u.kind].height + 0.55);
-      if (!p) continue;
+      if (!p || this.covered(p)) continue;
       const it = this.item(false);
       this.place(it, p);
       if (sel || hurt) this.setHp(it, u.hp / u.maxHp);
@@ -135,7 +144,7 @@ export class WorldOverlay {
       const ours = b.tribe === 'player';
       if (!sel && !burning && !(showHurt && (hurt || (ours && (building || training || garrison > 0))))) continue;
       const p = toScreen(view, b.x, b.z, BUILDINGS[b.kind].height + 0.8);
-      if (!p) continue;
+      if (!p || this.covered(p)) continue;
       const it = this.item(true);
       this.place(it, p);
       if (building) this.setHp(it, b.progress, true);

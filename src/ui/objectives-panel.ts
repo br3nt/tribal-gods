@@ -18,8 +18,8 @@ css('objectives', `
 .ob-head { display: flex; align-items: center; gap: 0.4rem; width: 100%; padding: 0.1rem 0.125rem 0.2rem; background: none; border: 0; color: var(--text-3); cursor: pointer;
   font: 600 var(--t-xs)/1 var(--font); letter-spacing: 0.09em; text-transform: uppercase; }
 .ob-head .count { margin-left: auto; letter-spacing: 0; color: var(--text-2); }
-.ob-head .chev { transition: transform var(--fast) var(--ease); display: inline-flex; transform: rotate(90deg); }
-.ob.collapsed .chev { transform: none; }
+.ob-head .chev { width: 0.4rem; height: 0.4rem; margin: 0 0.15rem 0.15rem 0.1rem; border: solid currentColor; border-width: 0 1.5px 1.5px 0; transform: rotate(45deg); transition: transform var(--fast) var(--ease); }
+.ob.collapsed .chev { transform: rotate(-45deg); margin-bottom: 0; }
 .ob.collapsed .ob-list { display: none; }
 .ob-list { list-style: none; margin: 0.25rem 0 0; padding: 0; display: flex; flex-direction: column; gap: 0.45rem; }
 .ob-item { display: grid; grid-template-columns: 1.1rem 1fr; gap: 0.15rem 0.5rem; font-size: var(--t-sm); line-height: 1.3; color: var(--text); }
@@ -41,7 +41,7 @@ export class ObjectivesPanel {
   constructor(private readonly ctx: UiContext) {
     this.el = h('div.ob.tg-panel');
     this.count = h('span.count');
-    const head = h('button.ob-head', { type: 'button', 'aria-label': 'Objectives', html: `<span class="chev">${icon('arrowRight', 12)}</span>${icon('objective', 14)}<span>Objectives</span>` }, this.count);
+    const head = h('button.ob-head', { type: 'button', 'aria-label': 'Objectives', html: `<span class="chev"></span>${icon('objective', 14)}<span>Objectives</span>` }, this.count);
     head.addEventListener('click', () => this.el.classList.toggle('collapsed'));
     this.list = h('ul.ob-list');
     this.el.append(head, this.list);

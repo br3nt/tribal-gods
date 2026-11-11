@@ -31,7 +31,7 @@ import { groupByKind } from './selection';
 import { hideTip, tip } from './tooltip';
 
 css('selection-panel', `
-.sp { width: 26rem; max-width: 100%; min-height: 7.5rem; padding: 0.75rem; box-sizing: border-box; display: flex; flex-direction: column; gap: 0.5rem; }
+.sp { width: auto; min-width: 19rem; max-width: min(27rem, 100%); min-height: 7.5rem; padding: 0.75rem; box-sizing: border-box; display: flex; flex-direction: column; gap: 0.5rem; }
 .sp-head { display: flex; gap: 0.75rem; align-items: center; }
 .sp-portrait { flex: none; width: 3.5rem; height: 3.5rem; border-radius: 50%; display: grid; place-items: center; color: var(--text);
   background: radial-gradient(circle at 50% 30%, rgba(255,255,255,0.16), rgba(0,0,0,0.35)); box-shadow: inset 0 0 0 2px var(--tc, var(--rim-strong)); }

@@ -58,6 +58,22 @@ export function uiRoot(): HTMLDivElement {
   return root;
 }
 
+let worldLayerEl: HTMLDivElement | null = null;
+
+/**
+ * The bottom-most layer of #ui, for things that float IN the world (health
+ * bars, order markers, cursor notes): every panel paints above it.
+ */
+export function worldLayer(): HTMLDivElement {
+  if (!worldLayerEl) {
+    worldLayerEl = document.createElement('div');
+    worldLayerEl.className = 'world-layer';
+    worldLayerEl.style.cssText = 'position:absolute;inset:0;pointer-events:none;';
+    uiRoot().prepend(worldLayerEl);
+  }
+  return worldLayerEl;
+}
+
 /** Set text only when it changed (avoids layout churn in per-frame updates). */
 export function setText(el: Element, text: string): void {
   if (el.textContent !== text) el.textContent = text;

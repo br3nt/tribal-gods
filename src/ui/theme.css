@@ -17,7 +17,7 @@
 
   /* Colour */
   --ink-0: rgba(13, 17, 24, 0.82);
-  --ink-1: rgba(20, 26, 36, 0.74);
+  --ink-1: rgba(16, 20, 28, 0.8);
   --ink-2: rgba(255, 255, 255, 0.06);
   --ink-3: rgba(255, 255, 255, 0.11);
   --ink-solid: #141a24;
@@ -64,7 +64,7 @@
   --fast: 120ms;
   --med: 220ms;
   --shadow: 0 0.5rem 1.75rem rgba(0, 0, 0, 0.35), 0 0.0625rem 0 rgba(255, 255, 255, 0.06) inset;
-  --blur: blur(14px) saturate(1.35);
+  --blur: blur(16px) saturate(0.55) brightness(0.85);
   --edge: var(--s3);
 }
 

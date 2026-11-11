@@ -95,5 +95,6 @@ export function activityText(u: ActivityUnit, insideKind: string | null = null):
   if (u.state === 'fighting') return 'Fighting';
   if (u.state === 'moving') return u.carrying ? 'Hauling wood' : 'Walking';
   if (u.kind === 'brave') return 'Idle';
+  if (u.kind === 'shaman') return 'Ready to cast';
   return UNITS[u.kind].sight > 0 ? 'Standing guard' : 'Waiting';
 }
