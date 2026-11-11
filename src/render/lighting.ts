@@ -94,7 +94,11 @@ export class Lighting {
 
   /** Follow the camera target; size the shadow box to the view distance. */
   update(target: THREE.Vector3, viewDistance: number, dt: number): void {
-    const extent = THREE.MathUtils.clamp(viewDistance * SHADOW_EXTENT_K, SHADOW_EXTENT_MIN, SHADOW_EXTENT_MAX);
+    // The box size is quantised (~9% steps): a box that resized every frame
+    // while zooming would change the texel size continuously and make every
+    // shadow edge crawl. Now edges hold still between steps.
+    const raw = THREE.MathUtils.clamp(viewDistance * SHADOW_EXTENT_K, SHADOW_EXTENT_MIN, SHADOW_EXTENT_MAX);
+    const extent = Math.min(SHADOW_EXTENT_MAX, Math.pow(2, Math.ceil(Math.log2(raw) * 8) / 8));
     const cam = this.sun.shadow.camera;
     if (cam.right !== extent) {
       cam.left = -extent;
