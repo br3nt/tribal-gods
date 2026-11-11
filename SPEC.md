@@ -1,13 +1,13 @@
-# Tribal Gods — a Populous: The Beginning–style god game
+# Tribal Gods — a browser god game
 
-A from-scratch, browser-based real-time god game in the spirit of Populous: The
-Beginning (Bullfrog, 1998). Every system is hand-built in readable, heavily
-commented TypeScript so the codebase doubles as a course in how late-90s 3D
-games actually worked.
+A from-scratch, browser-based real-time god game about a small round world, a
+leader who casts, and a tribe that grows. Every system is hand-built in
+readable, heavily commented TypeScript so the codebase doubles as a course in
+how real-time 3D games work.
 
-> **Originality note:** This project clones *mechanics and feel*, which are not
-> copyrightable. All code, models, textures, animations, and sounds are original
-> creations (or CC0). No assets from the original game are used.
+> **Originality note:** Tribal Gods shares a genre with other god games and
+> nothing else. All code, models, textures, animations, sounds, names, levels
+> and interface are original creations (or CC0).
 
 ---
 
@@ -18,14 +18,15 @@ games actually worked.
    physical, and a little gleeful.
 2. **A planet, not a map.** The world wraps in every direction and the horizon
    visibly curves away. There is no edge.
-3. **One charismatic hero.** The Shaman is a unit you steer directly — small,
+3. **One charismatic hero.** Your tribe's leader (the Shaman in the forest
+   tribe; each tribe has its own title) is a unit you steer directly — small,
    sassy, and the conduit for every spell.
 4. **Readable code over clever code.** Anyone should be able to open any file
    and follow it. Comments explain *why* and *how the technique works*, not
    just what the line does.
-5. **True to 1998.** Low-poly models, painted-style textures, snappy unit
-   animations, an orbiting camera. Modern conveniences (resolution, framerate,
-   hot reload) — vintage soul.
+5. **Hand-painted feel.** Chunky, simple shapes, painted-style textures,
+   snappy unit animations, an orbiting camera. (Superseded in part by §11.1:
+   the look is stylised and modern.)
 
 ## 2. Stack
 
@@ -62,7 +63,7 @@ heightAt(x, z) => heights[wrap(z) * WORLD_SIZE + wrap(x)]
   rebuild) and re-upload the buffer.
 - Because the camera only ever sees a portion of the world, we render a
   **scrolling window** of terrain centered on the camera target, sampling the
-  wrapped heightmap. This is also how the original avoided drawing the whole
+  wrapped heightmap. This also avoids drawing the whole
   world.
 
 ### 3.2 The curvature illusion
@@ -102,7 +103,7 @@ land collapse; units fall into water and drown).
 Single texture atlas or vertex-color splat by **height and slope**: beach near
 sea level, grass on flats, rock on steep slopes, snow optional. Water is a
 flat translucent plane at y=0 with a scrolling normal/uv offset. Painted,
-saturated palette — match the original's storybook look, not realism.
+saturated palette — aim for a storybook look, not realism.
 
 ## 4. Characters & animation
 
@@ -126,7 +127,7 @@ a recipe:
 
 ### 4.2 Animation — procedural keyframes
 
-Same idea as 1998 vertex keyframes, but on part hierarchies: each clip is a
+Like classic vertex keyframes, but on part hierarchies: each clip is a
 small pure function `(t: number, parts) => void` that poses the model's parts
 (rotate arms, bob torso) from normalized time `t`. Clips: idle, walk, run,
 attack, cast, celebrate, drown, die. Walk cycles sync to actual movement speed
@@ -188,8 +189,8 @@ well-commented module.
   is the **mana engine**.
 - **Mana**: regenerates at a rate driven by housed + total population. One
   shared pool; each spell has a cost and an independent **charge count**
-  (spells store limited charges, recharging from mana over time) — keeps the
-  original's rhythm of "save up the big one".
+  (spells store limited charges, recharging from mana over time) — gives
+  the game its rhythm of "save up the big one".
 - **Guard towers**: garrison one firewarrior/warrior, extend sight, shoot.
 
 ### 6.4 Spells (v1 set)
@@ -266,7 +267,7 @@ src/
 ### Commenting standard (the whole point)
 
 - Every module opens with a **prose header**: what this system does, the
-  technique it uses, and why this approach (incl. what the 1998 original did).
+  technique it uses, and why this approach (incl. the simpler alternative we passed over).
 - Non-obvious math gets a derivation comment, sometimes ASCII diagrams.
 - `config.ts` documents what each constant *feels like* when you change it.
 - Code favors clarity over micro-optimization until profiling demands it.
@@ -282,7 +283,7 @@ loop with FPS/tick debug readout. *✓ `npm run dev` shows a stable render loop.
 curvature shader, water plane, height/slope coloring, orbit camera, scrolling
 terrain window. Debug brush: raise/lower/flatten with the mouse.
 *✓ You can sculpt a little world, spin around it, and the horizon curves away.
-This is the "it feels like Populous" gate — we don't pass it until it does.*
+This is the "it feels like a planet" gate — we don't pass it until it does.*
 
 **Phase 2 — Life.** Procedural brave + Shaman models, procedural walk/idle
 clips, A* pathfinding, selection + move orders, wildmen wandering, trees.
@@ -303,11 +304,11 @@ enemy tribe with AI Shaman, minimap, win/lose, one tuned skirmish map.
 briefings, preachers/spies, boats & balloons, fog of war, Armageddon,
 save/load, performance pass (instancing), juice pass (screenshake, particles).
 
-## 10. Definition of "feels like the original"
+## 10. Definition of "feels like Tribal Gods"
 
 Checked at every phase: horizon curvature always visible at medium zoom ·
-terrain edits animate over time, never snap · units are small against the
-world · palette saturated and warm · spell impacts slightly over-the-top ·
+terrain edits animate over time, never snap · people are readable and have
+personality, even up close · palette saturated and warm · spell impacts slightly over-the-top ·
 camera spin around your village is *pleasant* for no reason at all.
 
 
