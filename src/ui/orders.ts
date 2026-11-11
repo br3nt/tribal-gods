@@ -177,6 +177,14 @@ export class OrderControl {
     return this.ctx.world.monuments.findIndex((m) => tileDist(m.x, m.z, x, z) < 2.2);
   }
 
+  /** What a left click at (px, py) would pick (automation and debugging read this; same rule as clickSelect). */
+  whatIsUnder(px: number, py: number): { unit: number | null; building: number | null } {
+    const tile = this.groundTile(px, py);
+    const own = this.pickAt(px, py, tile, (u) => u.tribe === 'player');
+    const hit = own.unit ? own : this.pickAt(px, py, tile, () => true);
+    return { unit: hit.unit?.id ?? null, building: hit.building?.id ?? (hit.unit || !tile ? null : this.buildingAt(tile.x, tile.z)?.id ?? null) };
+  }
+
   /** If set and it returns true, a left click on the ground was consumed (e.g. picking a rally point). */
   intercept: ((x: number, z: number) => boolean) | null = null;
 

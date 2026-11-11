@@ -3,8 +3,12 @@
  * tools/playthrough.mjs — drive the game through REAL input (mouse, keys)
  * like a player, step by step, and print a checklist of what worked.
  *
- *   node tools/playthrough.mjs <base url> [--shots dir] [--only name,name]
- *   e.g. node tools/playthrough.mjs "http://localhost:5217/tribal-gods/" --shots shots/play
+ *   node tools/playthrough.mjs <base url> [--seed N|random] [--shots dir] [--only name,name]
+ *   e.g. node tools/playthrough.mjs "http://localhost:5217/tribal-gods/" --seed 7 --shots shots/play
+ *
+ * --seed N fixes the skirmish planet (the URL's ?seed= is honoured by the
+ * menu's Begin), default 7; --seed random lets the menu roll one, and the
+ * run prints the seed it got so a failure can be replayed.
  *
  * Start a dev server first (npx vite --port 52xx --strictPort). Every step
  * uses page.mouse / page.keyboard on the actual canvas and HUD; the
@@ -30,10 +34,13 @@ const args = process.argv.slice(2);
 const base = args[0] ?? 'http://localhost:5217/tribal-gods/';
 let shotDir = null;
 let only = null;
+let seed = '7';
 for (let i = 1; i < args.length; i++) {
   if (args[i] === '--shots') shotDir = args[++i];
   else if (args[i] === '--only') only = args[++i].split(',');
+  else if (args[i] === '--seed') seed = args[++i];
 }
+const seedQuery = seed === 'random' ? '' : `?seed=${Number(seed)}`;
 if (shotDir) mkdirSync(shotDir, { recursive: true });
 
 function findChromium() {
@@ -95,17 +102,51 @@ const focus = async (x, z) => {
   await lookAt(x, z);
   await wait(250);
 };
-/** Screen position of a unit's body (looks at it first). */
-const unitScreen = async (u) => {
+/**
+ * Click a person the way a player would: on their body, at a point where
+ * THEY are what's drawn (the game's own picking says so — someone may be
+ * standing in front), then check the selection really is them.
+ */
+async function clickUnit(u, opts = {}) {
   await focus(u.x, u.z);
   const now = await tg((id) => window.__tg.world.unitById(id), u.id);
-  return screenOf(now.x, now.z, 1.1);
-};
+  for (const lift of [1.1, 1.5, 0.7, 1.9]) {
+    const p = await screenOf(now.x, now.z, lift);
+    if (!p) continue;
+    const under = await tg(([x, y]) => window.__tg.ui.orders.whatIsUnder(x, y), [p.x, p.y]);
+    if (under.unit !== u.id) continue;
+    await page.mouse.click(p.x, p.y, opts);
+    await wait(120);
+    const sel = await tg(() => [...window.__tg.ui.selection.units]);
+    expect(sel.includes(u.id), `clicked ${u.kind} #${u.id} but selection is [${sel.join(',')}]`);
+    return p;
+  }
+  throw new Error(`no point on ${u.kind} #${u.id} where it is the thing under the cursor`);
+}
+
+/** Click a building where the building itself is drawn (not someone standing in front of it). */
+async function clickBuilding(b) {
+  await focus(b.x, b.z);
+  const half = b.size / 2 - 0.5;
+  const tries = [[0, 0, 3], [0, 0, 2], [0, 0, 4], [-half, 0, 2], [half, 0, 2], [0, -half, 3], [-half, -half, 2], [half, -half, 2], [0, half, 1]];
+  let lastUnder = null;
+  for (const [dx, dz, lift] of tries) {
+    const p = await screenOf(b.x + dx, b.z + dz, lift);
+    if (!p) continue;
+    const under = await tg(([x, y]) => window.__tg.ui.orders.whatIsUnder(x, y), [p.x, p.y]);
+    lastUnder = under;
+    if (under.unit !== null || under.building !== b.id) continue;
+    await page.mouse.click(p.x, p.y);
+    await wait(200);
+    return p;
+  }
+  throw new Error(`no point on the ${b.kind} where it is what's under the cursor (last: ${JSON.stringify(lastUnder)})`);
+}
 const ticks = (seconds) => tg((s) => { const w = window.__tg.world; for (let i = 0; i < Math.round(s * 15); i++) w.tick(1 / 15); }, seconds);
 
 // ---------------------------------------------------------------------------
 
-await page.goto(`${base}?seed=7`, { waitUntil: 'load' });
+await page.goto(`${base}${seedQuery}`, { waitUntil: 'load' });
 await wait(2500);
 
 await step('title → skirmish setup → Begin (mouse)', async () => {
@@ -117,6 +158,7 @@ await step('title → skirmish setup → Begin (mouse)', async () => {
   const mode = await tg(() => window.__tg.appState.mode);
   expect(mode === 'game', `mode is ${mode}`);
   await shot('01-skirmish-start');
+  return `seed ${await tg(() => window.__tg.lastSeed)}`;
 });
 
 // Freeze the AI out of the way for the input tests, and hold real-time play
@@ -129,6 +171,7 @@ await tg(() => {
 });
 
 await step('camera: Space centres on the leader; WASD pans; wheel zooms', async () => {
+  const zoom0 = await tg(() => window.__tg.rig.zoom);
   await page.mouse.move(720, 450);
   await page.keyboard.press('Space');
   await wait(200);
@@ -143,6 +186,9 @@ await step('camera: Space centres on the leader; WASD pans; wheel zooms', async 
   expect(b.d < a.d, 'wheel did not zoom in');
   await page.keyboard.press('Space');
   await wait(300);
+  // Back to the default framing: later steps must not depend on how far this one zoomed.
+  await tg((z) => (window.__tg.rig.zoom = z), zoom0);
+  await wait(200);
 });
 
 const home = await tg(() => window.__tg.world.tribes.player.home);
@@ -151,12 +197,9 @@ await step('select: click a villager, box-select, double-click selects kind on s
   await lookAt(home.x, home.z);
   await wait(300);
   const v = await tg(() => window.__tg.world.units.find((u) => u.tribe === 'player' && u.kind === 'brave' && !u.hidden));
-  const p = await unitScreen(v);
-  await page.mouse.click(p.x, p.y);
-  await wait(150);
+  await clickUnit(v);
   let n = await tg(() => window.__tg.ui.selection.units.size);
-  const under = await tg(([x, y]) => { const e = document.elementFromPoint(x, y); return `${e.tagName}.${e.className}`; }, [p.x, p.y]);
-  expect(n === 1, `click selected ${n} (clicked ${under} at ${p.x.toFixed(0)},${p.y.toFixed(0)}, tool ${await tg(() => window.__tg.toolState.tool)})`);
+  expect(n === 1, `click selected ${n}`);
   // Box: drag across the middle of the screen, over the village.
   await focus(home.x, home.z);
   await page.mouse.move(300, 200);
@@ -168,7 +211,7 @@ await step('select: click a villager, box-select, double-click selects kind on s
   n = await tg(() => window.__tg.ui.selection.units.size);
   expect(n >= 2, `box selected ${n}`);
   const v2 = await tg(() => window.__tg.world.units.find((u) => u.tribe === 'player' && u.kind === 'brave' && !u.hidden));
-  const p2 = await unitScreen(v2);
+  const p2 = await clickUnit(v2); // the first click of the double-click, checked
   await page.mouse.dblclick(p2.x, p2.y);
   await wait(150);
   const kinds = await tg(() => [...window.__tg.ui.selection.units].map((id) => window.__tg.world.unitById(id)?.kind));
@@ -251,12 +294,9 @@ await step('train: all 4 trainable units through the selection panel (+1 button)
   const done = [];
   for (const [kind, unit] of Object.entries(halls)) {
     const b = await tg((k) => window.__tg.world.buildings.find((b) => b.tribe === 'player' && b.kind === k), kind);
-    await focus(b.x, b.z);
-    const p = await screenOf(b.x, b.z, 3); // on the roof, as a player would click it
-    await page.mouse.click(p.x, p.y);
-    await wait(200);
-    const selected = await tg(() => window.__tg.ui.selection.building);
-    expect(selected === b.id, `clicking the ${kind} selected ${selected}`);
+    await clickBuilding(b);
+    const selected = await tg(() => ({ b: window.__tg.ui.selection.building, u: [...window.__tg.ui.selection.units] }));
+    expect(selected.b === b.id, `clicking the ${kind} selected ${JSON.stringify(selected)}`);
     await page.locator('[data-a="q"][data-n="1"]').first().click();
     await wait(100);
     const q = await tg((id) => window.__tg.world.getBuilding(id).queue, b.id);
@@ -276,15 +316,13 @@ await step('garrison: right-click a tower with a warrior, a shrine with villager
   const tower = await tg(() => window.__tg.world.buildings.find((b) => b.tribe === 'player' && b.kind === 'tower'));
   const warrior = await tg(() => window.__tg.world.units.find((u) => u.tribe === 'player' && u.kind === 'warrior' && !u.hidden));
   expect(warrior, 'no warrior to garrison');
-  let p = await unitScreen(warrior);
-  await page.mouse.click(p.x, p.y);
+  await clickUnit(warrior);
   await focus(tower.x, tower.z);
-  p = await screenOf(tower.x, tower.z, 4);
+  let p = await screenOf(tower.x, tower.z, 4);
   await page.mouse.click(p.x, p.y, { button: 'right' });
   const shrine = await tg(() => window.__tg.world.buildings.find((b) => b.tribe === 'player' && b.kind === 'shrine'));
   const vill = await tg(() => window.__tg.world.units.find((u) => u.tribe === 'player' && u.kind === 'brave' && !u.hidden));
-  p = await unitScreen(vill);
-  await page.mouse.click(p.x, p.y);
+  await clickUnit(vill);
   await focus(shrine.x, shrine.z);
   p = await screenOf(shrine.x, shrine.z, 3);
   await page.mouse.click(p.x, p.y, { button: 'right' });
@@ -297,10 +335,7 @@ await step('garrison: right-click a tower with a warrior, a shrine with villager
 
 await step('demolish: select the lumberyard, press Delete twice (the first press asks to confirm)', async () => {
   const b = await tg(() => window.__tg.world.buildings.find((b) => b.tribe === 'player' && b.kind === 'lumberyard'));
-  await focus(b.x, b.z);
-  const p = await screenOf(b.x, b.z, 3);
-  await page.mouse.click(p.x, p.y);
-  await wait(250);
+  await clickBuilding(b);
   const sel = await tg(() => ({ b: window.__tg.ui.selection.building, u: [...window.__tg.ui.selection.units] }));
   expect(sel.b === b.id, `click selected ${JSON.stringify(sel)}`);
   await page.keyboard.press('Delete');
@@ -381,6 +416,11 @@ await step('spells: all 14 aimed by hotkey and cast with a click', async () => {
       let l = w.leaderOf('player');
       if (!l) l = w.spawnNearWalkable('shaman', 'player', t.home.x, t.home.z);
       w.abandonTask(l);
+      // Clear the previous casts' lingering effects: a wandering Cyclone that
+      // flings the leader mid-cast cancels the cast (by design), which would
+      // test the order of this list rather than the spell under test.
+      w.jobs.length = 0;
+      w.auras.length = 0;
       // A spot 8 tiles from the leader, on land, where nobody of ours stands.
       for (let a = 0; a < 16; a++) {
         const x = Math.round(l.x + Math.cos(a / 16 * Math.PI * 2) * 8);
