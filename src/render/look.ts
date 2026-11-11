@@ -110,7 +110,7 @@ export interface SunPreset {
 export const SUN_PRESETS: Record<'day' | 'golden', SunPreset> = {
   day: {
     elevation: 48, azimuth: -35, color: 0xfff1dc, intensity: 3.1,
-    zenith: 0x2f6fd0, horizon: 0xb4dcf4, sunGlow: 0xfff0c8,
+    zenith: 0x2a66c8, horizon: 0x9fcdee, sunGlow: 0xfff0c8,
     haze: 0xcfe6f4, space: 0x5d8fd0,
     hemiSky: 0xbcd8ff, hemiGround: 0x5a6a3a, hemiIntensity: 0.55, envIntensity: 0.75,
   },
@@ -139,6 +139,9 @@ export const SHADOW_EXTENT_MIN = 26;
 export const SHADOW_EXTENT_MAX = 150;
 export const SHADOW_BIAS = -0.0004;
 export const SHADOW_NORMAL_BIAS = 0.06;
+
+/** Effect flash point lights: authored peak × this = candela. */
+export const FLASH_SCALE = 0.012;
 
 // ---------------------------------------------------------------------------
 // Terrain palette (sRGB). The terrain shader splats between these by
@@ -182,6 +185,29 @@ export const RIM_END = 122;
  *  (world units from the camera target), and how hard (see curvature.ts). */
 export const LIMB_START = 80;
 export const LIMB_K = 0.0022;
+
+/** Grass carpet around the camera (world/ground-cover.ts). Off at `low`. */
+export const GROUND_COVER = {
+  /** Grid spacing between clumps (world units). */
+  spacing: 0.6,
+  /** Carpet radius around the camera target, by tier. */
+  radiusHigh: 44,
+  radiusMedium: 28,
+  /** Tallest clump height (world units; a villager is ~2.3). */
+  height: 0.4,
+  tip: 0xd8e07a,
+};
+
+/** The glowing halo around the planet's limb when zoomed out (sky.ts). */
+export const ATMOSPHERE = {
+  /** Radius (world units) of the sphere the planet's top approximates. */
+  radius: 98,
+  /** Halo thickness as a fraction of the radius. */
+  width: 0.05,
+  intensity: 1.4,
+  /** Orbit distances over which the halo fades in. */
+  fadeIn: [70, 150] as [number, number],
+};
 
 /** Distance fog (applies to every lit material, including models). */
 export const FOG_NEAR_K = 1.6; // × camera distance

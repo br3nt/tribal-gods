@@ -404,11 +404,17 @@ function patchFragment(src: string, detail: boolean): string {
     float nMid = tgNoise(wp * (1.0 / 8.0), 32.0);
     float nFine = tgNoise(wp * 0.5, 128.0);
     #if TG_DETAIL
+      // Dabs: one soft random blob per small cell — reads as painted grain
+      // (pebbles on sand and earth, tufts on grass) where noise reads as blur.
+      vec2 dc = floor(wp * 2.2);
+      vec2 dj = vec2(tgHash(dc), tgHash(dc + 7.7));
+      float dab = smoothstep(0.42, 0.12, length(fract(wp * 2.2) - dj * 0.6 - 0.2)) * (tgHash(dc + 3.1) - 0.5) * 2.0;
       float nMicro = tgNoise(wp * 2.0, 512.0);
       float nMicro2 = tgNoise(wp * 5.0 + 17.0, 1280.0);
     #else
       float nMicro = 0.5;
       float nMicro2 = 0.5;
+      float dab = 0.0;
     #endif
 
     // --- Grass: lush where it's wet, straw-gold where it's dry ---
@@ -418,7 +424,7 @@ function patchFragment(src: string, detail: boolean): string {
     vec3 dry = mix(uGrassDry, uGrassDry2, smoothstep(0.3, 0.7, nFine));
     vec3 c = mix(dry, lush, smoothstep(0.3, 0.7, moist));
     // Brush-stroke grain: clumps and blades.
-    c *= 1.0 + grain * (0.2 * (nFine - 0.5) + 0.12 * (nMicro - 0.5) + 0.1 * (nMicro2 - 0.5));
+    c *= 1.0 + grain * (0.2 * (nFine - 0.5) + 0.12 * (nMicro - 0.5) + 0.1 * (nMicro2 - 0.5) + 0.08 * dab);
     float rough = 0.92;
     float bump = nFine * 0.10 + nMicro * 0.05 + nMicro2 * 0.03;
 
@@ -430,7 +436,7 @@ function patchFragment(src: string, detail: boolean): string {
     // --- Earth on banks, rock on cliffs (with sedimentary layers) ---
     float sl = slope + (nMid - 0.5) * 0.08;
     float earthK = smoothstep(uSlopes.x, uSlopes.x + 0.06, sl);
-    c = mix(c, uEarth * (0.82 + 0.3 * nFine), earthK);
+    c = mix(c, uEarth * (0.82 + 0.3 * nFine + 0.12 * dab * grain), earthK);
     float strata = sin(h * 2.4 + nMid * 2.5 + nMacro * 4.0) * 0.5 + 0.5;
     vec3 rock = mix(uRockDark, uRock, smoothstep(0.2, 0.8, strata));
     rock = mix(rock, uRockWarm, smoothstep(0.4, 0.8, nMacro) * 0.7);
@@ -447,10 +453,10 @@ function patchFragment(src: string, detail: boolean): string {
     float beachTop = uBands.y + (nMid - 0.5) * 0.9;
     float beachK = (1.0 - smoothstep(beachTop - 0.35, beachTop + 0.15, h)) * (1.0 - rockK * 0.7)
                  * smoothstep(0.08, 0.3, td.b); // beaches need a sea: inland lowlands stay green
-    vec3 sand = uSand * (0.93 + 0.12 * nFine + 0.06 * (nMicro2 - 0.5));
+    vec3 sand = uSand * (0.93 + 0.12 * nFine + 0.06 * (nMicro2 - 0.5) + 0.07 * dab * grain);
     c = mix(c, sand, beachK);
     float ripples = sin(dot(wp, vec2(0.8, 0.6)) * 3.2 + nMid * 6.0) * 0.5 + 0.5;
-    bump = mix(bump, ripples * 0.025 + nMicro * 0.02, beachK);
+    bump = mix(bump, ripples * 0.03 + nMicro * 0.02 + max(dab, 0.0) * 0.025, beachK);
     rough = mix(rough, 0.88, beachK);
     float wetK = 1.0 - smoothstep(uBands.x * 0.4, uBands.x + nFine * 0.25, h);
     c = mix(c, uWetSand, wetK);

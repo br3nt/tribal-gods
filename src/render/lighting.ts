@@ -31,6 +31,7 @@ import {
   SHADOW_EXTENT_MAX,
   SHADOW_EXTENT_MIN,
   SHADOW_NORMAL_BIAS,
+  FLASH_SCALE,
   SunPreset,
 } from './look';
 
@@ -133,9 +134,12 @@ export class Lighting {
     f.light.position.copy(pos);
     f.light.color.setHex(color);
     f.light.distance = range;
-    f.peak = peak;
+    // Peaks are authored on a 0–3000 'drama' scale; scaled here so even a
+    // big flash stays well inside half-float range (an Inf pixel would
+    // poison the bloom chain).
+    f.peak = Math.min(peak, 3000) * FLASH_SCALE;
     f.age = 0;
     f.ttl = ttl;
-    f.light.intensity = peak;
+    f.light.intensity = f.peak;
   }
 }

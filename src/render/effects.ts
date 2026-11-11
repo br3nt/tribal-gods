@@ -511,26 +511,42 @@ export class EffectsRenderer {
         x: p.x, y: p.y, z: p.z,
         vx: Math.cos(a) * s, vy: up * s, vz: Math.sin(a) * s,
         life: 0.5 + Math.random() * 0.6, size, sizeEnd: size * 0.3,
-        r: color.r * 6, g: color.g * 6, b: color.b * 6,
-        r2: color.r * 2, g2: color.g * 0.8, b2: color.b * 0.4,
+        r: color.r * 4, g: color.g * 4, b: color.b * 4,
+        r2: color.r * 1.5, g2: color.g * 0.6, b2: color.b * 0.3,
         gravity: 14, drag: 1.2, shape: GLOW, fadeIn: 0.01,
       });
     }
   }
 
-  /** Fireball core: big hot glows that swell and cool. */
+  /**
+   * Fireball: a brief hot glow core (additive) wrapped in rolling fire that
+   * cools to soot (alpha-blended, so overlapping puffs keep their shape
+   * instead of summing to a white blob).
+   */
   fireCore(tx: number, tz: number, scale: number, lift = 1): void {
     const p = this.at(tx, tz, lift);
-    const n = Math.round(14 * scale + 4);
+    const n = Math.round(6 * scale + 3);
     for (let i = 0; i < n; i++) {
       const a = Math.random() * Math.PI * 2;
-      const s = (1 + Math.random() * 4) * scale;
+      const s = (1 + Math.random() * 3) * scale;
       this.glow.emit({
         x: p.x, y: p.y, z: p.z,
-        vx: Math.cos(a) * s, vy: (1 + Math.random() * 3) * scale, vz: Math.sin(a) * s,
-        life: 0.45 + Math.random() * 0.45, size: 2.6 * scale, sizeEnd: 4.5 * scale,
-        r: 9, g: 5.5, b: 2.0, r2: 2.4, g2: 0.45, b2: 0.08,
-        drag: 3.5, shape: GLOW, fadeIn: 0.02,
+        vx: Math.cos(a) * s, vy: (1 + Math.random() * 2) * scale, vz: Math.sin(a) * s,
+        life: 0.25 + Math.random() * 0.25, size: 2.2 * scale, sizeEnd: 3.4 * scale,
+        r: 4, g: 2.3, b: 0.8, r2: 1.4, g2: 0.3, b2: 0.05,
+        drag: 4, shape: GLOW, fadeIn: 0.02,
+      });
+    }
+    const m = Math.round(12 * scale + 3);
+    for (let i = 0; i < m; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const s = (2 + Math.random() * 4) * scale;
+      this.matter.emit({
+        x: p.x, y: p.y + Math.random() * scale, z: p.z,
+        vx: Math.cos(a) * s, vy: (1.5 + Math.random() * 3) * scale, vz: Math.sin(a) * s,
+        life: 0.9 + Math.random() * 0.8, size: 1.6 * scale, sizeEnd: 4.2 * scale,
+        r: 3.2, g: 1.4, b: 0.35, r2: 0.09, g2: 0.08, b2: 0.075,
+        alpha: 0.95, drag: 3.2, shape: SMOKE, fadeIn: 0.02,
       });
     }
   }
@@ -741,7 +757,7 @@ export class EffectsRenderer {
       this.heightTex,
       /* glsl */ `
         float y = vUv.y;
-        float fres = pow(1.0 - abs(dot(normalize(vN), vView)), 1.5);
+        float fres = pow(max(1.0 - abs(dot(normalize(vN), vView)), 0.0), 1.5);
         float streak = 0.75 + 0.25 * sin(vUv.x * 40.0 + uTime * 3.0) * sin(vUv.x * 13.0 - uTime * 2.0);
         float scroll = 0.8 + 0.2 * sin(y * 18.0 - uTime * 8.0);
         float a = (1.0 - y) * (1.0 - y) * streak * scroll * (0.35 + fres);
@@ -776,7 +792,7 @@ export class EffectsRenderer {
         vec2 g = dot(a, a) < dot(b, b) ? a : b;
         float hexd = max(abs(g.x) * 0.866 + abs(g.y) * 0.5, abs(g.y));
         float line = smoothstep(0.40, 0.48, hexd);
-        float fres = pow(1.0 - abs(dot(normalize(vN), vView)), 2.2);
+        float fres = pow(max(1.0 - abs(dot(normalize(vN), vView)), 0.0), 2.2);
         float sweep = smoothstep(0.92, 1.0, sin(vLocal.y * 6.0 - uTime * 2.2) * 0.5 + 0.5);
         float base = 1.0 - smoothstep(0.0, 0.08, vLocal.y);
         float a2 = fres * 0.9 + line * (0.18 + 0.5 * sweep) + base * 0.8 + 0.04;
@@ -862,7 +878,7 @@ export class EffectsRenderer {
       this.heightTex,
       /* glsl */ `
         float core = 1.0 - abs(vUv.x - 0.5) * 2.0;
-        core = pow(core, 1.5);
+        core = pow(max(core, 0.0), 1.5);
         gl_FragColor = vec4(uColor * core * uAlpha, 1.0);
       `,
       { uColor: { value: c } },

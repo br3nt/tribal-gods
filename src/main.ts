@@ -30,7 +30,7 @@ import { EffectsRenderer } from './render/effects';
 import { Lighting } from './render/lighting';
 import { FOG_FAR_K, FOG_NEAR_K, initialQuality, sunPreset } from './render/look';
 import { PostChain } from './render/post';
-import { Sky } from './render/sky';
+import { Atmosphere, Sky } from './render/sky';
 import { TreeRenderer } from './render/tree-renderer';
 import { UnitRenderer } from './render/unit-renderer';
 import { World } from './sim/world-state';
@@ -47,6 +47,7 @@ import { SpellCaster } from './ui/spell-caster';
 import { SpellPanel } from './ui/spell-panel';
 import { applyLimbToCpuCurved, curvatureUniforms } from './world/curvature';
 import { TerrainMesh } from './world/terrain-mesh';
+import { GroundCover } from './world/ground-cover';
 import { Water } from './world/water';
 
 // --- The world (simulation state) ---
@@ -70,6 +71,9 @@ const sunLook = sunPreset();
 const sky = new Sky(sunLook);
 scene.add(sky.mesh);
 sky.mesh.userData.gpuCurved = true;
+const atmosphere = new Atmosphere(sky.hazeColor, sky.sunDir);
+scene.add(atmosphere.mesh);
+atmosphere.mesh.userData.gpuCurved = true;
 scene.environment = sky.buildEnvironment(renderer);
 scene.environmentIntensity = sunLook.envIntensity;
 scene.fog = new THREE.Fog(sky.hazeColor, 100, 500);
@@ -79,6 +83,9 @@ const terrain = new TerrainMesh(world.map, quality);
 terrain.setHaze(sky.hazeColor);
 scene.add(terrain.mesh);
 terrain.mesh.userData.gpuCurved = true;
+
+const groundCover = quality.name === 'low' ? null : new GroundCover(terrain, quality);
+if (groundCover) scene.add(groundCover.mesh);
 
 const water = new Water(terrain);
 scene.add(water.mesh);
@@ -250,7 +257,9 @@ const stats = startLoop({
 
     terrain.sync(rig.target, world, dt); // slide the grid; re-upload only what changed
     water.update(rig.target, dt);
+    groundCover?.update(rig.target, dt);
     sky.update(rig.camera, dt);
+    atmosphere.update(rig.target, rig.distance);
     lighting.update(rig.target, rig.distance, dt);
     const fog = scene.fog as THREE.Fog;
     fog.near = rig.distance * FOG_NEAR_K;

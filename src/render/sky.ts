@@ -21,7 +21,7 @@
  */
 
 import * as THREE from 'three';
-import { SunPreset } from './look';
+import { ATMOSPHERE, SunPreset } from './look';
 
 const vertexShader = /* glsl */ `
   varying vec3 vDir;
@@ -58,10 +58,10 @@ const fragmentShader = /* glsl */ `
       // Sun glow — wide warm wash + tighter halo.
       col += uSunGlow * (pow(sunDot, 6.0) * 0.35 + pow(sunDot, 64.0) * 0.6);
       // Clouds on a flat layer: project the view ray onto it.
-      if (uClouds > 0.0 && y > 0.015) {
+      if (uClouds > 0.0 && y > 0.01) {
         vec2 uv = d.xz / (y + 0.08) * 1.6 + vec2(uTime * 0.012, uTime * 0.005);
         float n = fbm(uv);
-        float cov = smoothstep(0.5, 0.78, n) * smoothstep(0.015, 0.2, y);
+        float cov = smoothstep(0.42, 0.72, n) * smoothstep(0.01, 0.12, y);
         float lit = 0.75 + 0.5 * pow(sunDot, 3.0);
         vec3 cloud = mix(uHorizon * 0.9, vec3(1.0), 0.7) * lit;
         // Darker bellies on thicker cloud.
@@ -150,5 +150,76 @@ export class Sky {
     this.mesh.position.copy(camera.position);
     this.mesh.scale.setScalar(camera.far * 0.9);
     this.material.uniforms.uTime.value += dt;
+  }
+}
+
+/**
+ * The atmosphere shell: a soft glowing halo hugging the planet's limb,
+ * visible when zoomed out. The heightfield isn't a sphere, but near its
+ * curved top it behaves like one of radius ATMOSPHERE.radius sitting under
+ * the camera target — so we put an invisible sphere there and, per pixel,
+ * measure how close the view ray passes to its centre. Rays that just miss
+ * the planet glow brightest; the glow fades over a thin band outward. The
+ * planet itself (drawn later, opaque) covers the inside.
+ */
+export class Atmosphere {
+  readonly mesh: THREE.Mesh;
+  private readonly material: THREE.ShaderMaterial;
+
+  constructor(haze: THREE.Color, sunDir: THREE.Vector3) {
+    this.material = new THREE.ShaderMaterial({
+      uniforms: {
+        uCenter: { value: new THREE.Vector3() },
+        uR: { value: ATMOSPHERE.radius },
+        uColor: { value: haze.clone().multiplyScalar(ATMOSPHERE.intensity) },
+        uSunDir: { value: sunDir },
+        uStrength: { value: 0 },
+        uWidth: { value: ATMOSPHERE.width },
+      },
+      vertexShader: /* glsl */ `
+        varying vec3 vWorld;
+        void main() {
+          vWorld = (modelMatrix * vec4(position, 1.0)).xyz;
+          gl_Position = projectionMatrix * viewMatrix * vec4(vWorld, 1.0);
+        }
+      `,
+      fragmentShader: /* glsl */ `
+        uniform vec3 uCenter, uColor, uSunDir;
+        uniform float uR, uStrength, uWidth;
+        varying vec3 vWorld;
+        void main() {
+          vec3 rd = normalize(vWorld - cameraPosition);
+          vec3 oc = uCenter - cameraPosition;
+          float tca = dot(oc, rd);
+          float b = sqrt(max(dot(oc, oc) - tca * tca, 0.0)) / uR; // 1 = grazing the limb
+          float outer = exp(-max(b - 1.0, 0.0) / uWidth);
+          float inner = exp(-max(1.0 - b, 0.0) / (uWidth * 0.35));
+          float g = min(outer, inner);
+          // Brighter on the sunward side of the limb.
+          vec3 toEdge = normalize(cameraPosition + rd * tca - uCenter);
+          float sunSide = 0.65 + 0.35 * max(dot(toEdge, uSunDir), 0.0);
+          gl_FragColor = vec4(uColor * g * sunSide * uStrength, 1.0);
+          #include <tonemapping_fragment>
+          #include <colorspace_fragment>
+        }
+      `,
+      side: THREE.BackSide,
+      transparent: true,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      fog: false,
+    });
+    this.mesh = new THREE.Mesh(new THREE.SphereGeometry(1, 64, 32), this.material);
+    this.mesh.frustumCulled = false;
+    this.mesh.renderOrder = -9;
+  }
+
+  update(target: THREE.Vector3, viewDistance: number): void {
+    const R = ATMOSPHERE.radius;
+    const u = this.material.uniforms;
+    u.uCenter.value.set(target.x, target.y - R, target.z);
+    this.mesh.position.copy(u.uCenter.value);
+    this.mesh.scale.setScalar(R * (1 + ATMOSPHERE.width * 6));
+    u.uStrength.value = THREE.MathUtils.smoothstep(viewDistance, ATMOSPHERE.fadeIn[0], ATMOSPHERE.fadeIn[1]);
   }
 }

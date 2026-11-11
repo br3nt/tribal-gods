@@ -38,6 +38,25 @@ import {
   lowerQuality,
 } from './look';
 
+/** Replaces NaN/Inf pixels before bloom: one bad pixel would otherwise be
+ *  blurred across the whole screen by the bloom mip chain. */
+const SanitizeShader = {
+  uniforms: { tDiffuse: { value: null as THREE.Texture | null } },
+  vertexShader: /* glsl */ `
+    varying vec2 vUv;
+    void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }
+  `,
+  fragmentShader: /* glsl */ `
+    uniform sampler2D tDiffuse;
+    varying vec2 vUv;
+    void main() {
+      vec4 c = texture2D(tDiffuse, vUv);
+      bvec4 bad = bvec4(isnan(c.r) || isinf(c.r), isnan(c.g) || isinf(c.g), isnan(c.b) || isinf(c.b), isnan(c.a) || isinf(c.a));
+      gl_FragColor = any(bad) ? vec4(0.0, 0.0, 0.0, 1.0) : min(c, vec4(256.0));
+    }
+  `,
+};
+
 const GradeShader = {
   uniforms: {
     tDiffuse: { value: null as THREE.Texture | null },
@@ -109,6 +128,7 @@ export class PostChain {
     composer.setSize(innerWidth, innerHeight);
     composer.addPass(new RenderPass(this.scene, this.camera));
     if (q.bloom) {
+      composer.addPass(new ShaderPass(SanitizeShader));
       this.bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.55, 0.55, 1.0);
       composer.addPass(this.bloom);
     }
