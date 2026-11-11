@@ -2121,8 +2121,8 @@ export class World implements SimQueries {
     return false;
   }
 
-  sendTo(u: Unit, tx: number, tz: number, maxExpansions = 4000): boolean {
-    const path = findPath(this.map, u.x, u.z, tx, tz, maxExpansions);
+  sendTo(u: Unit, tx: number, tz: number, maxExpansions = 4000, shoreRadius = 8): boolean {
+    const path = findPath(this.map, u.x, u.z, tx, tz, maxExpansions, shoreRadius);
     if (!path || path.length === 0) return false;
     u.path = path;
     u.pathIndex = 0;
@@ -2133,6 +2133,8 @@ export class World implements SimQueries {
 
   orderMove(ids: number[], tx: number, tz: number): void {
     let slot = 0;
+    let moved = 0;
+    let refused: Unit | null = null;
     for (const id of ids) {
       const u = this.units.find((q) => q.id === id);
       if (!u || u.hidden) continue;
@@ -2150,9 +2152,13 @@ export class World implements SimQueries {
         ox = Math.cos(a) * 1.6 * ring;
         oz = Math.sin(a) * 1.6 * ring;
       }
-      this.sendTo(u, Math.round(tx + ox), Math.round(tz + oz));
+      // A move across water walks to the nearest shore facing it (a player
+      // clicking the sea on the minimap still sees their people go).
+      if (this.sendTo(u, Math.round(tx + ox), Math.round(tz + oz), 4000, 24)) moved++;
+      else if (!refused) refused = u;
       slot++;
     }
+    if (moved === 0 && refused && refused.tribe === 'player') this.events.push({ type: 'denied', x: tx, z: tz });
   }
 
   /** Send a leader to commune at a monument. Only leaders can worship. */

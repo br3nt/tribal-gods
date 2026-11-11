@@ -348,7 +348,17 @@ await step('minimap: click and drag moves the view; right-click orders', async (
   await page.mouse.up();
   const after = await tg(() => ({ x: ((window.__tg.rig.target.x / 2) % 128 + 128) % 128, z: ((window.__tg.rig.target.z / 2) % 128 + 128) % 128 }));
   expect(Math.abs(after.x - 0.7 * 128) < 3 && Math.abs(after.z - 0.6 * 128) < 3, `view at tile ${after.x.toFixed(0)},${after.z.toFixed(0)}`);
-  await page.mouse.click(box.x + box.width * 0.5, box.y + box.height * 0.5, { button: 'right' });
+  // Right-click a reachable spot near home on the minimap (the planet wraps: tile/128 of the map).
+  const spot = await tg(() => {
+    const w = window.__tg.world;
+    const h = w.tribes.player.home;
+    for (let r = 8; r < 30; r += 2) for (let a = 0; a < 12; a++) {
+      const x = Math.round(h.x + Math.cos(a) * r), z = Math.round(h.z + Math.sin(a) * r);
+      if (w.map.heightAt(x, z) > 1) return { x: ((x % 128) + 128) % 128, z: ((z % 128) + 128) % 128 };
+    }
+    return { x: h.x, z: h.z };
+  });
+  await page.mouse.click(box.x + (box.width * (spot.x + 0.5)) / 128, box.y + (box.height * (spot.z + 0.5)) / 128, { button: 'right' });
   await wait(100);
   const moving = await tg(() => [...window.__tg.ui.selection.units].map((id) => window.__tg.world.unitById(id)).filter((u) => u && u.state === 'moving').length);
   expect(moving >= 1, 'minimap right-click moved nobody');

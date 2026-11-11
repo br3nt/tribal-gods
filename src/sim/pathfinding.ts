@@ -140,6 +140,8 @@ export function findPath(
   gx: number,
   gz: number,
   maxExpansions = 4000,
+  /** How far from an unreachable goal to settle for our own shore (player moves look wider). */
+  shoreRadius = 8,
 ): Array<{ x: number; z: number }> | null {
   sx = map.wrap(Math.round(sx));
   sz = map.wrap(Math.round(sz));
@@ -155,7 +157,7 @@ export function findPath(
   // goal, or refuse at once — never flood-fill the budget to prove it.
   const home = regionAt(map, start.x, start.z);
   if (home && regionAt(map, goal.x, goal.z) !== home) {
-    goal = findNearestWalkable(map, map.wrap(Math.round(gx)), map.wrap(Math.round(gz)), 8, (x, z) => regionAt(map, x, z) === home);
+    goal = findNearestWalkable(map, map.wrap(Math.round(gx)), map.wrap(Math.round(gz)), shoreRadius, (x, z) => regionAt(map, x, z) === home);
     if (!goal) return null;
   }
 

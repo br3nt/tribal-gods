@@ -93,4 +93,19 @@ describe('regions', () => {
       }
     }
   });
+
+  it('a move order across the sea walks to the facing shore; a hopeless one says so', () => {
+    const w = flatWorld(rulesFor());
+    for (let z = 0; z < WORLD_SIZE; z++) {
+      for (let x = 0; x < WORLD_SIZE; x++) w.map.heights[z * WORLD_SIZE + x] = (x >= 30 && x < 50) || (x >= 60 && x < 110) ? 2 : -3;
+    }
+    w.map.version++;
+    const u = w.spawn('warrior', 'player', 40, 40);
+    w.orderMove([u.id], 65, 40); // 15 tiles past our shore, across a 10-tile strait
+    expect(u.state).toBe('moving');
+    expect(u.path[u.path.length - 1].x).toBeGreaterThan(44);
+    w.events.length = 0;
+    w.orderMove([u.id], 100, 40); // far inland on the other side
+    expect(w.events.some((e) => e.type === 'denied')).toBe(true);
+  });
 });
