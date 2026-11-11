@@ -771,7 +771,7 @@ export class EffectsRenderer {
         float fres = pow(max(1.0 - abs(dot(normalize(vN), vView)), 0.0), 1.5);
         float streak = 0.75 + 0.25 * sin(vUv.x * 40.0 + uTime * 3.0) * sin(vUv.x * 13.0 - uTime * 2.0);
         float scroll = 0.8 + 0.2 * sin(y * 18.0 - uTime * 8.0);
-        float a = (1.0 - y) * (1.0 - y) * streak * scroll * (0.35 + fres);
+        float a = (1.0 - y) * (1.0 - y) * streak * scroll * (0.1 + fres * 0.8);
         gl_FragColor = vec4(uColor * a * uAlpha, 1.0);
       `,
       { uColor: { value: c } },

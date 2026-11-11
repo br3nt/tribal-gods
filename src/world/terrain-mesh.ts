@@ -481,10 +481,11 @@ function patchFragment(src: string, detail: boolean): string {
     float snowK = smoothstep(uBands.z - 1.2, uBands.z + 0.4, h + (nMid - 0.5) * 3.0)
                 * (1.0 - smoothstep(0.22, 0.4, slope + (nFine - 0.5) * 0.15));
     // Wind-scoured: patchy near the snow line, solid only near the summit.
-    snowK *= smoothstep(0.35, 0.55, nFine * 0.45 + nMid * 0.35 + (h - uBands.z) * 0.12);
-    c = mix(c, uSnow * (0.95 + 0.05 * nFine), snowK);
+    // Crisp-edged drifts (a soft edge reads as cloud, not snow).
+    snowK *= smoothstep(0.44, 0.48, nFine * 0.45 + nMid * 0.35 + 0.04 * dab + (h - uBands.z) * 0.12);
+    c = mix(c, uSnow * (0.9 + 0.1 * nFine), snowK);
     rough = mix(rough, 0.5, snowK);
-    bump = mix(bump, nFine * 0.06, snowK);
+    bump = mix(bump, nFine * 0.12 + nMicro * 0.04, snowK);
 
     // --- Swamp: dark mud with standing water ---
     float swampK = smoothstep(0.25, 0.65, td.g + (nFine - 0.5) * 0.35);

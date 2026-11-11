@@ -76,8 +76,10 @@ const fragmentShader = /* glsl */ `
     } else {
       // Past the planet's rim: glowing limb haze into deep atmosphere.
       float k = clamp(-y, 0.0, 1.0);
-      col = mix(uHaze * 1.08, uHorizon, smoothstep(0.0, 0.08, k));
-      col = mix(col, uSpace, smoothstep(0.05, 0.6, k));
+      // Continuous with the sky at the horizon line (no seam), brightening
+      // into the limb haze, then deepening into the atmosphere below.
+      col = mix(uHorizon, uHaze * 1.05, smoothstep(0.0, 0.03, k));
+      col = mix(col, uSpace, smoothstep(0.06, 0.6, k));
       col += uSunGlow * pow(sunDot, 8.0) * 0.2;
     }
     gl_FragColor = vec4(col, 1.0);
