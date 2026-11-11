@@ -8,3 +8,4 @@ dist/
 # Test screenshots captured at the repo root during development.
 # Scoped to the root so intentional images elsewhere (docs/, etc.) commit fine.
 /*.png
+shots/

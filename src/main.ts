@@ -48,7 +48,10 @@ import { Water } from './world/water';
 
 // --- The world (simulation state) ---
 const world = new World();
-world.reset(Math.floor(Math.random() * 1e9));
+// Dev/automation hooks: ?seed=N fixes the planet, ?play=1 skips the menu,
+// ?level=<official id> loads a designed level (see tools/shot.mjs).
+const query = new URLSearchParams(location.search);
+world.reset(query.has('seed') ? Number(query.get('seed')) : Math.floor(Math.random() * 1e9));
 
 // --- Renderer & scene ---
 const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -246,3 +249,17 @@ const stats = startLoop({
 });
 
 hud = new Hud(stats, brush, world, orders);
+
+// Automation handle (tools/shot.mjs, tests, the console). Not a game API.
+(window as unknown as { __tg: unknown }).__tg = { world, rig, appState, menu, startLevel };
+if (query.get('play') === '1') {
+  menu.hide();
+  appState.mode = 'game';
+  const levelId = query.get('level');
+  if (levelId) {
+    void import('./level/official-levels').then(async (m) => {
+      const hit = m.OFFICIAL_LEVELS.find((l) => l.id === levelId);
+      if (hit) await startLevel(await hit.build());
+    });
+  }
+}

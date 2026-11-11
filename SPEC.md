@@ -309,3 +309,74 @@ Checked at every phase: horizon curvature always visible at medium zoom ·
 terrain edits animate over time, never snap · units are small against the
 world · palette saturated and warm · spell impacts slightly over-the-top ·
 camera spin around your village is *pleasant* for no reason at all.
+
+
+---
+
+## 11. The v2 overhaul (supersedes anything above that disagrees)
+
+The first build proved the planet. It did not make a game people want to
+play: figures and buildings were specks, the characters were stacked boxes,
+the HUD was debug text, and spells were a row of emoji with a number. v2
+fixes that. **`src/sim/catalog.ts` is the binding contract** for content and
+for the surface between sim, renderer and UI — read it first.
+
+### 11.1 Pillars, revised
+
+- **Its own game.** Tribal Gods shares a genre with the late-90s god games —
+  a small round world, a leader who casts, a tribe that grows — and nothing
+  else. Roster, spell book, scenarios, art and interface are original. Never
+  copy another game's levels, characters, names, icons or screen layout.
+- **Made today.** Drop "true to 1998" and the "< 150 triangles" budget.
+  Target: a stylised, hand-crafted look with modern rendering — soft
+  shadows, physically based materials, tone mapping, atmosphere, depth,
+  animated water with shoreline foam, wind in the trees, particles with
+  weight. Stylised, not photoreal; rich, not flat-shaded boxes.
+- **People you can see.** Drop "units are small against the world". A
+  villager is ~2.3 world units tall (a tile is 2), a dwelling fills 3×3
+  tiles, a hall 5×5. At the default zoom you can tell a Warrior from an
+  Emberthrower from a Chanter by silhouette alone, and see what each
+  villager is doing.
+- **Characters with character.** Rounded, proportioned bodies with real
+  silhouettes (head, neck, shoulders, hands, feet, hair, clothing layers,
+  gear), blended animation clips with anticipation and follow-through, and
+  a leader per civilisation who is unmistakably the most important figure
+  on screen.
+- **An interface designed as a whole.** One coherent, modern HUD: resources
+  and population, objectives, a spell book grouped by tier with charge pips
+  and recharge sweeps, a build menu with requirements, a selection panel
+  with portraits/health/orders/training queue, a framed minimap, alerts,
+  tooltips everywhere, hotkeys shown on the controls. No debug text in the
+  player's view (debug lives behind a key).
+- **Depth through limits.** Spells charge from mana and hold a limited
+  number of casts (the charge model in catalog.ts). Buildings have
+  prerequisites. Dwellings grow in tiers. Units are trained from villagers
+  through queues. Scenarios restrict and grant: what you know, what you may
+  build, what the stones teach or lend.
+- **Scenarios, not just skirmish.** A campaign of original, hand-designed
+  scenarios with briefings, varied objectives, fail conditions, up to three
+  rival tribes, and unlocks that carry forward.
+
+### 11.2 Ownership map (who edits what)
+
+| Area | Files |
+|---|---|
+| Sim | `src/sim/**` (except catalog.ts structure), gameplay section of `src/config.ts`, `test/**` |
+| Look | `src/main.ts` scene/renderer setup, `src/world/**`, `src/render/effects.ts`, `src/render/camera-rig.ts`, new `src/render/{sky,post,lighting,look}.ts` |
+| Models | `src/assets/models/**`, `src/render/{unit,building,tree}-renderer.ts`, `src/render/figure-animator.ts` |
+| UI | `src/ui/**`, `index.html`, UI wiring in `src/main.ts` |
+| Campaign | `src/level/**`, `src/sim/objectives.ts`, campaign screens under `src/ui/campaign*.ts` |
+
+Visual constants go in `src/render/look.ts`, not `config.ts`. Gameplay
+numbers come from `catalog.ts`; the old per-kind tables in `config.ts`
+(`COMBAT`, `UNIT_SPEED`, `BUILD_COSTS`, `TRAIN_COSTS`, …) are retired.
+
+### 11.3 Working rules
+
+- Branch from `develop`, small commits, rebase on `develop` often.
+- Sim changes are test-first with Vitest (`npm test`); the sim stays
+  headless (no three.js, no DOM).
+- Visual and UI work is checked by eye: `tools/shot.mjs` takes headless
+  screenshots (`?play=1&seed=N` skips the menu; `window.__tg` is the
+  automation handle). Look at your own screenshots before calling it done.
+- `npm run build` (type-check + bundle) must pass.
