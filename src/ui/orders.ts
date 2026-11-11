@@ -24,7 +24,7 @@
  * tile; BOXES project each unit out to screen pixels (ui/project.ts).
  */
 
-import { orderAck } from '../core/audio';
+import { denied, orderAck } from '../core/audio';
 import { WORLD_SIZE } from '../config';
 import { wrapDelta } from '../core/util';
 import { pickGroundTile } from '../render/ground-picker';
@@ -34,6 +34,7 @@ import { appState } from './app-state';
 import { UiContext } from './context';
 import { css, h, uiRoot, worldLayer } from './dom';
 import { UI_ICONS } from './icons';
+import { pickAtScreen } from './picking';
 import { tileDist, toScreen } from './project';
 import { toolState } from './tools';
 
@@ -160,66 +161,16 @@ export class OrderControl {
   }
 
   /**
-   * What the player SEES under the cursor. The ground picker finds the tile
-   * the ray hits, which for a click on a tall roof or a villager's head is
-   * the ground behind it. So people and buildings are also picked in screen
-   * space: the nearest figure whose body is under the cursor, else the
-   * building whose silhouette (footprint wide, roof tall) contains it.
+   * What the player SEES under the cursor: a person or a building, whichever
+   * silhouette is in front (ui/picking.ts). Only when no silhouette is under
+   * the cursor do we fall back to "someone near the ground tile the ray
+   * hit" — over a wall that tile is behind or inside the building, and the
+   * fallback would select whoever happens to stand there.
    */
-  unitAtScreen(px: number, py: number, pred: (u: Unit) => boolean): Unit | null {
-    const view = this.ctx.view;
-    let best: Unit | null = null;
-    let bestD = Infinity;
-    for (const u of this.ctx.world.units) {
-      if (u.hidden || !pred(u)) continue;
-      const h = UNITS[u.kind].height;
-      const foot = toScreen(view, u.x, u.z, 0);
-      const head = toScreen(view, u.x, u.z, h);
-      if (!foot || !head) continue;
-      const bodyPx = Math.max(10, foot.y - head.y);
-      const halfW = Math.max(9, bodyPx * 0.32);
-      if (px < foot.x - halfW || px > foot.x + halfW || py < head.y - 4 || py > foot.y + 6) continue;
-      const d = Math.hypot(px - foot.x, py - (foot.y + head.y) / 2);
-      if (d < bestD) {
-        bestD = d;
-        best = u;
-      }
-    }
-    return best;
-  }
-
-  buildingAtScreen(px: number, py: number): Building | null {
-    const view = this.ctx.view;
-    let best: Building | null = null;
-    let bestDepth = -Infinity;
-    for (const b of this.ctx.world.buildings) {
-      const half = b.size / 2;
-      const base = toScreen(view, b.x, b.z, 0);
-      const top = toScreen(view, b.x, b.z, BUILDINGS[b.kind].height);
-      const l = toScreen(view, b.x - half, b.z, 0);
-      const r = toScreen(view, b.x + half, b.z, 0);
-      const f = toScreen(view, b.x, b.z + half, 0);
-      if (!base || !top || !l || !r || !f) continue;
-      const halfW = Math.max(Math.abs(r.x - l.x), Math.abs(f.x - base.x) * 2) / 2 + 4;
-      if (px < base.x - halfW || px > base.x + halfW || py < top.y - 4 || py > Math.max(base.y, f.y) + 4) continue;
-      // Nearest the camera wins when silhouettes overlap (lower on screen = nearer).
-      if (base.y > bestDepth) {
-        bestDepth = base.y;
-        best = b;
-      }
-    }
-    return best;
-  }
-
-  /** Ground distance (tiles) from the camera to (x, z). */
-  private camDist(x: number, z: number): number {
-    const c = this.ctx.view.camera.position;
-    return Math.hypot(wrapDelta(x - c.x / 2, WORLD_SIZE), wrapDelta(z - c.z / 2, WORLD_SIZE));
-  }
-
-  /** A person whose body is drawn behind this building's walls can't be what was clicked. */
-  private hiddenBehind(u: Unit, b: Building): boolean {
-    return this.camDist(b.x, b.z) + b.size / 2 < this.camDist(u.x, u.z);
+  private pickAt(px: number, py: number, tile: { x: number; z: number } | null, pred: (u: Unit) => boolean): { unit: Unit | null; building: Building | null } {
+    const hit = pickAtScreen(this.ctx.view, this.ctx.world.units, this.ctx.world.buildings, px, py, pred);
+    if (hit.unit || hit.building || !tile) return hit;
+    return { unit: this.unitNear(tile.x, tile.z, PICK_RADIUS, pred), building: null };
   }
 
   private monumentAt(x: number, z: number): number {
@@ -234,11 +185,11 @@ export class OrderControl {
     const tile = this.groundTile(px, py);
     if (tile && this.intercept?.(tile.x, tile.z)) return;
     // Screen-space picks first (a roof against the sky has no ground tile behind it).
-    const near = (pred: (u: Unit) => boolean) => (tile ? this.unitNear(tile.x, tile.z, PICK_RADIUS, pred) : null);
-    const roof = this.buildingAtScreen(px, py);
-    const visible = (u: Unit | null) => (u && roof && this.hiddenBehind(u, roof) ? null : u);
-    const own = visible(this.unitAtScreen(px, py, (u) => u.tribe === 'player') ?? near((u) => u.tribe === 'player'));
-    const any = own ?? visible(this.unitAtScreen(px, py, () => true) ?? near(() => true));
+    // Your own people win over anyone else's under the same pixel.
+    const ownHit = this.pickAt(px, py, tile, (u) => u.tribe === 'player');
+    const hit = ownHit.unit ? ownHit : this.pickAt(px, py, tile, () => true);
+    const any = hit.unit;
+    const roof = hit.building;
     const now = performance.now();
 
     if (any) {
@@ -327,19 +278,19 @@ export class OrderControl {
     const tile = this.groundTile(px, py);
     // Aim at what is drawn under the cursor: an enemy's body or a roof.
     const w = this.ctx.world;
-    const roof = this.buildingAtScreen(px, py);
-    const foe = this.unitAtScreen(px, py, (u) => w.hostile('player', u.tribe) && !(roof && this.hiddenBehind(u, roof)));
-    if (foe) return this.orderAt(foe.x, foe.z);
-    if (!tile) {
-      const b = this.buildingAtScreen(px, py);
-      if (b) this.orderAt(b.x, b.z);
-      return;
-    }
-    if (!this.buildingAt(tile.x, tile.z)) {
-      const b = this.buildingAtScreen(px, py);
-      if (b) return this.orderAt(b.x, b.z);
-    }
-    this.orderAt(tile.x, tile.z);
+    const hit = pickAtScreen(this.ctx.view, w.units, w.buildings, px, py, (u) => w.hostile('player', u.tribe));
+    if (hit.unit) return this.orderAt(hit.unit.x, hit.unit.z);
+    if (hit.building) return this.orderAt(hit.building.x, hit.building.z);
+    if (tile) return this.orderAt(tile.x, tile.z);
+    // Sky, or nothing under the cursor at all: say so instead of doing nothing silently.
+    if (this.hasCommand()) denied();
+  }
+
+  /** Something is selected that a right-click would command. */
+  private hasCommand(): boolean {
+    const sel = this.ctx.selection;
+    if (sel.building !== null) return true;
+    return [...sel.units].some((id) => this.ctx.world.unitById(id)?.tribe === 'player');
   }
 
   /** Issue the context order at a tile (also used by the minimap). */
@@ -349,6 +300,7 @@ export class OrderControl {
     const ids = [...this.ctx.selection.units].filter((id) => w.unitById(id)?.tribe === 'player');
     switch (c.kind) {
       case 'none':
+        if (this.hasCommand()) denied();
         return;
       case 'rally':
         w.setRally(c.building!.id, x, z);
@@ -418,20 +370,22 @@ export class OrderControl {
     if (appState.mode === 'game' && ptr.onCanvas && !this.dragStart) {
       // What's under the cursor (its health bar shows while hovered).
       const tile = this.groundTile(ptr.x, ptr.y);
-      hover.unit = (this.unitAtScreen(ptr.x, ptr.y, () => true) ?? (tile ? this.unitNear(tile.x, tile.z, PICK_RADIUS, () => true) : null))?.id ?? null;
-      if (hover.unit === null) hover.building = ((tile ? this.buildingAt(tile.x, tile.z) : null) ?? this.buildingAtScreen(ptr.x, ptr.y))?.id ?? null;
+      const hit = this.pickAt(ptr.x, ptr.y, tile, () => true);
+      hover.unit = hit.unit?.id ?? null;
+      if (hover.unit === null) hover.building = (hit.building ?? (tile ? this.buildingAt(tile.x, tile.z) : null))?.id ?? null;
     }
     if (appState.mode === 'game' && ptr.onCanvas && toolState.tool === 'select' && !this.dragStart) {
       const tile = this.groundTile(ptr.x, ptr.y);
-      if (tile) {
-        const hu = hover.unit !== null ? this.ctx.world.unitById(hover.unit) : null;
-        const hb = hover.building !== null ? this.ctx.world.getBuilding(hover.building) : null;
-        const at = hu ?? hb ?? tile;
+      const hu = hover.unit !== null ? this.ctx.world.unitById(hover.unit) : null;
+      const hb = hover.building !== null ? this.ctx.world.getBuilding(hover.building) : null;
+      // A roof against the sky has no ground tile under the cursor, but is still a target.
+      const at = hu ?? hb ?? tile;
+      if (at) {
         const c = this.contextAt(at.x, at.z);
         cursor = c.kind === 'move' ? '' : CURSORS[c.kind];
         if (c.kind === 'none' || c.kind === 'move') {
           // Plain pointer over something clickable reads as "select".
-          const hoverable = hu || hb || this.monumentAt(tile.x, tile.z) >= 0;
+          const hoverable = hu || hb || (tile && this.monumentAt(tile.x, tile.z) >= 0);
           cursor = hoverable ? 'pointer' : c.kind === 'move' ? CURSORS.move : '';
         }
       }
