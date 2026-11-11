@@ -18,7 +18,10 @@
  * or the page logs an error.
  *
  * Steps: title → skirmish setup; camera keys; click/box/double-click
- * select; right-click move; all 8 buildings placed via Shift+N + click;
+ * select; right-click move; left-click and Ctrl+click move; a wanderer
+ * gives a read-only card, never a selection; the drag selects on the
+ * ground; select the leader + click a stone = commune (with the hover tag);
+ * all 8 buildings placed via Shift+N + click;
  * training at all 4 halls via the selection panel; tower + shrine garrison
  * by right-click; demolish (Del); pause/speed keys; control groups;
  * minimap click/drag and right-click order; all 14 spells aimed + cast via
@@ -169,6 +172,10 @@ async function clickBuilding(b, opts = {}) {
   }
   throw new Error(`no point on the ${b.kind} where it is what's under the cursor (last: ${JSON.stringify(lastUnder)})`);
 }
+/** Esc drops the selection — but with nothing selected it opens the menu, so only when there is one. */
+async function deselect() {
+  if (!(await tg(() => window.__tg.ui.selection.empty))) await page.keyboard.press('Escape');
+}
 const ticks = (seconds) => tg((s) => { const w = window.__tg.world; for (let i = 0; i < Math.round(s * 15); i++) w.tick(1 / 15); }, seconds);
 
 // ---------------------------------------------------------------------------
@@ -253,6 +260,171 @@ await step('right-click move order: selected people walk there', async () => {
   expect(moving >= 1, 'nobody moved');
   await page.keyboard.press('Escape'); // clear selection
   return `${moving} moving`;
+});
+
+await step('left-click move order: with people selected, a plain click on the ground sends them; Ctrl+click too', async () => {
+  const { u } = await clickSomeUnit('brave');
+  await focus(home.x - 6, home.z + 5);
+  const spot = await tg(([x, z]) => {
+    const w = window.__tg.world;
+    for (let r = 4; r < 14; r++) for (let a = 0; a < 12; a++) {
+      const tx = Math.round(x + Math.cos(a) * r), tz = Math.round(z + Math.sin(a) * r);
+      if (w.map.heightAt(tx, tz) > 1 && !w.buildings.some((b) => Math.abs(b.x - tx) < 4 && Math.abs(b.z - tz) < 4) && !w.monuments.some((m) => Math.hypot(m.x - tx, m.z - tz) < 4) && !w.units.some((v) => Math.hypot(v.x - tx, v.z - tz) < 2.5)) return { x: tx, z: tz };
+    }
+    return null;
+  }, [home.x - 6, home.z + 5]);
+  expect(spot, 'no open ground');
+  await focus(spot.x, spot.z);
+  const p = await screenOf(spot.x, spot.z);
+  const under = await tg(([x, y]) => window.__tg.ui.orders.whatIsUnder(x, y), [p.x, p.y]);
+  expect(under.unit === null && under.building === null, `ground spot has ${JSON.stringify(under)} under it`);
+  await page.mouse.click(p.x, p.y);
+  await wait(120);
+  const st = await tg((id) => { const w = window.__tg.world; const v = w.unitById(id); return { state: v.state, goal: v.goal, sel: [...window.__tg.ui.selection.units] }; }, u.id);
+  expect(st.state === 'moving', `left-click left the villager ${st.state}`);
+  expect(st.sel.includes(u.id), 'left-click order dropped the selection');
+  // Ctrl+click (a Mac's secondary click) is an order too, and never opens the browser menu.
+  await focus(spot.x + 3, spot.z - 3);
+  const q = await screenOf(spot.x + 3, spot.z - 3);
+  await tg((id) => { const v = window.__tg.world.unitById(id); window.__tg.world.abandonTask(v); v.state = 'idle'; v.path = []; }, u.id);
+  await page.keyboard.down('Control');
+  await page.mouse.click(q.x, q.y);
+  await page.keyboard.up('Control');
+  await wait(120);
+  const st2 = await tg((id) => window.__tg.world.unitById(id).state, u.id);
+  expect(st2 === 'moving', `Ctrl+click left the villager ${st2}`);
+  await shot('01b-left-click-order');
+  await deselect();
+  return `moving to ${spot.x},${spot.z}`;
+});
+
+await step('wanderer: a click shows a read-only card, never a selection; a drag never takes them', async () => {
+  const wild = await tg(([x, z]) => window.__tg.world.spawnNearWalkable('wildman', 'wild', x, z), [home.x + 9, home.z - 7]);
+  await focus(wild.x, wild.z);
+  let clicked = false;
+  for (const lift of [1.1, 1.5, 0.7]) {
+    const p = await screenOf(wild.x, wild.z, lift);
+    if (!p) continue;
+    const under = await tg(([x, y]) => window.__tg.ui.orders.whatIsUnder(x, y), [p.x, p.y]);
+    if (under.unit !== wild.id) continue;
+    await page.mouse.click(p.x, p.y);
+    clicked = true;
+    break;
+  }
+  expect(clicked, 'no point on the wanderer to click');
+  await wait(150);
+  const s = await tg(() => ({ units: [...window.__tg.ui.selection.units], inspect: window.__tg.ui.selection.inspect }));
+  expect(s.units.length === 0, `wanderer click selected [${s.units.join(',')}]`);
+  expect(s.inspect === wild.id, `no inspect card (inspect=${s.inspect})`);
+  const card = await page.locator('.sp').first().textContent();
+  expect(/Kindle/.test(card ?? ''), `card says "${card}"`);
+  await shot('01c-wanderer-card');
+  // A drag right over them selects nobody who isn't yours.
+  const c = await screenOf(wild.x, wild.z);
+  await page.mouse.move(c.x - 90, c.y - 70);
+  await page.mouse.down();
+  await page.mouse.move(c.x + 90, c.y + 70, { steps: 6 });
+  await page.mouse.up();
+  await wait(120);
+  const after = await tg(() => [...window.__tg.ui.selection.units].map((id) => window.__tg.world.unitById(id)?.tribe));
+  expect(after.every((t) => t === 'player'), `drag took ${after.join(',')}`);
+  await tg((id) => { const w = window.__tg.world; w.units = w.units.filter((u) => u.id !== id); }, wild.id);
+  await deselect();
+  return 'read-only card';
+});
+
+await step('ground marquee: a drag lays an area on the land and selects exactly your people inside it', async () => {
+  // Three villagers in a tight knot, one well outside.
+  const ids = await tg(([x, z]) => {
+    const w = window.__tg.world;
+    const made = [];
+    for (const [dx, dz] of [[0, 0], [1.5, 0.5], [0.5, 1.5], [9, 0]]) {
+      const u = w.spawnNearWalkable('brave', 'player', x + dx, z + dz);
+      w.abandonTask(u);
+      made.push({ id: u.id, x: u.x, z: u.z });
+    }
+    return made;
+  }, [home.x - 10, home.z - 9]);
+  const knot = ids.slice(0, 3);
+  const cx = knot.reduce((s, u) => s + u.x, 0) / 3, cz = knot.reduce((s, u) => s + u.z, 0) / 3;
+  await focus(cx, cz);
+  // The drag: corner to corner around where the knot stands on screen, with a margin.
+  const pts = [];
+  for (const u of knot) pts.push(await screenOf(u.x, u.z, 0.5));
+  const a = { x: Math.min(...pts.map((p) => p.x)) - 50, y: Math.min(...pts.map((p) => p.y)) - 45 };
+  const b = { x: Math.max(...pts.map((p) => p.x)) + 50, y: Math.max(...pts.map((p) => p.y)) + 45 };
+  await page.mouse.move(a.x, a.y);
+  await page.mouse.down();
+  await page.mouse.move((a.x + b.x) / 2, (a.y + b.y) / 2, { steps: 4 });
+  await page.mouse.move(b.x, b.y, { steps: 4 });
+  await wait(100);
+  const drawn = await tg(() => window.__tg.scene.children.some((o) => o.isMesh && o.visible && o.renderOrder === 18));
+  await shot('01d-ground-marquee');
+  await page.mouse.up();
+  await wait(120);
+  const sel = await tg(() => [...window.__tg.ui.selection.units]);
+  expect(drawn, 'no area drawn on the ground while dragging');
+  const missing = knot.filter((u) => !sel.includes(u.id));
+  expect(missing.length === 0, `left out ${missing.map((u) => u.id).join(',')} (selected ${sel.join(',')})`);
+  expect(!sel.includes(ids[3].id), 'took the villager standing outside the area');
+  await deselect();
+  return `${sel.length} selected`;
+});
+
+await step('commune: select your leader, click a standing stone — the leader goes; hovering says what it holds', async () => {
+  const setup = await tg(() => {
+    const w = window.__tg.world;
+    let i = w.monuments.findIndex((m) => w.monumentAvailable(m));
+    if (i < 0) return null;
+    const m = w.monuments[i];
+    const l = w.leaderOf('player');
+    w.abandonTask(l);
+    // Setup only: stand the leader a few tiles from the stone.
+    for (let r = 4; r < 10; r++) for (let a = 0; a < 8; a++) {
+      const x = Math.round(m.x + Math.cos(a) * r), z = Math.round(m.z + Math.sin(a) * r);
+      if (w.map.heightAt(x, z) > 0.6) { l.x = x; l.z = z; l.path = []; l.state = 'idle'; return { i, m: { x: m.x, z: m.z, spell: m.spell }, l: { id: l.id, x, z } }; }
+    }
+    return null;
+  });
+  expect(setup, 'no open stone with ground beside it');
+  const leader = await tg((id) => window.__tg.world.unitById(id), setup.l.id);
+  await clickUnit(leader);
+  await focus(setup.m.x, setup.m.z);
+  // A point on the stone itself where the stone is what's under the cursor.
+  let at = null;
+  for (const lift of [2, 3, 1, 4]) {
+    const p = await screenOf(setup.m.x, setup.m.z, lift);
+    const under = p && (await tg(([x, y]) => window.__tg.ui.orders.whatIsUnder(x, y), [p.x, p.y]));
+    if (under && under.monument === setup.i) { at = p; break; }
+  }
+  expect(at, 'no point where the stone is under the cursor');
+  await page.mouse.move(at.x, at.y);
+  await wait(800);
+  const tag = await page.locator('.wh-tag.show').first().textContent({ timeout: 1000 }).catch(() => '');
+  const cursor = await tg(() => window.__tg.ui.ctx.canvas.style.cursor);
+  expect(/stone/i.test(tag) && /commune/i.test(tag), `hover tag said "${tag}"`);
+  expect(/url\(/.test(cursor), `cursor over the stone is "${cursor}", not the commune cursor`);
+  await shot('01e-stone-hover');
+  await page.mouse.click(at.x, at.y);
+  await wait(120);
+  const task = await tg((id) => { const u = window.__tg.world.unitById(id); return `${u.task}/${u.state}`; }, setup.l.id);
+  expect(/^worship/.test(task), `leader is ${task} after clicking the stone`);
+  // Let the ritual run to the end: the leader walks over, communes (the marker grows a ring), and the spell is theirs.
+  let ritualSeen = false;
+  let got = false;
+  for (let i = 0; i < 60 && !got; i++) {
+    await ticks(1);
+    if (!ritualSeen && (await page.locator('.stone-mk .ritual:not([hidden])').count()) > 0) {
+      ritualSeen = true;
+      await wait(150);
+      await shot('01f-ritual');
+    }
+    got = await tg((s) => { const t = window.__tg.world.tribes.player; return t.known.has(s) || (t.spells[s]?.gifted ?? 0) > 0; }, setup.m.spell);
+  }
+  expect(got, `after 60s the leader has not learned ${setup.m.spell} (ritual ${ritualSeen ? 'was' : 'never'} shown)`);
+  expect(ritualSeen, 'no ritual ring was shown over the stone');
+  await deselect();
+  return `leader communed and learned ${setup.m.spell}; tag "${tag.slice(0, 40)}…"`;
 });
 
 // --- Buildings -------------------------------------------------------------

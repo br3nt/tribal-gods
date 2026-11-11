@@ -1,7 +1,7 @@
 /**
  * ui/top-bar.ts — the tribe at a glance (top left) and time (top right).
  *
- * LEFT, one glass strip: wood · population/cap (housed, idle villagers —
+ * LEFT, one timber board: wood · population/cap (housed, idle villagers —
  * click to find one) · mana flowing into spells · villagers praying ·
  * the leader (alive, or back in N seconds — click to look at them).
  *
@@ -12,38 +12,46 @@
  * it changes.
  */
 
+import { SPELLS } from '../sim/catalog';
 import { fmtClock, fmtEta, fmtRate } from './format';
 import { appState, SPEEDS } from './app-state';
 import { UiContext } from './context';
 import { css, h, setClass, setText } from './dom';
 import { labelFor } from './hotkeys';
 import { icon } from './icons';
+import { carve } from './lettering';
 import { tip } from './tooltip';
 
 css('top-bar', `
-.tb-left { position: absolute; top: var(--edge); left: var(--edge); display: flex; align-items: stretch; padding: 0.25rem; gap: 0.125rem; }
-.tb-stat { display: flex; align-items: center; gap: 0.5rem; padding: 0.3rem 0.7rem 0.3rem 0.55rem; border-radius: var(--r2); position: relative; }
-.tb-stat + .tb-stat::before { content: ''; position: absolute; left: -0.0625rem; top: 22%; bottom: 22%; width: 1px; background: var(--rim); }
-.tb-stat svg { color: var(--text-2); }
-.tb-stat .v { font-size: var(--t-lg); font-weight: 650; line-height: 1.05; letter-spacing: -0.01em; }
-.tb-stat .l { font-size: var(--t-xs); color: var(--text-3); line-height: 1.1; white-space: nowrap; }
+.tb-left { position: absolute; top: var(--edge); left: var(--edge); display: flex; align-items: stretch; padding: 0.1rem 0.15rem; gap: 0; }
+.tb-stat { display: flex; align-items: center; gap: 0.45rem; padding: 0.22rem 0.65rem 0.22rem 0.45rem; position: relative; }
+/* Dividers: a cord tied round the board. */
+.tb-stat + .tb-stat::before { content: ''; position: absolute; left: -1px; top: 12%; bottom: 12%; width: 3px;
+  background: repeating-linear-gradient(-35deg, #e1c088 0 2px, #8a6436 2px 4px); box-shadow: 0 0 0 1px rgba(16, 8, 3, 0.85); border-radius: 2px; }
+.tb-stat svg { color: var(--bone-2); }
+.tb-stat .v { font: 700 var(--t-lg)/1.05 var(--font); letter-spacing: 0; color: var(--bone); text-shadow: 0 1px 0 rgba(0,0,0,0.85); }
+.tb-stat .l { font-size: var(--t-xs); color: var(--bone-3); line-height: 1.15; white-space: nowrap; font-weight: 600; }
 .tb-stat.wood svg { color: var(--wood); }
-.tb-stat.mana svg, .tb-stat.mana .v { color: var(--mana); }
+.tb-stat.mana svg, .tb-stat.mana .v { color: var(--spirit); }
+.tb-stat.pop svg { color: var(--bone); }
+.tb-stat.pray svg { color: var(--ochre-hi); }
+.tb-stat.leader svg { color: var(--ochre-hi); }
 .tb-stat.leader.down svg, .tb-stat.leader.down .v { color: var(--bad); }
-.tb-stat.dim { opacity: 0.55; }
+.tb-stat.dim > *:not(.l) { opacity: 0.55; }
 button.tb-stat { appearance: none; background: none; border: 0; color: inherit; font: inherit; text-align: left; cursor: pointer; }
-button.tb-stat:hover { background: var(--ink-2); }
-.tb-idle { display: inline-flex; align-items: center; gap: 0.25rem; margin-left: 0.25rem; padding: 0.15rem 0.45rem 0.15rem 0.3rem; border-radius: var(--r-pill);
-  border: 1px solid var(--rim); background: var(--ink-2); color: var(--text-2); font: 600 var(--t-xs)/1 var(--font); cursor: pointer; }
-.tb-idle:hover { border-color: var(--rim-strong); background: var(--ink-3); }
-.tb-idle.has { color: var(--warn); border-color: rgba(255,181,77,0.55); background: rgba(255,181,77,0.12); }
-.tb-right { position: absolute; top: var(--edge); right: var(--edge); display: flex; align-items: center; gap: 0.375rem; padding: 0.25rem; }
-.tb-clock { display: flex; align-items: center; gap: 0.375rem; padding: 0 0.6rem 0 0.45rem; font-size: var(--t-md); font-weight: 650; min-width: 4.2rem; color: var(--text); }
-.tb-clock svg { color: var(--text-3); }
-.tb-speed { display: flex; gap: 0.125rem; padding: 0.125rem; border-radius: var(--r2); background: rgba(0,0,0,0.25); }
-.tb-speed .tg-btn { min-height: 1.75rem; padding: 0 0.5rem; border: 0; background: transparent; font-weight: 650; color: var(--text-2); }
-.tb-speed .tg-btn.on { background: var(--gold-soft); color: var(--gold); }
-.tb-paused { position: absolute; top: calc(var(--edge) + 3.6rem); left: 50%; transform: translateX(-50%); padding: 0.4rem 1rem; font: 700 var(--t-sm)/1 var(--font); letter-spacing: 0.2em; color: var(--gold); }
+button.tb-stat:hover { background: rgba(255, 226, 180, 0.08); }
+.tb-idle { display: inline-flex; align-items: center; gap: 0.2rem; margin-left: 0.3rem; padding: 0.1rem 0.4rem 0.1rem 0.25rem; border: 0;
+  border-radius: 0.18rem 0.3rem 0.22rem 0.32rem; background: linear-gradient(#efe1c2, #cdb48a); color: #3a2614;
+  box-shadow: 0 0 0 1px rgba(20,10,4,0.8); font: 700 var(--t-xs)/1 var(--font); cursor: pointer; vertical-align: 1px; }
+.tb-idle:hover { filter: brightness(1.08); }
+.tb-idle.has { background: linear-gradient(#ffd27a, #d39537); color: #2a1606; }
+.tb-right { position: absolute; top: var(--edge); right: var(--edge); display: flex; align-items: center; gap: 0.35rem; padding: 0.2rem; }
+.tb-clock { display: flex; align-items: center; gap: 0.35rem; padding: 0 0.5rem 0 0.35rem; font: 700 var(--t-md)/1 var(--font); min-width: 4rem; color: var(--bone); }
+.tb-clock svg { color: var(--ochre-hi); }
+.tb-speed { display: flex; gap: 0.2rem; }
+.tb-speed .tg-btn { min-height: 1.7rem; padding: 0 0.45rem; font-weight: 700; }
+.tb-right > .tg-btn.icon-only { min-height: 1.7rem; min-width: 1.9rem; }
+.tb-paused { padding: 0.35rem 1.1rem 0.3rem; font-size: 1.15rem; line-height: 0; }
 `);
 
 export class TopBar {
@@ -53,7 +61,8 @@ export class TopBar {
   private readonly prayStat: HTMLElement;
   private readonly speedBtns: HTMLButtonElement[] = [];
   private readonly pauseBtn: HTMLButtonElement;
-  private readonly pausedBanner: HTMLDivElement;
+  /** Game-ui moves this into the top-centre column so it stacks with the narrator and hints. */
+  readonly pausedBanner: HTMLDivElement;
   private shownPaused = false;
 
   constructor(private readonly ctx: UiContext, parent: HTMLElement) {
@@ -125,7 +134,7 @@ export class TopBar {
     right.append(clock, speed, menu);
     parent.appendChild(right);
 
-    this.pausedBanner = h('div.tb-paused.tg-panel.passthrough', { text: 'PAUSED' });
+    this.pausedBanner = h('div.tb-paused.tg-panel.mat-hide.passthrough', { html: carve('Paused') });
     this.pausedBanner.hidden = true;
     parent.appendChild(this.pausedBanner);
   }
@@ -139,7 +148,10 @@ export class TopBar {
     setText(this.idleBtn.lastElementChild!, String(s.idleVillagers));
     setClass(this.idleBtn, 'has', s.idleVillagers > 0);
     setText(this.v.mana, fmtRate(w.tribes.player?.income ?? s.manaRate));
-    setText(this.v.manaL, s.manaRate === 0 && (w.tribes.player?.income ?? 0) > 0 ? 'nothing charging' : 'mana');
+    // Idle mana is only a problem when something could be filling: all full is good news.
+    const idle = s.manaRate === 0 && (w.tribes.player?.income ?? 0) > 0;
+    const allFull = SPELLS.every((d) => { const st = w.spellState('player', d.id); return !st.known || st.charges >= st.max; });
+    setText(this.v.manaL, !idle ? 'mana' : allFull ? 'spells full' : 'nothing charging');
     setText(this.v.pray, String(s.praying));
     setClass(this.prayStat, 'dim', s.praying === 0);
     setText(this.v.leader, s.leaderAlive ? 'Alive' : s.leaderRespawn > 0 ? fmtEta(s.leaderRespawn) : 'Lost');

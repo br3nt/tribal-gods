@@ -10,6 +10,9 @@
  *   uiScale  — 'auto' fits the HUD to the window, or a fixed factor.
  *   edgePan  — move the camera when the cursor touches a screen edge.
  *   hints    — first-minutes hint chips on/off (dismissals live in hints.ts).
+ *   leftClickOrders — with your people selected, a plain left click on the
+ *              ground (or a target) gives the same order as a right click.
+ *              On by default: trackpads make right-clicking awkward.
  *
  * applyUiScale() sets --ui-scale on <html>; every HUD size is in rem.
  */
@@ -21,10 +24,11 @@ export interface Settings {
   uiScale: 'auto' | number;
   edgePan: boolean;
   hints: boolean;
+  leftClickOrders: boolean;
 }
 
 const KEY = 'tg.settings.v1';
-const DEFAULTS: Settings = { quality: 'auto', uiScale: 'auto', edgePan: false, hints: true };
+const DEFAULTS: Settings = { quality: 'auto', uiScale: 'auto', edgePan: false, hints: true, leftClickOrders: true };
 
 function load(): Settings {
   try {

@@ -124,6 +124,27 @@ export function buildingAtScreen(view: View, buildings: Iterable<Building>, px: 
   return best;
 }
 
+/** How tall a standing stone stands (world units), for picking and the marker above it. */
+export const STONE_HEIGHT = 5;
+
+/** Index of the standing stone whose silhouette is under (px, py), nearest the camera; -1 if none. */
+export function monumentAtScreen(view: View, monuments: ReadonlyArray<{ x: number; z: number }>, px: number, py: number, vp = screenViewport()): number {
+  let best = -1;
+  let bestDepth = Infinity;
+  monuments.forEach((m, i) => {
+    const foot = probeScreen(view, m.x, m.z, 0, vp);
+    const top = probeScreen(view, m.x, m.z, STONE_HEIGHT, vp);
+    if (!foot || !top) return;
+    const halfW = Math.max(12, (foot.y - top.y) * 0.4);
+    if (px < foot.x - halfW || px > foot.x + halfW || py < top.y - 6 || py > foot.y + 8) return;
+    if (foot.depth < bestDepth) {
+      bestDepth = foot.depth;
+      best = i;
+    }
+  });
+  return best;
+}
+
 /**
  * Is this person drawn BEHIND this building from the camera's point of
  * view? Further from the camera than the building's centre AND standing

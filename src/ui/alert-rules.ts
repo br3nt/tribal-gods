@@ -25,9 +25,11 @@ export interface Snapshot {
   buildings: Map<number, { kind: BuildingKind; hp: number; tier: number; burning: boolean; done: boolean; x: number; z: number }>;
   objectives: Array<{ text: string; done: boolean }>;
   population: number;
+  /** Rituals under way at standing stones (optional: older snapshots have none). */
+  rituals?: Array<{ index: number; tribe: string; who: string; spell: SpellId; x: number; z: number }>;
 }
 
-export type AlertKind = 'attack' | 'leaderDown' | 'leaderBack' | 'learned' | 'gift' | 'grew' | 'burning' | 'built' | 'lost' | 'objective';
+export type AlertKind = 'attack' | 'leaderDown' | 'leaderBack' | 'learned' | 'gift' | 'grew' | 'burning' | 'built' | 'lost' | 'objective' | 'ritual' | 'ritualBroken';
 
 export interface Alert {
   kind: AlertKind;
@@ -113,12 +115,32 @@ export function deriveAlerts(a: Snapshot, b: Snapshot, mem: AlertMemory): Alert[
     }
   }
 
+  // --- Rituals at the stones ---
+  const ra = a.rituals ?? [];
+  const rb = b.rituals ?? [];
+  for (const r of rb) {
+    if (r.tribe === 'player' || ra.some((x) => x.index === r.index && x.tribe === r.tribe)) continue;
+    const name = spellDef(r.spell).name;
+    const who = r.who.charAt(0).toUpperCase() + r.who.slice(1);
+    out.push({ kind: 'ritual', text: `${who} ${r.who.startsWith('the ') ? 'are' : 'is'} communing at the ${name} stone`, tone: 'bad', x: r.x, z: r.z });
+  }
+  // (Your OWN ritual breaking is the sim's 'communeInterrupted' event — see ritualBrokenAlert —
+  // because a diff can't tell a broken ritual from a finished one at a stone whose spell you knew.)
+
   // --- Objectives ---
   b.objectives.forEach((o, i) => {
     if (o.done && a.objectives[i] && !a.objectives[i].done) out.push({ kind: 'objective', text: `Objective complete: ${o.text}`, tone: 'good' });
   });
 
   return out;
+}
+
+/** The alert for the sim's `communeInterrupted` event when it is the player's ritual (else null). */
+export function ritualBrokenAlert(e: { type: string; tribe?: string; x: number; z: number; magnitude?: number }, spell: SpellId | null): Alert | null {
+  if (e.type !== 'communeInterrupted' || e.tribe !== 'player') return null;
+  const pct = e.magnitude !== undefined ? ` at ${Math.round(e.magnitude * 100)}%` : '';
+  const where = spell ? ` at the ${spellDef(spell).name} stone` : '';
+  return { kind: 'ritualBroken', text: `Your leader's ritual${where} was broken${pct}`, tone: 'bad', x: e.x, z: e.z };
 }
 
 /** How many casts happened between snapshots (charges + gifts that went down). */

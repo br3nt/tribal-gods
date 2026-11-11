@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { AlertMemory, castsBetween, deriveAlerts, Snapshot } from '../src/ui/alert-rules';
+import { AlertMemory, castsBetween, deriveAlerts, ritualBrokenAlert, Snapshot } from '../src/ui/alert-rules';
 
 function snap(over: Partial<Snapshot> = {}): Snapshot {
   return {
@@ -42,6 +42,23 @@ describe('deriveAlerts', () => {
 });
 
 describe('castsBetween', () => {
+  it('a rival beginning a ritual at a stone is an alert you can jump to', () => {
+    const r = { index: 0, tribe: 'red', who: 'the Ashmark', spell: 'lightning' as const, x: 30, z: 40 };
+    const a = deriveAlerts(snap(), snap({ t: 1, rituals: [r] }), mem());
+    expect(a).toHaveLength(1);
+    expect(a[0]).toMatchObject({ kind: 'ritual', text: 'The Ashmark are communing at the Lightning stone', x: 30, z: 40 });
+    // Still going: no repeat.
+    expect(deriveAlerts(snap({ rituals: [r] }), snap({ t: 1, rituals: [r] }), mem())).toEqual([]);
+  });
+  it('your own ritual ending is never guessed from a diff (a finished ritual looks the same)', () => {
+    const r = { index: 1, tribe: 'player', who: 'your tribe', spell: 'swamp' as const, x: 3, z: 4 };
+    expect(deriveAlerts(snap({ rituals: [r] }), snap({ t: 1 }), mem())).toEqual([]);
+  });
+  it('the sim saying your ritual was interrupted is an alert, but not for a rival', () => {
+    const a = ritualBrokenAlert({ type: 'communeInterrupted', tribe: 'player', x: 3, z: 4, magnitude: 0.4 }, 'swamp');
+    expect(a).toMatchObject({ kind: 'ritualBroken', text: "Your leader's ritual at the Mire stone was broken at 40%", x: 3, z: 4 });
+    expect(ritualBrokenAlert({ type: 'communeInterrupted', tribe: 'red', x: 3, z: 4 }, 'swamp')).toBeNull();
+  });
   it('counts spent charges, not gifts received', () => {
     expect(castsBetween(snap(), snap({ casts: { blast: 1 } }))).toBe(1);
     expect(castsBetween(snap(), snap({ casts: { blast: 3 }, gifted: { blast: 1 } }))).toBe(0);

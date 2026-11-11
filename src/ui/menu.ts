@@ -30,50 +30,56 @@ import type { GameSettings } from '../sim/world-state';
 import { css, h } from './dom';
 import { helpHtml } from './help';
 import { icon, UiIconName } from './icons';
+import { carve } from './lettering';
 import { settingsPanel, SettingsHooks } from './settings-panel';
 
 css('menu', `
 .menu { position: fixed; inset: 0; z-index: 30; display: flex; color: var(--text); pointer-events: auto;
-  background: linear-gradient(90deg, rgba(8,11,18,0.88) 0%, rgba(8,11,18,0.6) 34%, rgba(8,11,18,0.05) 70%); }
-.menu.sub { background: rgba(8,11,18,0.62); align-items: center; justify-content: center; }
-.menu-title { display: flex; flex-direction: column; justify-content: center; gap: 2.2rem; padding: 0 0 0 clamp(1.5rem, 7vw, 7rem); max-width: 30rem; }
-.menu-logo h1 { margin: 0; font: 600 clamp(3rem, 7vw, 5.25rem)/0.95 var(--font-display); letter-spacing: 0.01em; color: #fff4dc;
-  text-shadow: 0 0.25rem 2rem rgba(0,0,0,0.5); }
-.menu-logo p { margin: 0.9rem 0 0; color: var(--text-2); font-size: var(--t-lg); max-width: 24rem; line-height: 1.45; }
-.menu-logo .rule { width: 3.5rem; height: 2px; margin-top: 1.1rem; background: linear-gradient(90deg, var(--gold), transparent); }
-.menu-nav { display: flex; flex-direction: column; gap: 0.4rem; width: 17rem; }
-.menu-nav .tg-btn:not(.primary) { background: rgba(255,255,255,0.05); }
-.menu-nav .tg-btn { justify-content: flex-start; min-height: 2.9rem; padding: 0 1rem; font-size: var(--t-md); font-weight: 600; backdrop-filter: var(--blur); }
-.menu-nav .tg-btn svg { color: var(--gold); }
-.menu-nav .tg-btn.primary svg { color: inherit; }
-.menu-nav .tg-btn .soon { margin-left: auto; font-size: var(--t-xs); color: var(--text-3); font-weight: 500; }
-.menu-nav .tg-btn.primary .soon { color: inherit; opacity: 0.75; }
-.menu-foot { font-size: var(--t-xs); color: var(--text-3); }
-.menu-card { width: min(60rem, calc(100vw - 2rem)); max-height: calc(100vh - 3rem); display: flex; flex-direction: column; }
-.menu-card > header { display: flex; align-items: center; gap: 0.75rem; padding: 1rem 1.25rem; border-bottom: 1px solid var(--rim); }
-.menu-card > header h2 { margin: 0; font: 600 var(--t-xl)/1 var(--font-display); }
+  background: linear-gradient(90deg, rgba(22,13,7,0.9) 0%, rgba(22,13,7,0.62) 34%, rgba(22,13,7,0.04) 70%); }
+.menu.sub { background: radial-gradient(ellipse at center, rgba(22,13,7,0.45), rgba(16,9,4,0.8)); align-items: center; justify-content: center; }
+.menu-title { display: flex; flex-direction: column; justify-content: center; gap: 1.8rem; padding: 0 0 0 clamp(1.5rem, 7vw, 7rem); max-width: 32rem; }
+/* The name, cut deep into a board and painted ochre. */
+.menu-logo h1 { margin: 0; font-size: clamp(3rem, 6.4vw, 5rem); line-height: 1; --carve-paint: var(--ochre-hi); --carve-cut: rgba(8,4,1,0.95); filter: drop-shadow(0 0.3rem 1.2rem rgba(0,0,0,0.6)); }
+.menu-logo h1 .carve + .carve { margin-top: 0.12em; }
+.menu-logo h1 .carve { display: flex; }
+.menu-logo p { margin: 1rem 0 0; color: var(--bone-2); font: italic 600 var(--t-lg)/1.45 var(--font); max-width: 24rem; text-shadow: 0 1px 3px rgba(0,0,0,0.9); }
+.menu-logo .rule { width: 14rem; margin-top: 0.9rem; }
+.menu-nav { display: flex; flex-direction: column; gap: 0.45rem; width: 17rem; }
+.menu-nav .tg-btn { justify-content: flex-start; min-height: 2.8rem; padding: 0 1rem; font-size: var(--t-md); font-weight: 700; }
+.menu-nav .tg-btn svg { color: var(--ochre-hi); }
+.menu-nav .tg-btn.primary svg { color: #3a1f06; filter: none; }
+.menu-nav .tg-btn .soon { margin-left: auto; font-size: var(--t-xs); color: var(--bone-3); font-weight: 600; }
+.menu-nav .tg-btn.primary .soon { color: #3a1f06; opacity: 0.85; }
+.menu-foot { font-size: var(--t-xs); color: var(--bone-3); font-weight: 600; text-shadow: 0 1px 2px #000; }
+.menu-card { width: min(60rem, calc(100vw - 2rem)); max-height: calc(100vh - 3rem); display: flex; flex-direction: column; box-sizing: border-box; }
+.menu-card > header { display: flex; align-items: center; gap: 0.75rem; padding: 0.7rem 1.1rem 0.6rem; border-bottom: 2px solid rgba(70,40,15,0.3); }
+.menu-card > header h2 { margin: 0; font-size: 1.45rem; line-height: 1; }
 .menu-card > header .grow { flex: 1; }
-.menu-card > .body { padding: 1.25rem; overflow-y: auto; }
-.menu-card > footer { display: flex; justify-content: flex-end; gap: 0.6rem; padding: 0.9rem 1.25rem; border-top: 1px solid var(--rim); }
+.menu-card > header .cloth { width: 6rem; }
+.menu-card > .body { padding: 1.1rem 1.25rem; overflow-y: auto; }
+.menu-card > footer { display: flex; justify-content: flex-end; gap: 0.6rem; padding: 0.8rem 1.25rem; border-top: 2px solid rgba(70,40,15,0.3); }
 .menu-card > footer .tg-btn { min-height: 2.6rem; padding: 0 1.4rem; font-size: var(--t-md); }
-.pause-card { width: min(22rem, calc(100vw - 2rem)); padding: 1.5rem; display: flex; flex-direction: column; gap: 0.45rem; }
-.pause-card h2 { margin: 0 0 0.75rem; text-align: center; font: 600 var(--t-xl)/1 var(--font-display); }
-.pause-card .tg-btn { min-height: 2.75rem; justify-content: flex-start; padding: 0 1rem; font-size: var(--t-md); }
-.sk h3 { margin: 0 0 0.6rem; font-size: var(--t-xs); text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-3); font-weight: 600; }
-.sk section + section { margin-top: 1.4rem; }
+.pause-card { width: min(22rem, calc(100vw - 2rem)); padding: 1.2rem 1.4rem 1.4rem; display: flex; flex-direction: column; gap: 0.5rem; box-sizing: border-box; }
+.pause-card h2 { margin: 0 0 0.6rem; text-align: center; font-size: 1.6rem; line-height: 1; }
+.pause-card .tg-btn { min-height: 2.7rem; justify-content: flex-start; padding: 0 1rem; font-size: var(--t-md); }
+.sk h3 { margin: 0 0 0.6rem; font-size: var(--t-xs); text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-3); font-weight: 800; }
+.sk section + section { margin-top: 1.3rem; }
 .sk-civs { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: 0.6rem; }
-.sk-civ { text-align: left; padding: 1rem; border-radius: var(--r3); border: 1px solid var(--rim); background: var(--ink-2); color: var(--text); cursor: pointer; font: inherit;
-  display: grid; grid-template-columns: auto 1fr; gap: 0.25rem 0.8rem; transition: border-color var(--fast), background var(--fast); }
-.sk-civ:hover { border-color: var(--rim-strong); background: var(--ink-3); }
-.sk-civ.on { border-color: var(--gold); background: var(--gold-soft); box-shadow: 0 0 0 1px var(--gold) inset; }
-.sk-civ .crest { grid-row: span 3; width: 3rem; height: 3rem; border-radius: 50%; display: grid; place-items: center; background: rgba(0,0,0,0.3); color: var(--ac); box-shadow: inset 0 0 0 2px var(--ac); }
-.sk-civ b { font-size: var(--t-lg); }
-.sk-civ .lead { font-size: var(--t-xs); color: var(--text-3); text-transform: uppercase; letter-spacing: 0.08em; }
+/* Each people: a token of their own, crested in their colour. */
+.sk-civ { text-align: left; padding: 0.9rem; border: 0; cursor: pointer; font: inherit; color: var(--text);
+  border-radius: 0.3rem 0.5rem 0.35rem 0.55rem; background: rgba(70,40,15,0.08); box-shadow: inset 0 0 0 1.5px rgba(70,40,15,0.3);
+  display: grid; grid-template-columns: auto 1fr; gap: 0.2rem 0.8rem; transition: background var(--fast), box-shadow var(--fast); }
+.sk-civ:hover { background: rgba(70,40,15,0.14); }
+.sk-civ.on { background: rgba(211,149,55,0.2); box-shadow: inset 0 0 0 2.5px #9a5a12, 0 0 0 1px rgba(255,240,210,0.4); }
+.sk-civ .crest { grid-row: span 3; width: 3rem; height: 3rem; border-radius: 50%; display: grid; place-items: center; color: #2a1708;
+  background: radial-gradient(circle at 45% 35%, rgba(255,236,200,0.35), rgba(0,0,0,0.1) 70%), var(--tex-wood-light) 0 0 / 6rem; box-shadow: 0 0 0 0.2rem var(--ac), 0 0 0 0.3rem rgba(36,22,12,0.85); }
+.sk-civ b { font: 700 var(--t-lg)/1.2 var(--font-display); }
+.sk-civ .lead { font-size: var(--t-xs); color: var(--text-3); text-transform: uppercase; letter-spacing: 0.08em; font-weight: 700; }
 .sk-civ p { margin: 0.2rem 0 0; font-size: var(--t-sm); color: var(--text-2); line-height: 1.4; }
 .sk-opts { display: grid; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); gap: 1.4rem; }
 .sk .seg-desc { margin-top: 0.45rem; font-size: var(--t-sm); color: var(--text-2); }
 .sk .rivals { display: inline-flex; gap: 0.2rem; margin-left: 0.4rem; }
-.sk .rivals i { width: 0.55rem; height: 0.55rem; border-radius: 50%; }
+.sk .rivals i { width: 0.6rem; height: 0.6rem; border-radius: 50%; box-shadow: 0 0 0 1px rgba(0,0,0,0.6); }
 `);
 
 type Screen = 'title' | 'skirmish' | 'settings' | 'help' | 'pause';
@@ -200,7 +206,7 @@ export class Menu {
       this.navBtn('How to play', 'info', () => this.show('help')),
     );
     return h('div.menu-title', {},
-      h('div.menu-logo', { html: `<h1>Tribal Gods</h1><div class="rule"></div><p>A small round world, a tribe that grows, and a leader who speaks with the sky.</p>` }),
+      h('div.menu-logo', { html: `<h1>${carve('Tribal')}${carve('Gods')}</h1><div class="rule cloth"></div><p>A small round world, a tribe that grows, and a leader who speaks with the sky.</p>` }),
       nav,
       h('div.menu-foot', { text: 'F1 how to play · Esc back' }),
     );
@@ -209,8 +215,8 @@ export class Menu {
   private card(title: string, body: HTMLElement, onBack: () => void, footer: HTMLElement[] = []): HTMLElement {
     const back = h('button.tg-btn.icon-only', { type: 'button', 'aria-label': 'Back', html: `<span style="display:inline-flex;transform:scaleX(-1)">${icon('arrowRight', 18)}</span>` });
     back.addEventListener('click', onBack);
-    const head = h('header', {}, back, h('h2', { text: title }), h('span.grow'));
-    const card = h('div.menu-card.tg-panel', {}, head, h('div.body', {}, body));
+    const head = h('header', {}, back, h('h2', { html: carve(title) }), h('span.grow'));
+    const card = h('div.menu-card.tg-panel.mat-hide', {}, head, h('div.body', {}, body));
     if (footer.length) card.appendChild(h('footer', {}, ...footer));
     return card;
   }
@@ -292,7 +298,7 @@ export class Menu {
 
   private pauseScreen(): HTMLElement {
     this.backTo = 'pause';
-    const card = h('div.pause-card.tg-panel', {}, h('h2', { text: 'Paused' }));
+    const card = h('div.pause-card.tg-panel.mat-hide', {}, h('h2', { html: carve('Paused') }));
     card.append(
       this.navBtn('Resume', 'play', () => this.onResume?.(), true),
       this.navBtn('Settings', 'settings', () => this.show('settings')),

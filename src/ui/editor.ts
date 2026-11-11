@@ -42,12 +42,12 @@ const TRIBE_NAMES: Record<TribeId, string> = { player: 'Your tribe', red: 'Red r
 
 css('editor', `
 .ed-bar { position: fixed; top: var(--edge); left: 50%; transform: translateX(-50%); display: none; flex-wrap: wrap; gap: 0.3rem;
-  max-width: 94vw; z-index: 15; padding: 0.4rem; align-items: center; font: var(--t-sm) var(--font); }
+  max-width: 94vw; z-index: 15; padding: 0.3rem; align-items: center; font: var(--t-sm) var(--font); }
 .ed-bar .tg-btn { min-height: 1.9rem; padding: 0 0.6rem; }
-.ed-bar .sep { width: 1px; align-self: stretch; margin: 0.2rem 0.2rem; background: var(--rim); }
-.ed-bar input { min-height: 1.9rem; padding: 0 0.55rem; border-radius: var(--r2); border: 1px solid var(--rim); background: var(--ink-2); color: var(--text); font: var(--t-sm) var(--font); }
-.ed-status { color: var(--text-3); margin-left: 0.3rem; }
-.ed-bar select { min-height: 1.9rem; padding: 0 0.4rem; border-radius: var(--r2); border: 1px solid var(--rim); background: var(--ink-2); color: var(--text); font: var(--t-sm) var(--font); }
+.ed-bar .sep { width: 3px; align-self: stretch; margin: 0.15rem 0.2rem; background: repeating-linear-gradient(-35deg, #e1c088 0 2px, #8a6436 2px 4px); border-radius: 2px; }
+.ed-bar input, .ed-bar select { min-height: 1.9rem; padding: 0 0.5rem; border: 0; border-radius: 0.2rem 0.35rem; background: linear-gradient(#f3e4c4, #e0c99c); color: #24160c;
+  box-shadow: inset 0 1px 3px rgba(60,32,10,0.45), 0 0 0 1px #1a0e06; font: 600 var(--t-sm) var(--font); }
+.ed-status { color: var(--bone-2); margin-left: 0.3rem; font-weight: 600; }
 `);
 
 export class Editor {

@@ -19,31 +19,39 @@ import { css, escapeHtml, h, setClass } from './dom';
 import { fmtSeconds } from './format';
 import { labelFor } from './hotkeys';
 import { buildingIcon, icon } from './icons';
+import { carve } from './lettering';
 import { activeBuilding } from './tools';
 import { tip, toast } from './tooltip';
 
 css('build-menu', `
-.bm { padding: 0.5rem 0.625rem 0.625rem; }
-.bm .tg-panel-head { margin: 0 0 0.375rem 0.125rem; }
-.bm-grid { display: grid; grid-template-columns: repeat(4, 3.25rem); gap: 0.3125rem; }
-.bm-tile { position: relative; width: 3.25rem; height: 3.25rem; padding: 0 0 0.75rem; border-radius: var(--r2); cursor: pointer;
-  border: 1px solid var(--rim); background: radial-gradient(120% 90% at 50% 0%, rgba(226,165,100,0.12), rgba(0,0,0,0.25));
-  color: var(--text); display: grid; place-items: center; transition: border-color var(--fast) var(--ease), transform var(--fast) var(--ease); }
-.bm-tile:hover { border-color: var(--rim-strong); transform: translateY(-1px); }
-.bm-tile .kbd { position: absolute; top: 0.1875rem; left: 0.1875rem; height: 0.9rem; min-width: 0.9rem; font-size: 0.5625rem; }
-.bm-cost { position: absolute; bottom: 0.1875rem; left: 0; right: 0; display: flex; align-items: center; justify-content: center; gap: 0.125rem;
-  font: 700 0.625rem/1 var(--font); color: var(--wood); }
-.bm-tile.poor .bm-cost { color: var(--bad); }
+.bm { padding: 0.3rem 0.45rem 0.45rem; }
+.bm .tg-panel-head { margin: 0 0 0.3rem 0.1rem; }
+.bm-grid { display: grid; grid-template-columns: repeat(4, 3.1rem); gap: 0.3rem; }
+/* Each building is a carved wooden token: the plan burnt into its face, the cost on a bone tag. */
+.bm-tile { position: relative; width: 3.1rem; height: 3.1rem; padding: 0 0 0.7rem; cursor: pointer; border: 0;
+  border-radius: 0.3rem 0.45rem 0.35rem 0.5rem / 0.45rem 0.3rem 0.5rem 0.35rem;
+  background: linear-gradient(180deg, rgba(255,226,180,0.22), rgba(255,226,180,0) 45%, rgba(0,0,0,0.25)), var(--tex-wood-light) 0 0 / 8rem;
+  box-shadow: inset 0 1px 0 rgba(255,236,200,0.5), inset 0 -2px 0 rgba(0,0,0,0.35), 0 0 0 1px #1d1008, 0 2px 0 1px #1d1008;
+  color: #2a1708; display: grid; place-items: center; transition: transform var(--fast) var(--ease), filter var(--fast); }
+.bm-tile > svg { filter: drop-shadow(0 1px 0 rgba(255, 230, 190, 0.45)); }
+.bm-tile:hover { transform: translateY(-1px); filter: brightness(1.1); }
+.bm-tile:active { transform: translateY(1px); }
+.bm-tile .kbd { position: absolute; top: 0.15rem; left: 0.15rem; height: 0.85rem; min-width: 0.85rem; font-size: 0.5625rem; padding: 0 0.15rem; }
+.bm-cost { position: absolute; bottom: 0.14rem; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 0.1rem;
+  padding: 0.08rem 0.25rem 0.06rem 0.15rem; border-radius: 0.15rem 0.25rem; background: #2a190d; color: #f3c27a;
+  font: 700 0.625rem/1 var(--font); box-shadow: 0 0 0 1px rgba(0,0,0,0.6); }
+.bm-tile.poor .bm-cost { background: #6a1b0e; color: #ffd8cc; }
 .bm-tile.poor > svg { opacity: 0.6; }
-.bm-tile.locked { background: rgba(0,0,0,0.28); border-color: rgba(255,255,255,0.06); }
-.bm-tile.locked > svg { opacity: 0.25; }
-.bm-tile.locked .bm-cost { color: var(--text-3); }
-.bm-tile .bm-lock { position: absolute; top: 0.2rem; right: 0.2rem; color: var(--text-3); display: none; }
+/* Locked: a rough, uncut blank, the plan only scratched in. */
+.bm-tile.locked { background: linear-gradient(rgba(20,12,6,0.55), rgba(20,12,6,0.65)), var(--tex-wood) 0 0 / 8rem; color: rgba(244,232,207,0.55); }
+.bm-tile.locked > svg { opacity: 0.4; filter: none; }
+.bm-tile.locked .bm-cost { background: #20140b; color: var(--bone-3); }
+.bm-tile .bm-lock { position: absolute; top: 0.18rem; right: 0.18rem; color: var(--bone-2); display: none; }
 .bm-tile.locked .bm-lock { display: block; }
-.bm-tile.armed { border-color: var(--gold); box-shadow: 0 0 0 2px rgba(244,198,106,0.45), 0 0 1rem rgba(244,198,106,0.35); transform: translateY(-2px); }
+.bm-tile.armed { transform: translateY(-2px); box-shadow: inset 0 1px 0 rgba(255,236,200,0.5), 0 0 0 1px #1d1008, 0 0 0 3px var(--ochre-hi), 0 0 0.9rem rgba(242,197,106,0.6); }
 .bm-tile.deny { animation: sb-deny 320ms var(--ease); }
 .tg-tip .req { list-style: none; padding: 0; margin: var(--s2) 0 0; font-size: var(--t-xs); }
-.tg-tip .req li { display: flex; align-items: center; gap: 0.375rem; }
+.tg-tip .req li { display: flex; align-items: center; gap: 0.375rem; font-weight: 700; }
 .tg-tip .req li.ok { color: var(--good); }
 .tg-tip .req li.no { color: var(--bad); }
 `);
@@ -59,7 +67,7 @@ export class BuildMenu {
 
   constructor(private readonly ctx: UiContext) {
     this.el = h('div.bm.tg-panel');
-    this.el.appendChild(h('div.tg-panel-head', { html: `${icon('hammer', 14)}<span>Build</span>` }));
+    this.el.appendChild(h('div.tg-panel-head', { html: `${carve('Build')}<span class="cloth" style="flex:1"></span>` }));
     const grid = h('div.bm-grid');
     for (const kind of BUILD_ORDER) {
       const def = BUILDINGS[kind];

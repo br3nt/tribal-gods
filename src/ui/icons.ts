@@ -1,49 +1,33 @@
 /**
- * Tribal Gods icon set — original outline icons on a 24×24 grid.
+ * Tribal Gods icon set — original, HAND-CUT icons on a 24×24 grid.
  *
- * Style: stroke="currentColor", 1.75 wide, round caps/joins, no fill on the
- * root. Each icon may carry one duotone accent (`fill="currentColor"` at
- * .28 opacity, no stroke) for its main mass. Everything tints from CSS
- * `color`. Strings only — safe to import in Node (no DOM at import time).
+ * They are meant to look carved and painted by the same people who made
+ * the panels: bold strokes (2.2) with round ends, the main mass filled with
+ * pigment (`--ic-fill`, else the stroke colour, at .45), and a darker CUT
+ * drawn beneath each stroke, nudged down-right, so every mark reads as a
+ * groove with a lit edge on hide, timber or stone alike.
+ *
+ * And no ruler: every point of every path is moved by a small seeded
+ * jitter (roughen(), below) when the set is built, so lines wander like
+ * a knife's would — the same way on every load, so nothing shimmers.
+ *
+ * Everything tints from CSS `color` (and `--ic-fill`, `--ic-cut`). Strings
+ * only — safe to import in Node (no DOM at import time).
  */
 import type { BuildingKind, SpellId, UnitKind } from '../sim/catalog';
 
 /** Duotone accent fill for the main mass of an icon. */
-const A = (d: string): string => `<path fill="currentColor" fill-opacity=".28" stroke="none" d="${d}"/>`;
+const A = (d: string): string => `<path fill="var(--ic-fill, currentColor)" fill-opacity=".45" stroke="none" d="${d}"/>`;
 /** Stroked path. */
 const P = (d: string): string => `<path d="${d}"/>`;
 /** Stroked circle. */
 const C = (cx: number, cy: number, r: number): string => `<circle cx="${cx}" cy="${cy}" r="${r}"/>`;
 /** Accent-filled circle. */
 const AC = (cx: number, cy: number, r: number): string =>
-  `<circle cx="${cx}" cy="${cy}" r="${r}" fill="currentColor" fill-opacity=".28" stroke="none"/>`;
+  `<circle cx="${cx}" cy="${cy}" r="${r}" fill="var(--ic-fill, currentColor)" fill-opacity=".45" stroke="none"/>`;
 /** A round dot (zero-length stroke). */
 const DOT = (x: number, y: number): string => `<path d="M${x} ${y}h.01"/>`;
 
-const r2 = (n: number): string => String(Math.round(n * 100) / 100);
-
-/** Cog outline with `teeth` square-ish teeth. */
-function gearPath(cx: number, cy: number, outer: number, inner: number, teeth: number): string {
-  const step = (Math.PI * 2) / teeth;
-  const half = step / 4.4;
-  let d = '';
-  for (let i = 0; i < teeth; i++) {
-    const a = i * step - Math.PI / 2;
-    const pts: Array<[number, number]> = [
-      [a - step / 2 + half * 0.6, inner],
-      [a - half, inner],
-      [a - half * 0.75, outer],
-      [a + half * 0.75, outer],
-      [a + half, inner],
-    ];
-    for (const [ang, rad] of pts) {
-      const x = cx + Math.cos(ang) * rad;
-      const y = cy + Math.sin(ang) * rad;
-      d += `${d ? 'L' : 'M'}${r2(x)} ${r2(y)}`;
-    }
-  }
-  return `${d}Z`;
-}
 
 // ---------------------------------------------------------------------------
 // Figure parts (units)
@@ -283,36 +267,40 @@ export type UiIconName =
   | 'plus' | 'minus' | 'home' | 'target' | 'info' | 'trophy' | 'skull' | 'book' | 'hammer'
   | 'eye' | 'heart' | 'arrowRight';
 
+/** A bowl with a live ember: mana is being poured into this spell. */
 const chargingBase =
-  A('M4 13h16c0 4.2-3.6 7.5-8 7.5S4 17.2 4 13z') +
-  P('M4 13h16c0 4.2-3.6 7.5-8 7.5S4 17.2 4 13z') +
-  P('M12 2.5c-1.5 1.25-1.5 2.25 0 3.5s1.5 2.25 0 3.5') +
-  P('M9.75 8.25L12 10.5l2.25-2.25');
+  A('M4 13.5h16c0 4-3.6 7-8 7s-8-3-8-7z') +
+  P('M4 13.5h16c0 4-3.6 7-8 7s-8-3-8-7z') +
+  A('M12 3c2.5 2.2 3.5 4.2 3.5 6a3.5 3.5 0 0 1-7 0c0-1.2.5-2.2 1.3-3 .2 1 .7 1.5 1.3 1.7C10.8 6.3 11 4.6 12 3z') +
+  P('M12 3c2.5 2.2 3.5 4.2 3.5 6a3.5 3.5 0 0 1-7 0c0-1.2.5-2.2 1.3-3 .2 1 .7 1.5 1.3 1.7C10.8 6.3 11 4.6 12 3z');
+
+/** The same bowl, snuffed: a curl of smoke, no flame. */
+const chargingOffBase =
+  A('M4 13.5h16c0 4-3.6 7-8 7s-8-3-8-7z') +
+  P('M4 13.5h16c0 4-3.6 7-8 7s-8-3-8-7z') +
+  P('M12 11c-1.5-1.2-1.5-2.3 0-3.5s1.5-2.3 0-3.5M15.5 11c-1-.8-1-1.5 0-2.3');
 
 const fireD = 'M12 2.5c.5 3.5 6 5.5 6 11a6 6 0 0 1-12 0c0-2.75 1.5-4.5 3-5.5 0 2 .75 3 2 3.5-.5-3 0-6 1-9z';
 
 export const UI_ICONS: Record<UiIconName, string> = {
   // Two stacked logs, side view.
+  // A pile of logs, end-on: two below, one on top, growth rings showing.
   wood:
-    A('M5 4.5h12v5H5zM7 14.5h12v5H7z') +
-    P('M17 4.5H5a2.5 2.5 0 0 0 0 5h12') +
-    C(17, 7, 2.5) +
-    P('M19 14.5H7a2.5 2.5 0 0 0 0 5h12') +
-    C(19, 17, 2.5) +
-    DOT(17, 7) +
-    DOT(19, 17),
+    AC(7.5, 16.5, 4.25) + AC(16.5, 16.5, 4.25) + AC(12, 8.5, 4.25) +
+    C(7.5, 16.5, 4.25) + C(16.5, 16.5, 4.25) + C(12, 8.5, 4.25) +
+    C(7.5, 16.5, 1.4) + C(16.5, 16.5, 1.4) + C(12, 8.5, 1.4),
   // Spirit droplet with an inner glint.
+  // A spirit wisp: a flame that curls back on itself.
   mana:
-    A('M12 2.5c3.5 4 6 7.25 6 11a6 6 0 0 1-12 0c0-3.75 2.5-7 6-11z') +
-    P('M12 2.5c3.5 4 6 7.25 6 11a6 6 0 0 1-12 0c0-3.75 2.5-7 6-11z') +
-    P('M9.25 14a2.75 2.75 0 0 0 2.75 2.75'),
+    A('M12 2.5c4 3.5 6.5 7 6.5 11a6.5 6.5 0 0 1-13 0c0-2.6 1.2-4.6 2.8-6 .2 2 1 3.3 2.4 3.8C9.8 8 10.3 5.2 12 2.5z') +
+    P('M12 2.5c4 3.5 6.5 7 6.5 11a6.5 6.5 0 0 1-13 0c0-2.6 1.2-4.6 2.8-6 .2 2 1 3.3 2.4 3.8C9.8 8 10.3 5.2 12 2.5z') +
+    P('M12 20c-1.8 0-3-1.3-3-2.9 0-1.7 1.6-2.4 2.4-4 1.5 1.3 3.6 2.6 3.6 4.4 0 1.5-1.2 2.5-3 2.5z'),
   // Two heads and shoulders.
+  // Three of the tribe: one tall, two small at their side.
   population:
-    C(16, 7.5, 2.5) +
-    P('M17 13.25c2.5.4 4.5 2.6 4.5 5.25') +
-    A('M2.5 20a6.5 6.5 0 0 1 13 0z') +
-    C(9, 8, 3) +
-    P('M2.5 20a6.5 6.5 0 0 1 13 0z'),
+    C(12, 5, 2.25) + A('M9 8.5h6l1 7H8z') + P('M9 8.5h6l1 7H8zM10 15.5v5M14 15.5v5') +
+    C(4.75, 9.5, 1.75) + P('M3 12.5h3.5l.75 5h-5zM3.75 17.5v3M6.25 17.5v3') +
+    C(19.25, 9.5, 1.75) + P('M17.5 12.5H21l.75 5h-5zM18.25 17.5v3M20.75 17.5v3'),
   // House with a person inside.
   housed:
     A('M2.5 11L12 3l9.5 8z') +
@@ -340,7 +328,10 @@ export const UI_ICONS: Record<UiIconName, string> = {
     C(12, 9.75, 3) +
     P('M8.5 5.5V2.5l2 1.75L12 2l1.5 2.25 2-1.75v3z') +
     P('M9.5 20.5h5'),
-  clock: C(12, 12, 9) + P('M12 7v5l3.5 2.5'),
+  // Time: the sun over the horizon, its rays marking the day.
+  clock:
+    A('M5 16.5a7 7 0 0 1 14 0z') + P('M5 16.5a7 7 0 0 1 14 0') + P('M2.5 16.5h19M5 20h14') +
+    P('M12 3.5v3M4.5 7l2 2M19.5 7l-2 2M12 16.5l3-5'),
   // Arrow coming down onto a ground marker.
   move:
     A('M5 18.5a7 2.5 0 1 0 14 0a7 2.5 0 1 0-14 0z') +
@@ -397,17 +388,21 @@ export const UI_ICONS: Record<UiIconName, string> = {
     P('M10.5 14.5l7-11') +
     A('M7 10.25l3.5-2 1.5 4.25-3 1.5z') +
     P('M7 10.25l3.5-2 1.5 4.25-3 1.5z'),
+  // Two standing stones: the world holds still.
   pause:
-    A('M6.5 4.5h3.5v15H6.5zM14 4.5h3.5v15H14z') +
-    P('M6.5 4.5h3.5v15H6.5zM14 4.5h3.5v15H14z'),
-  play: A('M7 4.5v15L19 12z') + P('M7 4.5v15L19 12z'),
-  speed: P('M4.5 6l6 6-6 6M12.5 6l6 6-6 6'),
-  menu: P('M4 6.5h16M4 12h16M4 17.5h16'),
+    A('M6.5 20.5V6l2-2 2 1.5v15zM13.5 20.5V5.5l2.25-1.5 2 2v14.5z') +
+    P('M6.5 20.5V6l2-2 2 1.5v15zM13.5 20.5V5.5l2.25-1.5 2 2v14.5zM3.5 20.5h17'),
+  // A knapped flint point: go.
+  play: A('M6 4l13 8-13 8 2.5-8z') + P('M6 4l13 8-13 8 2.5-8z') + P('M8.5 12l4-1.5M8.5 12l4 1.5'),
+  // Two flint points flying.
+  speed: A('M3.5 6l7.5 6-7.5 6 1.5-6zM11.5 6l7.5 6-7.5 6 1.5-6z') + P('M3.5 6l7.5 6-7.5 6 1.5-6zM11.5 6l7.5 6-7.5 6 1.5-6z'),
+  // Three sticks lashed together at one end.
+  menu: P('M4 6.5h16M4 12h16M4 17.5h16') + P('M6 4.5l2.5 15M8.5 4.5L6 19.5'),
+  // Bound with cord: a bundle tied shut.
   lock:
-    A('M5 11h14v9.5H5z') +
-    P('M5 11h14v9.5H5z') +
-    P('M8 11V7.5a4 4 0 0 1 8 0V11') +
-    P('M12 14.5v2.5'),
+    A('M6 9.5h12v11H6z') + P('M6 9.5h12v11H6z') +
+    P('M6 13l12 4M6 17l12-4') +
+    P('M10 9.5c-1.5-2.5-1-5.5 2-6 3 .5 3.5 3.5 2 6'),
   // A wrapped bundle with a bow.
   gift:
     A('M4.5 10.5h15v10h-15z') +
@@ -415,7 +410,7 @@ export const UI_ICONS: Record<UiIconName, string> = {
     P('M12 7C11 4 8 3 7.25 4.5S9 7 12 7c3 0 5.5-1 4.75-2.5S13 4 12 7z'),
   // Spirit stream flowing into a vessel.
   charging: chargingBase,
-  chargingOff: chargingBase + P('M3.5 3.5l17 17'),
+  chargingOff: chargingOffBase,
   close: P('M6 6l12 12M18 6L6 18'),
   check: P('M4.5 12.5l5 5 10-11'),
   alert:
@@ -440,7 +435,10 @@ export const UI_ICONS: Record<UiIconName, string> = {
     P('M12 18.5V2.5') +
     P('M4 18.5a8 3 0 1 0 16 0a8 3 0 1 0-16 0z') +
     P('M9 18.5a3 1 0 1 0 6 0a3 1 0 1 0-6 0z'),
-  settings: A(gearPath(12, 12, 9.25, 6.75, 8)) + P(gearPath(12, 12, 9.25, 6.75, 8)) + C(12, 12, 2.75),
+  // A spindle whorl: the tool that sets the thread.
+  settings:
+    AC(12, 12, 8.75) + C(12, 12, 8.75) + C(12, 12, 2.25) +
+    P('M12 3.25v3.5M12 17.25v3.5M3.25 12h3.5M17.25 12h3.5M5.8 5.8l2.5 2.5M15.7 15.7l2.5 2.5M5.8 18.2l2.5-2.5M15.7 8.3l2.5-2.5'),
   plus: P('M12 5v14M5 12h14'),
   minus: P('M5 12h14'),
   // Hearth: a ring of stones round a small fire.
@@ -454,25 +452,26 @@ export const UI_ICONS: Record<UiIconName, string> = {
     AC(12, 12, 2.5) +
     P('M12 2.5v4M12 17.5v4M2.5 12h4M17.5 12h4'),
   info: C(12, 12, 9) + P('M12 11v5.5') + DOT(12, 7.75),
+  // A victor's crown of antlers.
   trophy:
-    A('M7 3.5h10V9a5 5 0 0 1-10 0z') +
-    P('M7 3.5h10V9a5 5 0 0 1-10 0z') +
-    P('M7 5.5H4c0 3.25 1.25 5 3.5 5.25M17 5.5h3c0 3.25-1.25 5-3.5 5.25') +
-    P('M12 14v3.5M8.5 20.5h7l-1-3h-5z'),
+    A('M6 14.5h12v3.5H6z') + P('M6 14.5h12v3.5H6z') +
+    P('M8 14.5C6 11 5 8 5.5 4M5.5 8.5L3 7M6.5 11.5L4 11') +
+    P('M16 14.5c2-3.5 3-6.5 2.5-10.5M18.5 8.5L21 7M17.5 11.5L20 11') +
+    P('M12 14.5V9M12 9l-1.5-2M12 9l1.5-2') + P('M9 21h6'),
   skull:
     A('M12 3a7.5 7.5 0 0 0-7.5 7.5c0 2.75 1.5 4.5 3 5.5v4.5h9V16c1.5-1 3-2.75 3-5.5A7.5 7.5 0 0 0 12 3z') +
     P('M12 3a7.5 7.5 0 0 0-7.5 7.5c0 2.75 1.5 4.5 3 5.5v4.5h9V16c1.5-1 3-2.75 3-5.5A7.5 7.5 0 0 0 12 3z') +
     C(9, 11, 1.5) +
     C(15, 11, 1.5) +
     P('M10.5 17.5v3M13.5 17.5v3'),
+  // The spell book: a stone tablet cut with runes.
   book:
-    A('M12 6.5c-2-1.5-5-2-8.5-1.5v13.5c3.5-.5 6.5 0 8.5 1.5z') +
-    P('M12 6.5c-2-1.5-5-2-8.5-1.5v13.5c3.5-.5 6.5 0 8.5 1.5 2-1.5 5-2 8.5-1.5V5c-3.5-.5-6.5 0-8.5 1.5z') +
-    P('M12 6.5V20'),
+    A('M5.5 3.5h13l1 17h-15z') + P('M5.5 3.5h13l1 17h-15z') +
+    P('M8.5 7.5l2 2 2-2 2 2M8.5 12h7M10 12v3.5M14 12l-2 4M8.5 17.5h7'),
+  // A stone maul: a rock lashed to a haft.
   hammer:
-    A('M13.5 3.5l6.5 6.5-2.5 2.5L11 6z') +
-    P('M13.5 3.5l6.5 6.5-2.5 2.5L11 6z') +
-    P('M14.25 9.25L4 19.5'),
+    A('M11.5 3.5l6 2.5-1.5 6-6.5-2.5z') + P('M11.5 3.5l6 2.5-1.5 6-6.5-2.5z') +
+    P('M13 8.25L5 20.5') + P('M11 9.5l2.75 1.25M12 7.6l2.75 1.25'),
   eye:
     P('M2.5 12c2.5-4.5 6-7 9.5-7s7 2.5 9.5 7c-2.5 4.5-6 7-9.5 7s-7-2.5-9.5-7z') +
     AC(12, 12, 3) +
@@ -480,21 +479,105 @@ export const UI_ICONS: Record<UiIconName, string> = {
   heart:
     A('M12 20s-8.5-5-8.5-11A4.5 4.5 0 0 1 12 6.5 4.5 4.5 0 0 1 20.5 9c0 6-8.5 11-8.5 11z') +
     P('M12 20s-8.5-5-8.5-11A4.5 4.5 0 0 1 12 6.5 4.5 4.5 0 0 1 20.5 9c0 6-8.5 11-8.5 11z'),
-  arrowRight: P('M4 12h16M14 6l6 6-6 6'),
+  // A spear: flint head, shaft.
+  arrowRight: P('M3 12h12') + A('M15 8l6 4-6 4 1.25-4z') + P('M15 8l6 4-6 4 1.25-4z') + P('M5 10.5l1.5 1.5L5 13.5'),
 };
 
 // ---------------------------------------------------------------------------
 // Rendering helpers
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Roughening: no ruler-straight lines
+// ---------------------------------------------------------------------------
+
+/** How many numbers each path command takes. */
+const ARGS: Record<string, number> = { m: 2, l: 2, t: 2, h: 1, v: 1, c: 6, s: 4, q: 4, a: 7, z: 0 };
+
+function seeded(seed: number): () => number {
+  let a = seed >>> 0 || 1;
+  return () => {
+    a = (Math.imul(a, 1664525) + 1013904223) >>> 0;
+    return a / 4294967296 - 0.5;
+  };
+}
+
+function hashStr(str: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < str.length; i++) h = Math.imul(h ^ str.charCodeAt(i), 16777619);
+  return h >>> 0;
+}
+
+/**
+ * Move every coordinate of a path by up to ±amp/2 (arc radii and flags are
+ * left alone, so arcs stay valid). Relative commands drift a little, which
+ * is exactly how a hand-cut line wanders.
+ */
+export function roughenPath(d: string, seed: number, amp = 0.5): string {
+  const rnd = seeded(seed);
+  const tokens = d.match(/[MmLlHhVvCcSsQqTtAaZz]|-?(?:\d+\.?\d*|\.\d+)(?:e[-+]?\d+)?/g) ?? [];
+  let cmd = '';
+  let k = 0;
+  const out: string[] = [];
+  for (const t of tokens) {
+    if (/[a-z]/i.test(t)) {
+      cmd = t;
+      k = 0;
+      out.push(t);
+      continue;
+    }
+    const n = ARGS[cmd.toLowerCase()] ?? 2;
+    const i = n ? k % n : 0;
+    k++;
+    const isCoord = cmd.toLowerCase() === 'a' ? i >= 5 : true;
+    const v = Number(t) + (isCoord ? rnd() * amp : 0);
+    out.push(String(Math.round(v * 100) / 100));
+  }
+  return out.join(' ').replace(/ ([MmLlHhVvCcSsQqTtAaZz]) /g, '$1').replace(/ ([MmLlHhVvCcSsQqTtAaZz])$/g, '$1');
+}
+
+/** Roughen every path and circle in an icon's markup (circles become slightly lopsided ellipses). */
+export function roughen(inner: string, seed: number): string {
+  const rnd = seeded(seed ^ 0x9e3779b9);
+  let n = 0;
+  return inner
+    .replace(/ d="([^"]+)"/g, (_m, d: string) => ` d="${roughenPath(d, seed + n++ * 7919)}"`)
+    .replace(/<circle cx="([-\d.]+)" cy="([-\d.]+)" r="([-\d.]+)"/g, (_m, cx: string, cy: string, r: string) => {
+      const R = Number(r);
+      const rx = R * (1 + rnd() * 0.12);
+      const ry = R * (1 + rnd() * 0.12);
+      const f = (x: number) => String(Math.round(x * 100) / 100);
+      return `<ellipse cx="${f(Number(cx) + rnd() * 0.3)}" cy="${f(Number(cy) + rnd() * 0.3)}" rx="${f(rx)}" ry="${f(ry)}"`;
+    });
+}
+
+/** Strip the pigment fills (the cut layer is strokes only). */
+const strokesOnly = (inner: string) => inner.replace(/<(path|circle|ellipse)[^>]*stroke="none"[^>]*\/>/g, '');
+
+const cache = new Map<string, string>();
+function cut(inner: string): string {
+  let c = cache.get(inner);
+  if (!c) {
+    const r = roughen(inner, hashStr(inner));
+    c = `<g transform="translate(.45 .7)" stroke="var(--ic-cut, rgba(18,9,3,.5))" stroke-width="3">${strokesOnly(r)}</g><g>${r}</g>`;
+    cache.set(inner, c);
+  }
+  return c;
+}
+
 /** Full <svg> element string. `cls` adds a class; size in px (default 20) sets width/height attrs. */
 export function svg(inner: string, size = 20, cls?: string): string {
   const c = cls ? ` class="${cls}"` : '';
   return (
     `<svg xmlns="http://www.w3.org/2000/svg"${c} width="${size}" height="${size}" viewBox="0 0 24 24" ` +
-    `fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" ` +
-    `aria-hidden="true" focusable="false">${inner}</svg>`
+    `fill="none" stroke="currentColor" stroke-width="2.15" stroke-linecap="round" stroke-linejoin="round" ` +
+    `aria-hidden="true" focusable="false">${cut(inner)}</svg>`
   );
+}
+
+/** An icon's roughened markup without the svg wrapper (for cursors drawn elsewhere). */
+export function iconMarkup(inner: string): string {
+  return roughen(inner, hashStr(inner));
 }
 
 export function icon(name: UiIconName, size?: number, cls?: string): string {
