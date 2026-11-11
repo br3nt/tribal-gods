@@ -23,8 +23,8 @@ css('alerts', `
 .al { width: 17rem; display: flex; flex-direction: column; gap: 0.375rem; align-items: stretch; }
 .al-card { display: flex; align-items: center; gap: 0.5rem; padding: 0.45rem 0.6rem; border-radius: var(--r2); text-align: left; cursor: default;
   font: 600 var(--t-sm)/1.25 var(--font); color: var(--text); animation: al-in 260ms var(--ease); transition: opacity 600ms var(--ease); }
-.al-card.go { cursor: pointer; }
-.al-card.go:hover { border-color: var(--rim-strong); }
+.al-card.jump { cursor: pointer; }
+.al-card.jump:hover { border-color: var(--rim-strong); }
 .al-card .i { flex: none; width: 1.6rem; height: 1.6rem; border-radius: 50%; display: grid; place-items: center; background: var(--ink-2); }
 .al-card.bad .i { color: var(--bad); background: var(--bad-soft); }
 .al-card.good .i { color: var(--good); background: rgba(127,220,140,0.15); }
@@ -109,7 +109,7 @@ export class AlertFeed {
   push(a: Alert): void {
     const hasPlace = a.x !== undefined && a.z !== undefined;
     const card = h(hasPlace ? 'button' : 'div', {
-      class: `al-card tg-panel ${a.tone}${hasPlace ? ' go' : ''}`,
+      class: `al-card tg-panel ${a.tone}${hasPlace ? ' jump' : ''}`,
       html: `<span class="i">${icon(ICONS[a.kind], 15)}</span><span>${escapeHtml(a.text)}</span>${hasPlace ? `<span class="go-hint">${icon('eye', 14)}</span>` : ''}`,
     });
     if (hasPlace) {
