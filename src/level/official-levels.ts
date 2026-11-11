@@ -110,12 +110,12 @@ async function assemble(
     if (walkable(map, x, z)) wildmen.push(x, z);
   }
   return {
-    v: 1,
+    v: 2,
     ...meta,
     author: 'Tribal Gods',
     terrain: await packTerrain(map.heights),
     trees,
-    monuments: monuments.map((m) => ({ ...placeNear(map, m.x, m.z), spell: m.spell })),
+    monuments: monuments.map((m) => ({ ...placeNear(map, m.x, m.z), spell: m.spell, mode: 'teach' as const })),
     homes,
     wildmen,
   };

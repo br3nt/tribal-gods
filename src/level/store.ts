@@ -15,7 +15,7 @@
  * locally they're your personal stars.
  */
 
-import { LevelData } from './level-format';
+import { AnyLevelData, LevelData, migrateLevel } from './level-format';
 
 export interface StoredLevel {
   id: string;
@@ -36,8 +36,18 @@ function read<T>(key: string, fallback: T): T {
   }
 }
 
+/** Every saved level, migrated to the current format (v1 saves still load). */
 export function listLevels(): StoredLevel[] {
-  return read<StoredLevel[]>(LEVELS_KEY, []);
+  const raw = read<Array<{ id: string; level: AnyLevelData; savedAt: number }>>(LEVELS_KEY, []);
+  const out: StoredLevel[] = [];
+  for (const s of raw) {
+    try {
+      out.push({ ...s, level: migrateLevel(s.level) });
+    } catch {
+      // an unreadable entry is skipped, not fatal
+    }
+  }
+  return out;
 }
 
 /** Insert or overwrite (same id = same level, updated). Returns the id. */

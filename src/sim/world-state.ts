@@ -44,7 +44,7 @@ import {
 } from '../config';
 import { hash2 } from '../core/noise';
 import { wrapDelta } from '../core/util';
-import { LevelData, packTerrain, unpackTerrain } from '../level/level-format';
+import { AnyLevelData, LevelData, migrateLevel, packTerrain, PlacedBuilding, PlacedUnits, unpackTerrain } from '../level/level-format';
 import { Heightmap } from '../world/heightmap';
 import { tickAi } from './ai';
 import {
@@ -408,43 +408,56 @@ export class World implements SimQueries {
   }
 
   /**
-   * Build the world from a level document. `rules` are optional; absent
-   * rules = the classic destroy-all skirmish against `red`. Legacy
-   * monuments (no `mode`) are 'teach' stones.
+   * Build the world from a level document (any version — v1 is migrated).
+   * Rules come from the argument, else the level's own `rules`, else the
+   * classic destroy-all skirmish against `red`. Pre-placed buildings and
+   * units (v2) stand where the level says.
    */
-  async loadLevel(level: LevelData, settings: GameSettings, rules?: ScenarioRules): Promise<void> {
+  async loadLevel(input: AnyLevelData, settings: GameSettings, rules?: ScenarioRules): Promise<void> {
+    const level = migrateLevel(input);
     this.settings = settings;
     this.map.heights.set(await unpackTerrain(level.terrain));
     this.map.version++;
     let seed = 7;
     for (const ch of level.name ?? '') seed = (seed * 31 + ch.charCodeAt(0)) >>> 0;
     this.clearState(seed);
+    this.levelExtras = { rules: level.rules, units: level.units, buildings: level.buildings };
 
     this.trees = [];
     for (let i = 0; i < level.trees.length; i += 2) {
       this.trees.push({ x: level.trees[i], z: level.trees[i + 1], alive: true, regrow: 0, burning: 0 });
     }
     this.treesVersion++;
-    this.monuments = (level.monuments as Array<Partial<MonumentDef> & { x: number; z: number; spell: SpellId }>).map(
-      (m) => ({
-        x: m.x, z: m.z, spell: m.spell, mode: m.mode ?? 'teach', charges: m.charges, cooldown: m.cooldown,
-        claimedBy: null, claimer: null, sleep: 0,
-      }),
-    );
+    this.monuments = level.monuments.map((m) => ({
+      x: m.x, z: m.z, spell: m.spell, mode: m.mode ?? 'teach', charges: m.charges, cooldown: m.cooldown,
+      claimedBy: null, claimer: null, sleep: 0, ...(m.opensAt !== undefined ? { opensAt: m.opensAt } : {}),
+    }));
 
-    const r = rules ?? skirmishRules(1);
-    const homes: Partial<Record<TribeId, { x: number; z: number }>> = {
-      player: { ...level.homes.player },
-      red: { ...level.homes.red },
-    };
+    const r = rules ?? level.rules ?? skirmishRules(1);
+    const homes: Partial<Record<TribeId, { x: number; z: number }>> = {};
+    for (const t of r.tribes) {
+      const h = level.homes[t.id];
+      if (h) homes[t.id] = { ...h };
+    }
     for (const t of r.tribes) {
       if (!homes[t.id]) homes[t.id] = this.findSettleSite(true, Object.values(homes) as Array<{ x: number; z: number }>);
     }
-    this.setupTribes(r, homes, level.redCiv);
+    this.setupTribes(r, homes, level.civs, level.buildings);
     for (let i = 0; i < level.wildmen.length; i += 2) {
       this.spawnNearWalkable('wildman', 'wild', level.wildmen[i], level.wildmen[i + 1]);
     }
+    for (const p of level.units ?? []) {
+      if (p.tribe !== 'wild' && !this.tribes[p.tribe]) continue;
+      for (let i = 0; i < (p.count ?? 1); i++) {
+        const a = i * 2.4;
+        const rr = i === 0 ? 0 : 0.8 + Math.sqrt(i) * 0.9;
+        this.spawnNearWalkable(p.kind, p.tribe, p.x + Math.cos(a) * rr, p.z + Math.sin(a) * rr);
+      }
+    }
   }
+
+  /** What the loaded level carried beyond the live world (captureLevel writes it back). */
+  private levelExtras: { rules?: ScenarioRules; units?: PlacedUnits[]; buildings?: PlacedBuilding[] } = {};
 
   /** Snapshot the current world as a level document (the editor's Save). */
   async captureLevel(meta: { name: string; author: string; desc: string }): Promise<LevelData> {
@@ -456,22 +469,46 @@ export class World implements SimQueries {
     for (const t of this.trees) {
       if (t.alive) trees.push(t.x, t.z);
     }
-    const player = this.tribes.player?.home ?? { x: 0, z: 0 };
-    const red = this.tribes.red?.home ?? player;
-    return {
-      v: 1,
+    const homes = { player: { ...(this.tribes.player?.home ?? { x: 0, z: 0 }) } } as LevelData['homes'];
+    const civs: Partial<Record<TribeId, CivId>> = {};
+    for (const id of this.activeTribes()) {
+      homes[id] = { ...this.tribes[id]!.home };
+      if (id !== 'player') civs[id] = this.tribes[id]!.civ;
+    }
+    const source = this.levelExtras.buildings ?? [];
+    const buildings: PlacedBuilding[] = this.buildings.map((b) => {
+      const out: PlacedBuilding = { tribe: b.tribe, kind: b.kind, x: b.x, z: b.z };
+      if (b.progress < 1) out.complete = false;
+      const was = source.find((s) => s.tribe === b.tribe && s.kind === b.kind && s.x === b.x && s.z === b.z);
+      const inside: Partial<Record<UnitKind, number>> = {};
+      for (const id of b.garrison) {
+        const u = this.unitById(id);
+        if (u) inside[u.kind] = (inside[u.kind] ?? 0) + 1;
+      }
+      const garrison = Object.keys(inside).length ? inside : was?.garrison;
+      if (garrison) out.garrison = { ...garrison };
+      return out;
+    });
+    const level: LevelData = {
+      v: 2,
       ...meta,
       terrain: await packTerrain(this.map.heights),
       trees,
-      monuments: this.monuments.map((m) =>
-        m.mode === 'gift'
-          ? { x: m.x, z: m.z, spell: m.spell, mode: m.mode, charges: m.charges, cooldown: m.cooldown }
-          : { x: m.x, z: m.z, spell: m.spell },
-      ),
-      homes: { player: { ...player }, red: { ...red } },
+      monuments: this.monuments.map((m) => {
+        const d: MonumentDef = { x: m.x, z: m.z, spell: m.spell, mode: m.mode };
+        if (m.charges !== undefined) d.charges = m.charges;
+        if (m.cooldown !== undefined) d.cooldown = m.cooldown;
+        if (m.opensAt !== undefined) d.opensAt = m.opensAt;
+        return d;
+      }),
+      homes,
       wildmen: wild,
-      redCiv: this.tribes.red?.civ,
+      civs,
     };
+    if (this.levelExtras.rules) level.rules = this.levelExtras.rules;
+    if (buildings.length) level.buildings = buildings;
+    if (this.levelExtras.units?.length) level.units = this.levelExtras.units.map((u) => ({ ...u }));
+    return level;
   }
 
   /**
@@ -483,6 +520,7 @@ export class World implements SimQueries {
     if (settings) this.settings = settings;
     this.map.generate(seed);
     this.clearState(seed);
+    this.levelExtras = {};
     this.placeTrees(seed);
 
     const r = rules ?? skirmishRules(this.settings.enemies ?? 1);
@@ -505,7 +543,8 @@ export class World implements SimQueries {
   private setupTribes(
     rules: ScenarioRules,
     homes: Partial<Record<TribeId, { x: number; z: number }>>,
-    redCiv?: CivId,
+    civs: Partial<Record<TribeId, CivId>> = {},
+    placed: PlacedBuilding[] = [],
   ): void {
     this.rules = rules;
     const civIds = Object.keys(CIVS) as CivId[];
@@ -513,9 +552,10 @@ export class World implements SimQueries {
     const leaderDies = (rules.fail ?? []).some((f) => f.type === 'leaderDies');
 
     for (const t of rules.tribes) {
+      const wanted = civs[t.id];
       const civ =
         t.id === 'player' ? this.settings.playerCiv
-        : t.id === 'red' && redCiv && redCiv !== this.settings.playerCiv ? redCiv
+        : wanted && CIVS[wanted] && wanted !== this.settings.playerCiv ? wanted
         : this.rng.pick(otherCivs.length ? otherCivs : civIds);
       const lo = t.loadout ?? {};
       const known = new Set<SpellId>(lo.spells ?? STARTER_SPELLS);
@@ -546,7 +586,14 @@ export class World implements SimQueries {
       };
     }
 
-    // Starting buildings first, so the people below spawn clear of their walls.
+    // Buildings first, so the people below spawn clear of their walls: the
+    // level's pre-placed ones where it says, then loadout extras near home.
+    const garrisons: Array<[Building, Partial<Record<UnitKind, number>>]> = [];
+    for (const p of placed) {
+      if (!this.tribes[p.tribe]) continue;
+      const b = this.spawnBuilding(p.tribe, p.kind, p.x, p.z, { complete: p.complete ?? true });
+      if (p.garrison) garrisons.push([b, p.garrison]);
+    }
     for (const t of rules.tribes) {
       for (const kind of t.loadout?.startBuildings ?? []) this.placeStartBuilding(t.id, kind);
     }
@@ -572,6 +619,17 @@ export class World implements SimQueries {
         }
       }
     }
+    // Garrisons step straight in through the door.
+    for (const [b, inside] of garrisons) {
+      const door = this.doorOf(b);
+      for (const [kind, n] of Object.entries(inside) as Array<[UnitKind, number]>) {
+        for (let i = 0; i < n; i++) {
+          const u = this.spawn(kind, b.tribe, door.x, door.z);
+          this.orderGarrison([u.id], b.id);
+        }
+      }
+    }
+
     const obj = initObjectives(rules);
     this.objectives = obj.states;
     this.objectiveMemory = obj.memory;
