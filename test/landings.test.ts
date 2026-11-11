@@ -131,6 +131,7 @@ describe('villagers fight back', () => {
     const w = flatWorld(rulesFor([{ id: 'player', ai: false }, { id: 'violet', ai: false }], { objectives: [{ objective: { type: 'survive', seconds: 99999 }, text: 'wait' }] }));
     const hit = w.spawn('brave', 'player', 40, 40);
     const near = w.spawn('brave', 'player', 41.5, 40.5);
+    const near2 = w.spawn('brave', 'player', 39, 41);
     const far = w.spawn('brave', 'player', 50, 50);
     const raider = w.spawn('warrior', 'violet', 40.8, 39.4);
     run(w, 1 / 15);
@@ -138,6 +139,7 @@ describe('villagers fight back', () => {
     expect(hit.task).toBe('attack');
     expect(hit.targetUnit).toBe(raider.id);
     expect(near.task).toBe('attack');
+    expect(near2.task).toBe('attack');
     expect(far.task).not.toBe('attack');
   });
 

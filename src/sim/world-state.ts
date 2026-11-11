@@ -1921,7 +1921,7 @@ export class World implements SimQueries {
   /**
    * Struck by a foe, people fight back: the one hit turns on the attacker,
    * and villagers working or standing close by down tools and join in —
-   * unless the attacker is one of a war band, when a struck villager runs.
+   * when the odds are theirs; otherwise a struck villager runs.
    * Without this a single wounded raider could walk through a village
    * killing everyone in it one by one, nobody so much as raising a hand.
    * Who stands up: anyone who can strike (not a leader or a chanter), out
@@ -1940,22 +1940,29 @@ export class World implements SimQueries {
       if (this.distTo(q, attacker.x, attacker.z) <= UNITS[q.kind].range) q.state = 'fighting';
       else if (!this.sendTo(q, attacker.x, attacker.z)) this.abandonTask(q);
     };
-    // A villager against a war band runs for it (toward home, away from the
-    // blow): a crowd of villagers rushing three spears only feeds them. A
-    // lone raider is another matter — the village pulls it down.
-    if (victim.kind === 'brave' && this.anyUnitNear(attacker.x, attacker.z, BAND_RADIUS, (q) => q !== attacker && q.hp > 0 && q.tribe === attacker.tribe && isFighterKind(q.kind))) {
+    if (victim.kind !== 'brave') {
+      if (willing(victim)) turn(victim);
+      return;
+    }
+    // A villager only stands when the odds are the village's: a lone raider
+    // with villagers close by to help (or one already badly hurt). Against a
+    // war band, or alone against a fresh spear, they run (flee): a crowd
+    // rushing three spears only feeds them.
+    const band = this.anyUnitNear(attacker.x, attacker.z, BAND_RADIUS, (q) => q !== attacker && q.hp > 0 && q.tribe === attacker.tribe && isFighterKind(q.kind));
+    const near: Unit[] = [];
+    if (!band) {
+      this.grid.forEachNear(victim.x, victim.z, RALLY_RADIUS, (q) => {
+        if (near.length >= HELPERS || q === victim || q.tribe !== victim.tribe || q.kind !== 'brave') return;
+        if (Math.hypot(wrapDelta(q.x - victim.x, WORLD_SIZE), wrapDelta(q.z - victim.z, WORLD_SIZE)) < RALLY_RADIUS && willing(q)) near.push(q);
+      });
+    }
+    const odds = !band && (near.length >= 2 || attacker.hp <= attacker.maxHp * 0.4);
+    if (!odds) {
       if (willing(victim)) this.flee(victim, attacker);
       return;
     }
     if (willing(victim)) turn(victim);
-    if (victim.kind !== 'brave') return;
-    let helpers = 0;
-    this.grid.forEachNear(victim.x, victim.z, RALLY_RADIUS, (q) => {
-      if (helpers >= HELPERS || q === victim || q.tribe !== victim.tribe || q.kind !== 'brave') return;
-      if (Math.hypot(wrapDelta(q.x - victim.x, WORLD_SIZE), wrapDelta(q.z - victim.z, WORLD_SIZE)) >= RALLY_RADIUS || !willing(q)) return;
-      turn(q);
-      helpers++;
-    });
+    for (const q of near) turn(q);
   }
 
   /**
