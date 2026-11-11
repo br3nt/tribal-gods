@@ -1,8 +1,9 @@
 /**
- * Perf guards: generous ceilings on the sim's worst tick, so a hot loop or
- * a frame-stalling burst of path searches can't creep back in unnoticed.
- * Thresholds are several times what this machine measures — they catch
- * regressions of the "70 ms when the AIs wake" kind, not noise.
+ * Perf guards: a ceiling on the path-search work in the sim's worst tick,
+ * so a frame-stalling burst of searches can't creep back in unnoticed. That
+ * count is machine- and load-independent, so it always runs; the wall-clock
+ * ceilings (several times what a laptop measures) run only with
+ * PERF_WALLCLOCK=1, on a quiet machine.
  */
 import { describe, expect, it } from 'vitest';
 import type { TribeId } from '../src/sim/catalog';
@@ -55,9 +56,14 @@ describe('perf guards', () => {
     // The deterministic guard: path-search work in any one tick (machine-independent).
     // ~13k at the wake-up tick now; one A* per soldier made it ~42k.
     expect(maxExp).toBeLessThan(30_000);
-    // Wall-clock ceilings, generous because the suite runs files in parallel:
-    // ~17 ms worst / ~7 ms p95 alone on a laptop; 141 ms worst before group moves.
-    expect(worst).toBeLessThan(100);
-    expect(p95).toBeLessThan(20);
+    // Wall-clock ceilings only when asked for (PERF_WALLCLOCK=1 npx vitest run
+    // test/perf.test.ts): with the whole suite running files in parallel the
+    // machine is shared and a tick's wall time measures the neighbours, not
+    // the sim, so these flaked. Alone: ~17 ms worst / ~7 ms p95 on a laptop;
+    // 141 ms worst before group moves.
+    if (process.env.PERF_WALLCLOCK) {
+      expect(worst).toBeLessThan(100);
+      expect(p95).toBeLessThan(20);
+    }
   }, 120_000);
 });
