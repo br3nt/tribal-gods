@@ -14,7 +14,7 @@ import { TRIBE_COLORS as CATALOG_TRIBE_COLORS } from './sim/catalog';
 /**
  * The world is a square grid of height values, WORLD_SIZE tiles on a side,
  * that wraps at both edges (see world/heightmap.ts for why that makes a
- * "planet"). A few hundred tiles a side is enough for a small planet. Bigger = a larger
+ * "planet"). 128 tiles a side is enough for a small planet. Bigger = a larger
  * planet that takes longer to walk around; must stay a power of two so the
  * tileable noise octaves in heightmap generation divide it evenly.
  */
