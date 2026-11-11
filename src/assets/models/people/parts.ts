@@ -184,7 +184,7 @@ export function addBody(rig: Rig, b: Body, look: Look, o: BodyOpts = {}): void {
     [b.waistR * 1.02, -0.03], [b.chestR * 0.97, 0.1], [b.chestR, tl * 0.32],
     [b.chestR * 0.9, tl * 0.47], [b.chestR * 0.55, tl * 0.56], [neckR * 1.2, tl * 0.6], [neckR, tl * 0.62],
   ];
-  const chest = lathe(chestProfile, 14, 1, b.depth);
+  const chest = lathe(chestProfile, 24, 1, b.depth); // dense enough for crisp necklines
   paint(chest, (p) => {
     if (o.shirt) return o.shirt(p);
     const c = o.chestPaint?.(p);
@@ -392,10 +392,15 @@ export function addHead(rig: Rig, b: Body, look: Look, f: FaceOpts = {}): void {
     const ex = c.x + sx * r * 0.37;
     const ey = c.y + r * 0.06;
     const ez = c.z + Math.sqrt(Math.max(0, r * r * 0.96 - (sx * r * 0.37) ** 2 - (r * 0.06) ** 2)) - 0.005;
-    // Big, dark eyes: at the default camera a face is ~15px, so the eyes
-    // and brows have to carry it on their own.
-    const eye = blob(r * 0.145 * es, r * 0.205 * es, r * 0.08, 9, 7);
-    place(eye, ex, ey, ez, 0, sx * 0.35, 0);
+    // Big eyes with whites: at the default camera a face is ~15px, so the
+    // eyes and brows carry it on their own — and dark pupils alone vanish
+    // on dark skin, while a pale almond reads on any complexion.
+    const white = blob(r * 0.19 * es, r * 0.2 * es, r * 0.07, 10, 7);
+    place(white, ex - sx * r * 0.01, ey - r * 0.01, ez - r * 0.02, 0, sx * 0.35, 0);
+    paint(white, 0xf3ede2);
+    rig.add('head', white);
+    const eye = blob(r * 0.125 * es, r * 0.175 * es, r * 0.08, 9, 7);
+    place(eye, ex + sx * r * 0.015, ey, ez + r * 0.012, 0, sx * 0.35, 0);
     paint(eye, look.eye);
     rig.add('head', eye);
     const glint = blob(r * 0.05 * es, r * 0.05 * es, r * 0.03, 5, 4);
