@@ -988,6 +988,19 @@ export class EffectsRenderer {
       if (!a || typeof a.x !== 'number') continue;
       let v = this.auraVisuals.get(a);
       if (!v) {
+        // The sim may rebuild aura objects each tick: re-adopt an unclaimed
+        // visual of the same kind close by rather than restarting it.
+        for (const [oldKey, old] of this.auraVisuals) {
+          if (old.seen || old.kind !== String(a.kind ?? '')) continue;
+          const o = oldKey as AuraLike;
+          if (Math.hypot(wrapDelta(o.x - a.x, WORLD_SIZE), wrapDelta(o.z - a.z, WORLD_SIZE)) > 4) continue;
+          this.auraVisuals.delete(oldKey);
+          this.auraVisuals.set(a, old);
+          v = old;
+          break;
+        }
+      }
+      if (!v) {
         v = { kind: String(a.kind ?? ''), meshes: [], emitAcc: 0, seen: true };
         this.auraVisuals.set(a, v);
         this.startAura(a, v);

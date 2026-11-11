@@ -67,6 +67,8 @@ export class GroundCover {
   readonly mesh: THREE.Mesh;
   private readonly spacing: number;
   private readonly uTime = { value: 0 };
+  /** Zoomed far out the clumps are sub-pixel speckle: shrink them away. */
+  private readonly uFade = { value: 1 };
 
   constructor(terrain: TerrainMesh, quality: QualityTier) {
     const radius = quality.name === 'high' ? GROUND_COVER.radiusHigh : GROUND_COVER.radiusMedium;
@@ -91,6 +93,7 @@ export class GroundCover {
 
     const uniforms = {
       uTime: this.uTime,
+      uFade: this.uFade,
       uHeightTex: terrain.uniforms.uHeightTex,
       uTileTex: terrain.uniforms.uTileTex,
       uRadius: { value: radius },
@@ -117,7 +120,7 @@ export class GroundCover {
           attribute vec2 aOffset;
           attribute float aT;
           uniform sampler2D uTileTex;
-          uniform float uTime, uRadius, uSpacing, uHeightScale;
+          uniform float uTime, uRadius, uSpacing, uHeightScale, uFade;
           uniform vec3 uLush, uLush2, uDry, uTip;
           uniform vec4 uBands;
           uniform vec2 uSlopes;
@@ -145,7 +148,7 @@ export class GroundCover {
           m *= smoothstep(0.3, 0.55, patchy + 0.15 + 0.2 * r2);               // tufty meadows and clearings
           float dist = length(root - uCamTarget.xz);
           m *= 1.0 - smoothstep(uRadius * 0.4, uRadius * 0.95, dist + r1 * uRadius * 0.15); // soft, ragged carpet edge
-          float size = m * uHeightScale * (0.6 + 0.8 * r3);
+          float size = m * uFade * uHeightScale * (0.6 + 0.8 * r3);
 
           // Colour: matches the ground's lush/dry, darker at the root, sunlit tips.
           float moist = clamp(td.b * 0.8 + 0.65 * (1.0 - smoothstep(0.0, 14.0, h)) + (tgFbm(root * (1.0 / 64.0), 4.0) - 0.5) * 0.9, 0.0, 1.0);
@@ -185,7 +188,9 @@ export class GroundCover {
     this.mesh.userData.gpuCurved = true;
   }
 
-  update(camTarget: THREE.Vector3, dt: number): void {
+  update(camTarget: THREE.Vector3, dt: number, viewDistance = 30): void {
+    this.uFade.value = 1 - THREE.MathUtils.smoothstep(viewDistance, GROUND_COVER.fadeOut[0], GROUND_COVER.fadeOut[1]);
+    this.mesh.visible = this.uFade.value > 0;
     const s = this.spacing;
     this.mesh.position.set(Math.round(camTarget.x / s) * s, 0, Math.round(camTarget.z / s) * s);
     this.uTime.value += dt;

@@ -196,6 +196,8 @@ export const GROUND_COVER = {
   /** Tallest clump height (world units; a villager is ~2.3). */
   height: 0.4,
   tip: 0xd8e07a,
+  /** Orbit distances over which the carpet shrinks away. */
+  fadeOut: [55, 95] as [number, number],
 };
 
 /** The glowing halo around the planet's limb when zoomed out (sky.ts). */

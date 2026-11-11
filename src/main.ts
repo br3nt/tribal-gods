@@ -257,7 +257,7 @@ const stats = startLoop({
 
     terrain.sync(rig.target, world, dt); // slide the grid; re-upload only what changed
     water.update(rig.target, dt);
-    groundCover?.update(rig.target, dt);
+    groundCover?.update(rig.target, dt, rig.distance);
     sky.update(rig.camera, dt, scene.fog as THREE.Fog, rig.distance);
     atmosphere.update(rig.target, rig.distance);
     lighting.update(rig.target, rig.distance, dt);

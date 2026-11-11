@@ -193,12 +193,20 @@ export function curveObject(root: THREE.Object3D): void {
  */
 export function applyLimbToCpuCurved(scene: THREE.Scene, camTarget: THREE.Vector3): void {
   for (const o of scene.children) {
-    if (o.userData.gpuCurved || (o as THREE.Light).isLight) continue;
+    if (o.userData.gpuCurved || (o as THREE.Light).isLight || !o.visible) continue;
+    // Objects left at the origin carry world-space geometry (e.g. the brush
+    // ring); their position says nothing about where they are.
+    if (o.position.x === 0 && o.position.z === 0) continue;
+    // Non-cumulative: if no renderer re-placed the object since last frame,
+    // take back last frame's drop before applying this frame's.
+    const prev = o.userData.tgLimb as { y: number; d: number } | undefined;
+    if (prev && o.position.y === prev.y) o.position.y += prev.d;
     const dx = o.position.x - camTarget.x;
     const dz = o.position.z - camTarget.z;
     const d2 = dx * dx + dz * dz;
-    if (d2 <= LIMB_START * LIMB_START) continue;
-    const l = Math.sqrt(d2) - LIMB_START;
-    o.position.y -= LIMB_K * l * l * l;
+    const l = Math.max(0, Math.sqrt(d2) - LIMB_START);
+    const d = LIMB_K * l * l * l;
+    o.position.y -= d;
+    o.userData.tgLimb = { y: o.position.y, d };
   }
 }
