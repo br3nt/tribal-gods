@@ -4,6 +4,7 @@
  * minutes; fail conditions fire when forced.
  */
 import { describe, expect, it } from 'vitest';
+import { LAYOUT as L5 } from '../src/level/campaign/c05-vigil-at-the-caldera';
 import { LAYOUT as L8, OPENS_AT } from '../src/level/campaign/c08-firemount-race';
 import { loadScenario, runUntilOver } from './campaign-helpers';
 import { run } from './helpers';
@@ -45,13 +46,21 @@ describe('campaign: fail conditions fire when forced', () => {
     expect(w.gameOverReason).toMatch(/Shrine/);
   });
 
-  it('5 Caldera: a fully charged Volcano wins', async () => {
+  it('5 Caldera: a fully charged Volcano, cast on the raiders’ shore, wins', async () => {
     const w = await loadScenario('c05_vigil_at_the_caldera');
     run(w, 1);
     w.tribes.player!.spells.volcano.mana = 1e9;
     run(w, 0.5);
+    expect(w.objectives[0].done).toBe(true);
+    expect(w.gameOver).toBeNull(); // charged is not enough: the mountain has to wake
+    const finale = w.objectives.findIndex((o) => o.objective.type === 'castSpell');
+    expect(w.objectives[finale].active).toBe(true);
+    expect(w.messages.at(-1)?.focus).toBeDefined();
+    const breach = L5.breaches[0];
+    expect(w.orderCast('player', 'volcano', breach.x, breach.z)).toBeNull();
+    run(w, 30);
     expect(w.gameOver).toBe('victory');
-  });
+  }, 30_000);
 
   it('6 Barefoot Road: the leader dies, the pilgrimage fails (no reincarnation)', async () => {
     const w = await loadScenario('c06_barefoot_road');

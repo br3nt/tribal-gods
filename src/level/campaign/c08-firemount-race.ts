@@ -97,6 +97,9 @@ export const scenario: CampaignScenario = {
         ],
         fail: [{ type: 'monumentTaken', index: 0 }, { type: 'timeLimit', seconds: 1800 }],
         events: [
+          { when: { type: 'time', at: 2 }, message: 'Causeway is ready: bridge the mere and the road to the Firemount is half as long.', focus: LAYOUT.bay, actions: [] },
+          { when: { type: 'commune', index: 0, tribe: 'red' }, message: 'The Ashmark leader kneels at the Firemount! Break her ritual — strike her, or put spears in the ring.', focus: LAYOUT.summit, actions: [] },
+          { when: { type: 'commune', index: 0, tribe: 'player' }, message: 'The ritual has begun: thirty-five heartbeats, and the mountain’s fire is ours. Keep every spear away from her.', focus: LAYOUT.summit, actions: [] },
           { when: { type: 'time', at: OPENS_AT - 30 }, actions: [{ type: 'message', text: 'The Firemount rumbles. Its stone wakes in thirty heartbeats.' }] },
           { when: { type: 'time', at: OPENS_AT }, actions: [{ type: 'message', text: 'The Firemount stone is awake.' }] },
         ],
@@ -107,7 +110,7 @@ export const scenario: CampaignScenario = {
             'The Ashmark are closer to it than we are. If their leader sits with that stone first, we will not survive what she learns. ' +
             'The Keepers guard the crown and fight anyone who climbs, and the tide gives us half an hour to finish the Ashmark after.',
           tips: [
-            'Get your leader — and spears — to the foot of the mountain before the stone wakes.',
+            'The ritual at the crown takes over half a minute, stops while enemy spears stand in the ring, and breaks at a blow. Bring spears.',
             'Causeway across the mere shortens the walk. It is already in your book.',
             'With Volcano learned, a single charge can unmake a town. It takes a long time to charge: start early.',
           ],

@@ -84,7 +84,8 @@ export const scenario: CampaignScenario = {
       wildmen: wanderers(t.map, 101, S.emberfall.x, S.emberfall.z, 6, 3)
         .concat(wanderers(t.map, 102, S.cyclone.x, S.cyclone.z, 6, 3))
         .concat(wanderers(t.map, 103, S.sink.x, S.sink.z, 6, 3))
-        .concat(wanderers(t.map, 104, S.earthquake.x, S.earthquake.z, 6, 3)),
+        .concat(wanderers(t.map, 104, S.earthquake.x, S.earthquake.z, 6, 3))
+        .concat(wanderers(t.map, 105, home.x + 10, home.z - 3, 3, 4)),
       rules: {
         tribes: [
           {
@@ -114,6 +115,10 @@ export const scenario: CampaignScenario = {
         objectives: [
           { objective: { type: 'destroyAll' }, text: 'Be the last tribe standing' },
           { objective: { type: 'claimMonument', index: 0 }, text: 'Learn Volcano on the Crown', optional: true },
+        ],
+        events: [
+          { when: { type: 'time', at: 2 }, message: 'Wanderers on the shore east of the village. Kindle them — then the stones round the ring are waiting, and guarded.', focus: { x: LAYOUT.home.x + 10, z: LAYOUT.home.z - 3 }, actions: [] },
+          { when: { type: 'commune', index: 0 }, message: 'Someone kneels on the Crown. Whoever finishes that ritual holds the mountain’s fire.', focus: LAYOUT.centre, actions: [] },
         ],
         briefing: {
           title: 'The Crown',

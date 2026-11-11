@@ -109,12 +109,16 @@ export const scenario: CampaignScenario = {
           { id: 'violet', name: 'the Unmoored', ...RAIDER_TRIBE },
         ],
         objectives: [
-          { objective: { type: 'chargeSpell', spell: 'volcano' }, text: 'Charge the Volcano — wake the mountain' },
+          { objective: { type: 'chargeSpell', spell: 'volcano' }, text: 'Charge the Volcano' },
           { objective: { type: 'buildCount', kind: 'tower', count: 3 }, text: 'A Watchtower in every breach', optional: true },
           { objective: { type: 'reachPopulation', count: 30 }, text: 'Grow the tribe to 30', optional: true },
+          // Appended (stars index objectives): the ritual's point is the eruption.
+          { objective: { type: 'castSpell', spell: 'volcano' }, text: 'Wake the mountain on the raiders’ shore', after: 0 },
         ],
         fail: [{ type: 'buildingLost', kind: 'shrine' }],
         events: [
+          { when: { type: 'time', at: 2 }, message: 'Three wanderers in the basin. Kindle them — more hands to pray, more to fight.', focus: LAYOUT.centre, actions: [] },
+          { when: { type: 'objective', index: 0 }, message: 'The mountain is awake in your hands. Cast the Volcano where the raiders land — the crater wall will never be breached there again.', focus: LAYOUT.landings[0], actions: [] },
           wave(70, 0, { warrior: 2 }, 'Unmoored boats on the northern shore.'),
           wave(150, 1, { warrior: 3 }, 'They are coming through the south-east breach.'),
           wave(230, 2, { warrior: 2, firewarrior: 1 }, 'South-west breach — and they carry fire.'),
