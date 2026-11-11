@@ -2,8 +2,9 @@
  * render/effects.ts — the fireworks department.
  *
  * The sim announces what happened (world.events — plain {type, x, z}
- * facts) and what is still going on (world.auras — wards, cyclones,
- * fires...). This module decides what that LOOKS and SOUNDS like. The sim
+ * facts) and what is still going on (world.auras — wards, warsongs,
+ * cyclones, emberfalls, sinks, blooms; burning buildings and swamp tiles
+ * are read straight off the world). This module decides what that LOOKS and SOUNDS like. The sim
  * never knows pixels exist, and every spell can be re-art-directed here
  * without touching gameplay.
  *
@@ -33,6 +34,7 @@
 import * as THREE from 'three';
 import { TILE, WORLD_SIZE } from '../config';
 import { wrapDelta } from '../core/util';
+import type { Aura, AuraKind } from '../sim/spells';
 import { World } from '../sim/world-state';
 import { curvatureDrop, curvatureGlsl, curvatureUniforms } from '../world/curvature';
 import { heightGlsl } from '../world/terrain-glsl';
@@ -345,18 +347,8 @@ interface Projectile {
   kind: 'ember' | 'stone';
 }
 
-interface AuraLike {
-  kind: string;
-  x: number;
-  z: number;
-  radius?: number;
-  t?: number;
-  duration?: number;
-  tribe?: string;
-}
-
 interface AuraVisual {
-  kind: string;
+  kind: AuraKind;
   meshes: MeshFx[];
   emitAcc: number;
   seen: boolean;
@@ -371,7 +363,7 @@ export class EffectsRenderer {
   private readonly matter: ParticlePool;
   private meshFx: MeshFx[] = [];
   private projectiles: Projectile[] = [];
-  private readonly auraVisuals = new Map<object, AuraVisual>();
+  private readonly auraVisuals = new Map<Aura, AuraVisual>();
   private camTarget = new THREE.Vector3();
   private world: World | null = null;
   private swampAcc = 0;
@@ -981,26 +973,23 @@ export class EffectsRenderer {
   // -------------------------------------------------------------------------
 
   private syncAuras(world: World, dt: number): void {
-    const auras: AuraLike[] = ((world as unknown as { auras?: AuraLike[] }).auras ?? []) as AuraLike[];
     for (const v of this.auraVisuals.values()) v.seen = false;
-    for (const a of auras) {
-      if (!a || typeof a.x !== 'number') continue;
+    for (const a of world.auras) {
       let v = this.auraVisuals.get(a);
       if (!v) {
-        // The sim may rebuild aura objects each tick: re-adopt an unclaimed
+        // A loaded save rebuilds the aura objects: re-adopt an unclaimed
         // visual of the same kind close by rather than restarting it.
-        for (const [oldKey, old] of this.auraVisuals) {
-          if (old.seen || old.kind !== String(a.kind ?? '')) continue;
-          const o = oldKey as AuraLike;
+        for (const [o, old] of this.auraVisuals) {
+          if (old.seen || old.kind !== a.kind) continue;
           if (Math.hypot(wrapDelta(o.x - a.x, WORLD_SIZE), wrapDelta(o.z - a.z, WORLD_SIZE)) > 4) continue;
-          this.auraVisuals.delete(oldKey);
+          this.auraVisuals.delete(o);
           this.auraVisuals.set(a, old);
           v = old;
           break;
         }
       }
       if (!v) {
-        v = { kind: String(a.kind ?? ''), meshes: [], emitAcc: 0, seen: true };
+        v = { kind: a.kind, meshes: [], emitAcc: 0, seen: true };
         this.auraVisuals.set(a, v);
         this.startAura(a, v);
       }
@@ -1022,41 +1011,47 @@ export class EffectsRenderer {
     }
   }
 
-  private startAura(a: AuraLike, v: AuraVisual): void {
-    const k = v.kind;
-    const r = Math.max(1, a.radius ?? 4) * TILE;
-    if (k.includes('ward')) {
-      v.meshes.push(this.dome(a.x, a.z, 0x8fd8ff, r, Infinity));
-      v.meshes.push(this.groundGlow(a.x, a.z, 0x6fc4ff, r, Infinity, 1.2));
-    } else if (k.includes('warsong')) {
-      v.meshes.push(this.groundGlow(a.x, a.z, 0xff7a3a, r, Infinity, 1.6));
-    } else if (k.includes('cyclone')) {
-      v.meshes.push(this.funnel(a.x, a.z, Math.max(5, r * 0.9), 22, Infinity));
-    } else if (k.includes('ember')) {
-      v.meshes.push(this.groundGlow(a.x, a.z, 0xff4a1a, r, Infinity, 1.8));
-    } else if (k.includes('sink')) {
-      v.meshes.push(this.groundGlow(a.x, a.z, 0x3aa0c0, r, Infinity, 1.0));
-    } else if (k.includes('bloom')) {
-      v.meshes.push(this.groundGlow(a.x, a.z, 0x8cff6a, r, Infinity, 1.2));
+  private startAura(a: Aura, v: AuraVisual): void {
+    const r = Math.max(1, a.radius) * TILE;
+    switch (v.kind) {
+      case 'ward':
+        v.meshes.push(this.dome(a.x, a.z, 0x8fd8ff, r, Infinity));
+        v.meshes.push(this.groundGlow(a.x, a.z, 0x6fc4ff, r, Infinity, 1.2));
+        break;
+      case 'warsong':
+        v.meshes.push(this.groundGlow(a.x, a.z, 0xff7a3a, r, Infinity, 1.6));
+        break;
+      case 'cyclone':
+        v.meshes.push(this.funnel(a.x, a.z, Math.max(5, r * 0.9), 22, Infinity));
+        break;
+      case 'emberfall':
+        v.meshes.push(this.groundGlow(a.x, a.z, 0xff4a1a, r, Infinity, 1.8));
+        break;
+      case 'sink':
+        v.meshes.push(this.groundGlow(a.x, a.z, 0x3aa0c0, r, Infinity, 1.0));
+        break;
+      case 'bloom':
+        v.meshes.push(this.groundGlow(a.x, a.z, 0x8cff6a, r, Infinity, 1.2));
+        break;
     }
   }
 
-  private tickAura(a: AuraLike, v: AuraVisual, dt: number): void {
+  private tickAura(a: Aura, v: AuraVisual, dt: number): void {
     const k = v.kind;
-    const rT = Math.max(1, a.radius ?? 4); // tiles
+    const rT = Math.max(1, a.radius); // tiles
     v.emitAcc += dt;
     const every = (s: number) => {
       if (v.emitAcc < s) return false;
       v.emitAcc = 0;
       return true;
     };
-    if (k.includes('ward')) {
+    if (k === 'ward') {
       if (every(0.12)) this.motes(a.x, a.z, 2, lin(0x9fe0ff), { radius: rT * TILE * 0.9, rise: 1.5, life: 2, hdr: 3 });
-    } else if (k.includes('warsong')) {
+    } else if (k === 'warsong') {
       if (every(0.08)) this.motes(a.x, a.z, 3, lin(Math.random() < 0.5 ? 0xff5a2a : 0xffc04a), { radius: rT * TILE, rise: 3, life: 1.4, hdr: 4 });
       const pulse = Math.sin(performance.now() / 260);
       if (pulse > 0.995) this.ring(a.x, a.z, 0xff8a3a, rT * TILE, 0.8, 2.5);
-    } else if (k.includes('cyclone')) {
+    } else if (k === 'cyclone') {
       if (every(0.03)) {
         const c = this.at(a.x, a.z, 0).clone();
         for (let i = 0; i < 3; i++) {
@@ -1077,37 +1072,29 @@ export class EffectsRenderer {
           }
         }
       }
-    } else if (k.includes('ember')) {
+    } else if (k === 'emberfall') {
       if (every(0.1)) this.motes(a.x, a.z, 2, lin(0xff6a2a), { radius: rT * TILE, rise: 1, life: 1.5, hdr: 3, lift: 6 });
-    } else if (k.includes('sink')) {
+    } else if (k === 'sink') {
       if (every(0.1)) {
         this.dust(a.x + (Math.random() - 0.5) * rT, a.z + (Math.random() - 0.5) * rT, 2, rT, 0x9a8a70, 1.2);
         this.spray(a.x + (Math.random() - 0.5) * rT, a.z + (Math.random() - 0.5) * rT, 3, 4);
       }
-    } else if (k.includes('bloom')) {
+    } else if (k === 'bloom') {
       if (every(0.1)) {
         this.motes(a.x, a.z, 2, lin(0x9cff7a), { radius: rT * TILE, rise: 1.2, life: 2, hdr: 2.5 });
         if (Math.random() < 0.5) this.petals(a.x, a.z, 1, rT * TILE);
       }
-    } else if (k.includes('fire') || k.includes('burn')) {
-      if (every(0.05)) {
-        this.flames(a.x, a.z, Math.max(1, (a.radius ?? 1.5) * TILE * 0.6), 3);
-        if (Math.random() < 0.35) this.smoke(a.x, a.z, 1, { lift: 2.5, spread: 1, dark: 0.1, rise: 3, size: 1.8, life: 3 });
-      }
-    } else if (k.includes('swamp')) {
-      if (every(0.25)) this.swampBubble(a.x + (Math.random() - 0.5) * rT * 2, a.z + (Math.random() - 0.5) * rT * 2);
     }
   }
 
   private ambient(world: World, dt: number): void {
-    // Burning buildings, if the sim marks them (read defensively).
+    // Burning buildings (b.burning = seconds left on fire).
     this.burnAcc += dt;
     if (this.burnAcc > 0.06) {
       this.burnAcc = 0;
-      for (const b of world.buildings as unknown as Array<Record<string, unknown>>) {
-        const burning = (b.burning ?? b.onFire ?? b.fire) as number | boolean | undefined;
-        if (!burning) continue;
-        const x = b.x as number, z = b.z as number;
+      for (const b of world.buildings) {
+        if (b.burning <= 0) continue;
+        const { x, z } = b;
         if (!this.near(x, z, 90)) continue;
         this.flames(x, z, 2.5, 3);
         if (Math.random() < 0.4) this.smoke(x, z, 1, { lift: 4, dark: 0.09, rise: 3, size: 2.2, life: 3.5 });
