@@ -59,6 +59,13 @@ export const QUALITY: Record<QualityName, QualityTier> = {
   },
 };
 
+/**
+ * Spell set pieces scale their particle COUNTS by this (effects.ts n()):
+ * the shapes and timings stay the same, a cheaper tier just draws fewer
+ * puffs. Pools are capped by `particles` regardless.
+ */
+export const FX_DETAIL: Record<QualityName, number> = { low: 0.4, medium: 0.7, high: 1 };
+
 const QUALITY_ORDER: QualityName[] = ['low', 'medium', 'high'];
 
 /** The tier requested by `?q=`, or null when the game should pick (and adapt). */
@@ -270,6 +277,18 @@ export const CAMERA = {
 // Figures under spells (unit-renderer.ts). Tints multiply the vertex colours
 // of a shared material variant, so they stay cheap for hundreds of people.
 // ---------------------------------------------------------------------------
+
+/**
+ * Burning figures (render/unit-renderer.ts): people caught by a volcano's
+ * heat char and trail embers for `seconds` after the last burn.
+ */
+export const UNIT_BURN = { color: 0x8a6656, emissive: 0x3a0e02, desaturate: 0.25, roughnessShift: 0.1, metalnessShift: 0, rim: 0xff5a14, seconds: 1.6 };
+
+/**
+ * Stone guardians (wild fighters set round a standing stone): skin and
+ * cloth painted the grey of the stone, cold eyes. Dormant they kneel.
+ */
+export const GUARDIAN = { color: 0xb8bcc4, emissive: 0x05080c, desaturate: 0.92, roughnessShift: 0.05, metalnessShift: 0, rim: 0x5fd8ff, eyes: 0x7af0ff };
 
 export const UNIT_STATUS = {
   /** Stone Ward: a cool, faintly polished stone sheen. */
