@@ -2,13 +2,13 @@
  * assets/models/people/rig.ts — one skeleton for every person.
  *
  * Every figure, from a villager to a God-King, is a single SkinnedMesh on
- * the same 29-bone skeleton. One mesh = one draw call per person, which is
+ * the same 30-bone skeleton. One mesh = one draw call per person, which is
  * what lets 300+ of them share the screen. The skeleton:
  *
  *   root ─ hips ─┬ spine ─ chest ─┬ neck ─ head ─ tail (hair/braids)
  *                │                ├ clavL ─ armL ─ foreL ─ handL ─ propL
  *                │                ├ clavR ─ armR ─ foreR ─ handR ─┬ propR ─ charm
- *                │                ├ cloak1 ─ cloak2               ├ axe
+ *                │                ├ cloak1 ─ cloak2 ─ cloak3      ├ axe
  *                │                └ log                           └ hammer
  *                ├ thighL ─ shinL ─ footL
  *                └ thighR ─ shinR ─ footR
@@ -37,10 +37,12 @@ export const BONES = [
   'clavR', 'armR', 'foreR', 'handR',
   'thighL', 'shinL', 'footL',
   'thighR', 'shinR', 'footR',
-  'propR', 'propL', 'cloak1', 'cloak2', 'tail', 'log', 'axe', 'hammer', 'charm',
+  'propR', 'propL', 'cloak1', 'cloak2', 'cloak3', 'tail', 'log', 'axe', 'hammer', 'charm',
 ] as const;
 export type BoneName = (typeof BONES)[number];
 export const NB = BONES.length;
+/** Length of each cloak bone: a floor-length cloak bends at two 'knees'. */
+export const CLOAK_SEG = 0.46;
 /** Bone name → index. */
 export const BI = Object.fromEntries(BONES.map((b, i) => [b, i])) as Record<BoneName, number>;
 
@@ -50,7 +52,7 @@ const PARENT: Record<BoneName, BoneName | null> = {
   clavR: 'chest', armR: 'clavR', foreR: 'armR', handR: 'foreR',
   thighL: 'hips', shinL: 'thighL', footL: 'shinL',
   thighR: 'hips', shinR: 'thighR', footR: 'shinR',
-  propR: 'handR', propL: 'handL', cloak1: 'chest', cloak2: 'cloak1', tail: 'head',
+  propR: 'handR', propL: 'handL', cloak1: 'chest', cloak2: 'cloak1', cloak3: 'cloak2', tail: 'head',
   log: 'chest', axe: 'handR', hammer: 'handR', charm: 'propR',
 };
 export const PARENT_INDEX = BONES.map((b) => (PARENT[b] ? BI[PARENT[b]!] : -1));
@@ -87,7 +89,7 @@ export interface Body {
 export function defaultBody(): Body {
   return {
     legLen: 0.8, footH: 0.085, torsoLen: 0.64, neckLen: 0.09, headR: 0.262,
-    shoulderW: 0.27, hipW: 0.1, armLen: 0.7, handR: 0.075,
+    shoulderW: 0.27, hipW: 0.1, armLen: 0.7, handR: 0.088,
     chestR: 0.22, waistR: 0.18, hipR: 0.19, depth: 0.72, limb: 1, hunch: 0, female: false,
   };
 }
@@ -129,7 +131,8 @@ export function restOffsets(b: Body): Float32Array {
   set('hammer', 0, -b.handR * 1.1, 0.0);
   set('charm', 0, 0, 1.4);
   set('cloak1', 0, b.torsoLen * 0.45, -b.chestR * b.depth - 0.02);
-  set('cloak2', 0, -0.5, 0);
+  set('cloak2', 0, -CLOAK_SEG, 0);
+  set('cloak3', 0, -CLOAK_SEG, 0);
   set('tail', 0, b.headR * 0.9, -b.headR * 0.85);
   set('log', 0, 0.02, b.chestR * b.depth + 0.22);
   return o;

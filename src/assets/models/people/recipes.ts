@@ -26,7 +26,7 @@ import { Rng, rng } from '../rng';
 import * as gear from './gear';
 import {
   addBand, addBelt, addBody, addCloak, addFurMantle, addHair, addHead, addNecklace, addRobe, addSash, addSkirt,
-  clothFn, feather, flip, HAIRS, headCentre, LEATHERS, Look, SKINS, TRIMS,
+  clothFn, feather, flip, HAIRS, headCentre, hipSpan, LEATHERS, Look, SKINS, TRIMS,
 } from './parts';
 import { BI, Body, defaultBody, Rig, restOffsets } from './rig';
 
@@ -236,17 +236,33 @@ function emberthrower(r: Rng, team: number): Recipe {
   const soot = 0x2a2522;
   const offsets = restOffsets(b);
   const rig = new Rig(offsets);
+  // Sleeves and leggings in warm scorched leather (not black — black limbs
+  // read as a stick figure from the camera), bound with lighter wraps.
+  const hideC = 0x5a4232;
+  const wrapC = 0x9a7a58;
   addBody(rig, b, look, {
     shirt: (p) => (p.z > 0.04 && Math.abs(p.x) < 0.07 ? soot : team),
-    sleeve: soot,
+    sleeve: hideC,
     sleeveLen: 'long',
-    legs: 0x3a322c,
+    legs: hideC,
     feet: look.leather,
   });
+  // leg bindings spiralling down the shins, a leather bracer on each forearm
+  for (const side of ['L', 'R'] as const) {
+    for (let k = 0; k < 3; k++) {
+      const w = torus(0.1 * (1 - k * 0.1), 0.016, 5, 14);
+      place(w, 0, -0.1 - k * 0.11, 0, Math.PI / 2 + (k % 2 ? 0.25 : -0.25), 0, 0);
+      paint(w, wrapC);
+      rig.add(`shin${side}`, w);
+    }
+    const bracer = lathe([[0.082, -0.3], [0.09, -0.18], [0.096, -0.08]], 12);
+    paint(bracer, (p) => (Math.abs(p.y + 0.19) < 0.02 ? team : 0x3a2a20));
+    rig.add(`fore${side}`, bracer);
+  }
   addSkirt(rig, b, clothFn(team, soot, 1, -0.3), 0.3, 0.05);
   // leather apron over the kilt, scorched at the hem
   const apron = rbox(0.24, 0.42, 0.02, 0.01);
-  place(apron, 0, -0.14, b.hipR * b.depth + 0.04, -0.08, 0, 0);
+  place(apron, 0, -0.14, hipSpan(b) * b.depth + 0.07, -0.08, 0, 0);
   paint(apron, (p) => (p.y < -0.28 ? 0x231c18 : look.leather));
   rig.add('hips', apron, { weights: (p) => [['hips', 1 - Math.min(0.5, -p.y)], ['thighL', Math.min(0.25, -p.y / 2)], ['thighR', Math.min(0.25, -p.y / 2)]] });
   addBelt(rig, b, 0x3a2a20);
@@ -276,7 +292,7 @@ function emberthrower(r: Rng, team: number): Recipe {
   paint(scarf, (p) => (Math.sin(p.x * 50) > 0.6 ? tint(scarfC, 1.25) : scarfC));
   rig.add('head', scarf);
   // short cape
-  addCloak(rig, b, (p) => (p.y < -0.5 ? tint(team, 0.6) : soot), team, 0.6, 0.85);
+  addCloak(rig, b, (p) => (p.y < -0.5 ? tint(team, 0.6) : soot), team, 0.6, 0.85, undefined, { hem: 'points', folds: 5, drape: 0.08 });
   rig.add('propR', gear.sling());
   rig.add('propL', gear.emberPot());
   return {
@@ -313,7 +329,7 @@ function warden(r: Rng, team: number): Recipe {
   addSkirt(rig, b, (p) => (Math.floor(Math.atan2(p.x, p.z) * 3) % 2 === 0 ? leather : team), 0.42, 0.1, 0.16, true);
   addBelt(rig, b, 0x2e2420);
   addFurMantle(rig, b, fur, 1.35, r.int(99));
-  addCloak(rig, b, (p) => (Math.sin(p.x * 30 + p.y * 9) > 0.3 ? tint(fur, 0.9) : fur), tint(fur, 0.7), 1.1, 1.15);
+  addCloak(rig, b, (p) => (Math.sin(p.x * 30 + p.y * 9) > 0.3 ? tint(fur, 0.9) : fur), tint(fur, 0.7), 1.1, 1.15, undefined, { hem: 'ragged', folds: 6, drape: 0.14, seed: 5 });
   addBand(rig, 'foreL', 0.075, -0.25, team, 0.12);
   addBand(rig, 'foreR', 0.075, -0.25, team, 0.12);
   addHead(rig, b, look, { brow: 0.4, eyeScale: 0.85 });
@@ -472,15 +488,21 @@ function leader(r: Rng, team: number, civ: Civ): Recipe {
       paint: (p) => (p.z > 0.1 && Math.abs(p.y + 0.02) < 0.02 && Math.abs(p.x) > 0.04 ? paintW : null),
     });
     addHair(rig, b, look, r);
-    // feather cloak: rows of feathers in team colour and earth tones
-    addCloak(rig, b, (p) => {
-      // overlapping rows of feathers: team colour, darkening toward the hem, a pale fringe
-      const row = Math.floor(-p.y / 0.13);
-      const scal = Math.sin(Math.atan2(p.x, -p.z) * 14 + row * 1.7);
-      if (-p.y > 1.42) return 0xeadfc4;
-      const base = tint(team, 1 - Math.min(0.35, -p.y * 0.22));
-      return scal > 0.2 ? base : tint(base, 0.8);
-    }, tint(team, 0.6), 1.55, 1.15, 0xeadfc4);
+    // feather cloak: three overlapping tiers of feathers with scalloped,
+    // pale-tipped hems over a long cloak; each tier a shade deeper
+    const featherFn = (p: THREE.Vector3) => {
+      const streak = Math.sin(Math.atan2(p.x, -p.z + 0.15) * 8 + 3) > 0.55 ? 0.86 : 1; // quill lines along the folds
+      return tint(team, (0.95 - Math.min(0.35, -p.y * 0.22)) * streak);
+    };
+    addCloak(rig, b, featherFn, tint(team, 0.5), 1.55, 1.15, 0xeadfc4, {
+      hem: 'scallop', folds: 8, drape: 0.24, hemTrim: 0xeadfc4, tiers: [0.36, 0.6, 0.82], segs: 40,
+      tierColor: (p) => {
+        const streak = Math.sin(Math.atan2(p.x, -p.z + 0.15) * 8 + 3) > 0.55 ? 0.88 : 1;
+        return tint(team, (1.12 - Math.min(0.4, -p.y * 0.3)) * streak);
+      },
+      mantle: (p) => (p.y < b.torsoLen * 0.64 - 0.17 ? tint(team, 1.15) : 0xf2ead8),
+      mantleLen: 0.26,
+    });
     // antlers
     for (const sx of [1, -1]) {
       const base = new THREE.Vector3(sx * b.headR * 0.55, c.y + b.headR * 0.7, c.z);
@@ -547,7 +569,17 @@ function leader(r: Rng, team: number, civ: Civ): Recipe {
       gold.add(`arm${side}`, arm);
     }
     // cape of office in team colour, gold-lined
-    addCloak(rig, b, (p) => (p.y < -1.38 ? 0xf0c75e : Math.abs(p.x) > 0.36 ? tint(team, 0.8) : team), 0xd8a840, 1.5, 1.1);
+    // cape of office: deep team colour, a gold sun disc on the back, a
+    // shorter overcape with a gold-pointed hem, a tall flared collar
+    const sunFn = (p: THREE.Vector3) => {
+      const d = Math.hypot(p.x, p.y + 0.98);
+      if (d < 0.1 || (d > 0.15 && d < 0.2)) return 0xf0c75e;
+      return Math.abs(p.x) > 0.4 ? tint(team, 0.72) : tint(team, 0.92);
+    };
+    addCloak(rig, b, sunFn, 0xd8a840, 1.5, 1.12, 0xf0c75e, {
+      hem: 'straight', folds: 9, drape: 0.22, hemTrim: 0xf0c75e, tiers: [0.42], seed: 2, segs: 44,
+      tierColor: (p) => (Math.floor(Math.atan2(p.x, -p.z) * 5) % 2 ? tint(team, 0.6) : tint(team, 0.5)),
+    });
     // the crown: a tall tiered white-and-gold mitre with a burning jewel
     const crown = lathe([
       [b.headR * 1.0, 0], [b.headR * 1.04, 0.08], [b.headR * 0.95, 0.2], [b.headR * 1.02, 0.34], [b.headR * 0.9, 0.5], [b.headR * 0.62, 0.66], [b.headR * 0.4, 0.74], [0.001, 0.76],
@@ -594,7 +626,18 @@ function leader(r: Rng, team: number, civ: Civ): Recipe {
     addSkirt(rig, b, clothFn(team, 0xeadfc4, 2, -0.7, 0.08), 0.7, 0.1);
     addBelt(rig, b, 0x3a2a20, 0x5a3c26);
     addFurMantle(rig, b, wolf, 1.15, 5);
-    addCloak(rig, b, (p) => (Math.sin(p.x * 35 + p.y * 12) > 0.35 ? tint(wolf, 0.85) : wolf), tint(team, 0.7), 1.55, 1.2);
+    // wolf-pelt cloak: ragged fur in two layers over a team-coloured lining,
+    // a dark fur hem, the wolf's tail hanging down the back
+    const peltFn = (p: THREE.Vector3) => (Math.sin(p.x * 35 + p.y * 12) > 0.35 ? tint(wolf, 0.82) : Math.sin(p.x * 13 - p.y * 7) > 0.6 ? tint(wolf, 1.12) : wolf);
+    addCloak(rig, b, peltFn, tint(team, 0.8), 1.55, 1.2, undefined, {
+      hem: 'ragged', folds: 7, drape: 0.22, hemTrim: tint(team, 0.85), tiers: [0.5], seed: 7, segs: 36,
+      // the pelt's dark dorsal stripe runs down the middle of the back
+      tierColor: (p) => (Math.abs(p.x) < 0.07 + p.y * 0.05 ? tint(wolf, 0.6) : Math.sin(p.x * 40 + p.y * 20) > 0.2 ? tint(wolf, 1.15) : wolf),
+    });
+    const wtail = capsule(0.085, 0.04, 0.62, 9, 1, 0.8);
+    paint(wtail, (p) => (p.y < -0.5 ? 0xeeeae2 : Math.sin(p.y * 40) > 0.4 ? tint(wolf, 0.6) : tint(wolf, 0.75)));
+    place(wtail, 0, 0.12, -0.3, 0.2, 0, 0);
+    rig.add('cloak3', wtail);
     addHead(rig, b, look, { brow: 0.3 });
     addHair(rig, b, look, r);
     // long braided beard extension

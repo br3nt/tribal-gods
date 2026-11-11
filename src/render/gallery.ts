@@ -106,10 +106,12 @@ export function startGallery(): Promise<never> {
 
   if (focus) {
     const civ = civQ || 'forest';
-    addFigure(focus, 'player', civ, Number(q.get('seed') ?? 1), 0, 0);
-    frameW = 3.2;
-    frameH = 3.2;
-    frameCenter.set(0, 1.4, 0);
+    const fig = addFigure(focus, 'player', civ, Number(q.get('seed') ?? 1), 0, 0);
+    // frame the whole figure, crest and staff included
+    const h = Math.max(2.4, fig.height * (fig.style.leader ? 1.22 : 1.05));
+    frameW = h * 1.1;
+    frameH = h * 1.12;
+    frameCenter.set(0, h * 0.5, 0);
   } else if (view === 'units' || view === 'all') {
     const row1: UnitKind[] = ['brave', 'brave', 'brave', 'brave', 'warrior', 'firewarrior', 'warden', 'chanter', 'wildman'];
     const seeds = [0, 1, 5, 6, 1, 1, 1, 1, 1];
