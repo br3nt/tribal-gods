@@ -709,9 +709,9 @@ export class World implements SimQueries {
     } else if (isFighterKind(u.kind) && u.task === 'none') {
       // Soldiers on standby scan for trouble...
       if (this.acquireTarget(u)) return;
-      // ...and with no war to fight, eventually billet in a dwelling (breeding
-      // needs residents; an all-soldier tribe must still be able to recover).
-      if (u.idleTime > 12 && this.tryMoveIn(u)) return;
+      // ...and if the tribe has no villagers left, billet in a dwelling
+      // (breeding needs residents; an all-soldier tribe must still recover).
+      if (u.idleTime > 12 && !this.units.some((q) => q.tribe === u.tribe && q.kind === 'brave') && this.tryMoveIn(u)) return;
     }
 
     // Villagers are civilians: enemy soldiers nearby → run for the home circle.
@@ -773,6 +773,22 @@ export class World implements SimQueries {
       u.carrying = false;
       u.task = 'none';
       return false;
+    }
+
+    // Every dwelling wants someone at home — no residents, no children.
+    if (u.home < 0 && this.tribePopulation(u.tribe as TribeId) < this.popCap(u.tribe as TribeId)) {
+      const empty = this.buildings.find(
+        (b) => b.tribe === u.tribe && b.kind === 'hut' && b.progress >= 1 && b.residents === 0 &&
+          !this.units.some((q) => q.task === 'goHome' && q.targetBuilding === b.id),
+      );
+      if (empty) {
+        u.task = 'goHome';
+        u.targetBuilding = empty.id;
+        const door = this.doorOf(empty);
+        if (this.sendTo(u, door.x, door.z)) return true;
+        u.task = 'none';
+        u.targetBuilding = -1;
+      }
     }
 
     for (const b of this.buildings) {
@@ -1487,7 +1503,9 @@ export class World implements SimQueries {
     b.outingTimer -= dt;
     if (b.outingTimer <= 0) {
       b.outingTimer = OUTING_SECONDS * (0.6 + this.random() * 0.8);
-      if (b.residents > 0 && !growing) {
+      // Someone stays home to raise children — unless the tribe is at its cap.
+      const atCap = this.tribePopulation(b.tribe) >= this.popCap(b.tribe);
+      if (b.residents > (atCap ? 0 : 1) && !growing) {
         const resident = this.units.find((q) => q.hidden && q.home === b.id && q.garrison < 0);
         if (resident) {
           this.exitBuilding(resident, b);
