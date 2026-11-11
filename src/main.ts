@@ -34,17 +34,15 @@ import { Atmosphere, Sky } from './render/sky';
 import { TreeRenderer } from './render/tree-renderer';
 import { UnitRenderer } from './render/unit-renderer';
 import { World } from './sim/world-state';
+import './ui/theme.css';
 import { SculptBrush } from './ui/brush';
-import { BuildPlacer } from './ui/build-placer';
-import { Hud } from './ui/hud';
-import { OrderControl } from './ui/orders';
 import { appState } from './ui/app-state';
 import { Editor } from './ui/editor';
+import { GameUi } from './ui/game-ui';
 import { LevelLibrary } from './ui/level-library';
 import { Menu } from './ui/menu';
-import { Minimap } from './ui/minimap';
-import { SpellCaster } from './ui/spell-caster';
-import { SpellPanel } from './ui/spell-panel';
+import { applyUiScale, settings as uiSettings, writeQualityToUrl } from './ui/settings';
+import { toolState } from './ui/tools';
 import { applyLimbToCpuCurved, curvatureUniforms } from './world/curvature';
 import { TerrainMesh } from './world/terrain-mesh';
 import { GroundCover } from './world/ground-cover';
@@ -61,6 +59,8 @@ const query = new URLSearchParams(location.search);
 world.reset(query.has('seed') ? Number(query.get('seed')) : Math.floor(Math.random() * 1e9));
 
 // --- Renderer & scene (the look: render/look.ts, sky.ts, lighting.ts, post.ts) ---
+writeQualityToUrl(true); // the player's saved graphics setting becomes ?q= before the renderer reads it
+applyUiScale();
 let quality = initialQuality();
 const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
 renderer.setSize(innerWidth, innerHeight);
@@ -102,17 +102,17 @@ treeRenderer.rebuild(world);
 // --- Camera, input, UI ---
 const rig = new CameraRig(world.map, renderer.domElement);
 const brush = new SculptBrush(rig.camera, rig.target, world.map, renderer.domElement, scene);
-const orders = new OrderControl(rig.camera, rig.target, world, unitRenderer, renderer.domElement);
-const placer = new BuildPlacer(rig.camera, rig.target, world, renderer.domElement, scene);
-const caster = new SpellCaster(rig.camera, rig.target, world, renderer.domElement, scene);
 const effects = new EffectsRenderer(scene, rig, terrain, lighting, quality);
 const post = new PostChain(renderer, scene, rig.camera, quality);
 post.onQualityChange = (q) => {
   quality = q;
   lighting.applyQuality(q);
 };
-new SpellPanel(world);
-const minimap = new Minimap(rig.target);
+// Edge panning is a player setting; the rig reads a flag it otherwise takes from ?edgepan=1.
+const setEdgePan = (on: boolean) => {
+  (rig as unknown as { edgePan: boolean }).edgePan = on || query.get('edgepan') === '1';
+};
+setEdgePan(uiSettings.edgePan);
 
 // Browsers mute pages until the user interacts — wake the synth on the
 // first click so the first Blast actually booms.
@@ -126,11 +126,15 @@ function centerOnHome(): void {
 }
 centerOnHome();
 
+/** What Restart replays: the last skirmish settings, or the last level. */
+let lastStart: { settings?: Parameters<World['reset']>[1]; level?: LevelData } = {};
+
 function newWorld(settings?: Parameters<World['reset']>[1]): void {
   world.reset(Math.floor(Math.random() * 1e9), settings);
   treeRenderer.rebuild(world);
-  orders.selected.clear();
+  ui?.reset();
   centerOnHome();
+  lastStart = { settings };
 }
 
 // --- App modes: menu ⇄ game ⇄ editor ⇄ library ----------------------------
@@ -144,14 +148,48 @@ const menu = new Menu((settings) => {
   appState.mode = 'game';
   newWorld(settings);
 });
+menu.settingsHooks = {
+  inGame: () => menu.inGame,
+  onEdgePan: setEdgePan,
+  onResetHints: () => ui?.resetHints(),
+};
+// The in-game menu pauses the sim while it's open and restores the speed after.
+let pausedBeforeMenu = false;
+function openGameMenu(screen: 'pause' | 'help' = 'pause'): void {
+  if (appState.mode !== 'game' || menu.visible) return;
+  pausedBeforeMenu = appState.paused;
+  appState.paused = true;
+  menu.openInGame(screen);
+}
+menu.onResume = () => {
+  menu.hide();
+  appState.paused = pausedBeforeMenu;
+};
+menu.onRestart = () => {
+  menu.hide();
+  restart();
+};
+menu.onQuit = () => quitToMenu();
+function restart(): void {
+  appState.mode = 'game';
+  if (lastStart.level) void startLevel(lastStart.level, !!testingLevel);
+  else newWorld(lastStart.settings);
+}
+function quitToMenu(): void {
+  appState.mode = 'menu';
+  appState.paused = false;
+  backBtn.style.display = 'none';
+  menu.show('title');
+}
 
 /** Launch any level document as a playable skirmish. */
 async function startLevel(level: LevelData, asTest = false): Promise<void> {
   await world.loadLevel(level, menu.settings);
   treeRenderer.rebuild(world);
-  orders.selected.clear();
+  ui?.reset();
   centerOnHome();
   appState.mode = 'game';
+  lastStart = { level };
   testingLevel = asTest ? level : null;
   backBtn.style.display = asTest ? 'block' : 'none';
 }
@@ -163,7 +201,7 @@ async function editLevel(id: string | undefined, level: LevelData): Promise<void
   // (which ARE level content). Homes stay marked by the totems.
   world.units = world.units.filter((u) => u.kind === 'wildman');
   treeRenderer.rebuild(world);
-  orders.selected.clear();
+  ui?.reset();
   centerOnHome();
   lastEdit = { id, level };
   appState.mode = 'editor';
@@ -210,15 +248,12 @@ menu.onLevels = () => {
 };
 menu.onEditor = () => freshEditorCanvas();
 
-// The "↩ editor" button, visible only while test-playing a level.
+// The "back to editor" button, visible only while test-playing a level.
 const backBtn = document.createElement('button');
-backBtn.textContent = '↩ back to editor';
-backBtn.style.cssText = `
-  position: fixed; top: 196px; right: 12px; z-index: 15; display: none;
-  padding: 8px 12px; cursor: pointer; border-radius: 8px;
-  border: 1px solid rgba(255,233,168,0.5); background: rgba(16,22,30,0.85);
-  color: #ffe9a8; font: 12px ui-monospace, Menlo, monospace;
-`;
+backBtn.type = 'button';
+backBtn.className = 'tg-btn primary';
+backBtn.textContent = 'Back to the editor';
+backBtn.style.cssText = 'position: fixed; top: 4.4rem; left: 50%; transform: translateX(-50%); z-index: 15; display: none;';
 backBtn.addEventListener('click', () => {
   if (!lastEdit.level) return;
   backBtn.style.display = 'none';
@@ -227,32 +262,29 @@ backBtn.addEventListener('click', () => {
 });
 document.body.appendChild(backBtn);
 
-addEventListener('keydown', (e) => {
-  if (e.code === 'KeyR' && appState.mode === 'game' && !testingLevel) newWorld();
-  if (e.code === 'KeyM' && appState.mode !== 'editor') {
-    appState.mode = 'menu';
-    menu.show();
-  }
+addEventListener('resize', () => {
+  post.setSize(innerWidth, innerHeight);
+  applyUiScale();
 });
 
-addEventListener('resize', () => post.setSize(innerWidth, innerHeight));
-
 // --- The loop ---
-let hud: Hud; // created right after the loop starts (it needs the stats object)
+let ui: GameUi | undefined; // created right after the loop starts (it needs the stats object)
 const stats = startLoop({
   // Fixed-rate simulation: deterministic, testable, framerate-independent.
   // Frozen outside of play — the editor needs its clay to hold still, and
   // the menu's attract-mode world can idle without an AI scheming in it.
+  // Pause skips ticks; 2×/3× runs that many fixed ticks per loop tick.
   tick(dt) {
-    if (appState.mode === 'game') world.tick(dt);
+    if (appState.mode !== 'game' || appState.paused) return;
+    for (let i = 0; i < appState.speed; i++) world.tick(dt);
   },
 
   // Per-frame rendering: camera + input, then sync visuals to sim state.
   render(dt, alpha) {
+    if (appState.mode === 'menu' && menu.visible) rig.yaw += dt * 0.04; // the planet turns behind the menu
     rig.update(dt);
     brush.update(dt);
-    placer.update();
-    caster.update();
+    ui?.update(dt);
 
     // One uniform update curves every world-space material around wherever
     // the camera looks (they share these uniform objects — see curvature.ts).
@@ -264,25 +296,33 @@ const stats = startLoop({
     sky.update(rig.camera, dt, scene.fog as THREE.Fog, rig.distance);
     atmosphere.update(rig.target, rig.distance);
     lighting.update(rig.target, rig.distance, dt);
-    unitRenderer.sync(world, rig.target, alpha, dt, orders.selected);
+    unitRenderer.sync(world, rig.target, alpha, dt, ui?.selection.units ?? new Set<number>());
     treeRenderer.sync(world, rig.target);
     buildingRenderer.sync(world, rig.target);
     applyLimbToCpuCurved(scene, rig.target); // until the CPU-curved renderers use curvatureDrop()
-    effects.sync(world, rig.target, dt);
-    minimap.update(world, rig.target);
-    hud.update(world);
+    effects.sync(world, rig.target, dt); // drains world.events (ui/alerts.ts diffs state instead)
+    ui?.updateOverlay();
 
     post.render(dt);
   },
 });
 
-hud = new Hud(stats, brush, world, orders);
+ui = new GameUi(world, { camera: rig.camera, target: rig.target, map: world.map }, scene, renderer.domElement, stats, {
+  openMenu: () => openGameMenu('pause'),
+  openHelp: () => openGameMenu('help'),
+  restart,
+  quitToMenu,
+  isBlocked: () => menu.visible,
+}, () => brush.radius);
 
 // Automation handle (tools/shot.mjs, tests, the console). Not a game API.
-(window as unknown as { __tg: unknown }).__tg = { world, rig, appState, menu, startLevel, terrain, effects, post, scene, lighting };
+(window as unknown as { __tg: unknown }).__tg = {
+  world, rig, appState, menu, startLevel, terrain, effects, post, scene, lighting, ui, toolState, newWorld,
+};
 if (query.get('play') === '1') {
   menu.hide();
   appState.mode = 'game';
+  ui.reset();
   const levelId = query.get('level');
   if (levelId) {
     void import('./level/official-levels').then(async (m) => {
