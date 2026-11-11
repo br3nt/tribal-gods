@@ -25,9 +25,11 @@ export interface Snapshot {
   buildings: Map<number, { kind: BuildingKind; hp: number; tier: number; burning: boolean; done: boolean; x: number; z: number }>;
   objectives: Array<{ text: string; done: boolean }>;
   population: number;
+  /** Rituals under way at standing stones (optional: older snapshots have none). */
+  rituals?: Array<{ index: number; tribe: string; who: string; spell: SpellId; x: number; z: number }>;
 }
 
-export type AlertKind = 'attack' | 'leaderDown' | 'leaderBack' | 'learned' | 'gift' | 'grew' | 'burning' | 'built' | 'lost' | 'objective';
+export type AlertKind = 'attack' | 'leaderDown' | 'leaderBack' | 'learned' | 'gift' | 'grew' | 'burning' | 'built' | 'lost' | 'objective' | 'ritual' | 'ritualBroken';
 
 export interface Alert {
   kind: AlertKind;
@@ -111,6 +113,23 @@ export function deriveAlerts(a: Snapshot, b: Snapshot, mem: AlertMemory): Alert[
     if (!b.buildings.has(id) && was.done) {
       out.push({ kind: 'lost', text: `${BUILDINGS[was.kind].name} lost`, tone: 'bad', x: was.x, z: was.z });
     }
+  }
+
+  // --- Rituals at the stones ---
+  const ra = a.rituals ?? [];
+  const rb = b.rituals ?? [];
+  for (const r of rb) {
+    if (r.tribe === 'player' || ra.some((x) => x.index === r.index && x.tribe === r.tribe)) continue;
+    const name = spellDef(r.spell).name;
+    const who = r.who.charAt(0).toUpperCase() + r.who.slice(1);
+    out.push({ kind: 'ritual', text: `${who} ${r.who.startsWith('the ') ? 'are' : 'is'} communing at the ${name} stone`, tone: 'bad', x: r.x, z: r.z });
+  }
+  for (const r of ra) {
+    if (r.tribe !== 'player' || rb.some((x) => x.index === r.index && x.tribe === 'player')) continue;
+    // Gone without a reward: the ritual was broken.
+    const learned = b.known.includes(r.spell) && !a.known.includes(r.spell);
+    const lent = (b.gifted[r.spell] ?? 0) > (a.gifted[r.spell] ?? 0);
+    if (!learned && !lent) out.push({ kind: 'ritualBroken', text: `Your leader's ritual at the ${spellDef(r.spell).name} stone was broken`, tone: 'bad', x: r.x, z: r.z });
   }
 
   // --- Objectives ---

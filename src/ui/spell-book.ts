@@ -21,7 +21,7 @@
  * duration, cast time, charges, mana per charge and the live ETA.
  */
 
-import { SPELLS, SpellDef, SpellId, SpellState } from '../sim/catalog';
+import { spellDef, SPELLS, SpellDef, SpellId, SpellState } from '../sim/catalog';
 import { UiContext } from './context';
 import { css, escapeHtml, h, setClass, setText } from './dom';
 import { fmtEta, fmtEtaShort, fmtSeconds, fmtTiles } from './format';
@@ -153,7 +153,15 @@ export class SpellBook {
     const why = w.castCheck('player', id, at.x, at.z);
     // Land-only spells may refuse the leader's own tile for terrain reasons;
     // that's about the target, not the spell — aiming will show it.
-    return why === 'Must target land' || why === 'Out of range' ? null : why;
+    if (why === 'Must target land' || why === 'Out of range') return null;
+    if (why === 'No charges ready') {
+      // Not broken, just not ready: say what is happening and when.
+      const s = w.spellState('player', id);
+      const name = spellDef(id).name;
+      if (!s.charging) return `${name} is not charging — right-click it to pour mana in`;
+      return Number.isFinite(s.eta) ? `${name} is gathering power — ready in ${fmtEta(s.eta)}` : `${name} is gathering power`;
+    }
+    return why;
   }
 
   arm(id: SpellId, el?: HTMLElement): void {
@@ -162,7 +170,7 @@ export class SpellBook {
     if (why) {
       if (slotEl) {
         const r = slotEl.getBoundingClientRect();
-        toast(why, r.left + r.width / 2, r.top);
+        toast(why, r.left + r.width / 2, r.top, /gathering power|not charging/.test(why) ? 'info' : 'bad');
         slotEl.classList.remove('deny');
         void slotEl.offsetWidth;
         slotEl.classList.add('deny');
@@ -215,7 +223,8 @@ export class SpellBook {
     if (!s.known && s.gifted === 0) html += `<div class="note">${escapeHtml(this.howToLearn(def.id))}</div>`;
     else {
       const why = this.blockedReason(def.id);
-      if (why) html += `<div class="why">${escapeHtml(why)}</div>`;
+      // Charging is a state, not a fault: amber note, not a red refusal.
+      if (why) html += `<div class="${/gathering power|not charging/.test(why) ? 'note' : 'why'}">${escapeHtml(why)}</div>`;
       if (s.known && !s.charging) html += `<div class="note">Not charging — mana goes to your other spells.</div>`;
       html += `<div class="hint">Click or press ${key}, then click the world. Right-click this slot to ${s.charging ? 'stop' : 'resume'} charging.</div>`;
     }

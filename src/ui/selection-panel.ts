@@ -9,8 +9,9 @@
  *                 lodges: the training queue with +1/+5/cancel, progress,
  *                 cost, rally point; tower/shrine: who's inside + eject;
  *                 demolish (asks twice)
- *   a stone       what it teaches or lends, and whether it's free now
- *   theirs        the same, read-only
+ *   a stone       what it teaches or lends, the ritual, whether it's free now
+ *   theirs        an inspect card (Selection.inspect): who they are and
+ *                 what you could do about it — read-only, never orderable
  *
  * The panel is rebuilt only when its STRUCTURE changes (a signature of the
  * selection and the shape of what's shown); live numbers (health, timers,
@@ -24,11 +25,14 @@ import { BUILDINGS, DWELLING_TIERS, ECONOMY, spellDef, TribeId, UNITS, UnitKind 
 import type { Building, Unit } from '../sim/world-state';
 import { UiContext } from './context';
 import { css, escapeHtml, h } from './dom';
+import { fillTransform } from './bar-fill';
 import { activityText, buildingName, fmtEta } from './format';
-import { labelFor } from './hotkeys';
+import { labelFor, orderVerb } from './hotkeys';
 import { buildingIcon, icon, spellIcon, unitIcon } from './icons';
 import { tribeCss } from './orders';
 import { groupByKind } from './selection';
+import { settings } from './settings';
+import { ritualAt, ritualOf, ritualSeconds, stoneBlocked, stoneName, stoneTerms } from './stones';
 import { hideTip, tip } from './tooltip';
 
 css('selection-panel', `
@@ -173,9 +177,13 @@ export class SelectionPanel {
       const m = w.monuments[sel.monument];
       sig = `m${sel.monument}|${w.monumentAvailable(m)}|${m.claimedBy}`;
       render = () => this.renderMonument(sel.monument!);
+    } else if (sel.inspect !== null && w.unitById(sel.inspect)) {
+      const u = w.unitById(sel.inspect)!;
+      sig = `i${u.id}|${u.kind}|${u.tribe}`;
+      render = () => this.renderUnit(u);
     } else if (units.length === 1) {
       const u = units[0];
-      sig = `u${u.id}|${u.kind}|${u.wardTime > 0}|${u.warsongTime > 0}`;
+      sig = `u${u.id}|${u.kind}|${u.wardTime > 0}|${u.warsongTime > 0}|${!!ritualOf(w, u.id)}`;
       render = () => this.renderUnit(u);
     } else if (units.length > 1) {
       const groups = groupByKind(units);
@@ -207,7 +215,8 @@ export class SelectionPanel {
     };
     const bar = (k: string, frac: number) => {
       const el = this.el.querySelector<HTMLElement>(`[data-k="${k}"]`);
-      if (el) el.style.width = `${Math.max(0, Math.min(1, frac)) * 100}%`;
+      const t = fillTransform(frac);
+      if (el && el.style.transform !== t) el.style.transform = t;
     };
     const sel = this.ctx.selection;
     if (sel.building !== null) {
@@ -249,8 +258,21 @@ export class SelectionPanel {
     } else if (sel.monument !== null) {
       const m = w.monuments[sel.monument];
       if (m) set('sleep', m.sleep > 0 ? `Sleeping — wakes in ${fmtEta(m.sleep)}` : '');
-    } else if (units.length === 1) {
-      const u = units[0];
+      const r = ritualAt(w, sel.monument);
+      const row = this.el.querySelector<HTMLElement>('[data-k="ritrow"]');
+      if (row) row.hidden = !r;
+      if (r) {
+        bar('rit', r.progress);
+        set('ritt', `${r.tribe === 'player' ? 'Your leader' : 'A rival'} · ${Math.round(r.progress * 100)}%`);
+      }
+    } else if (units.length === 1 || sel.inspect !== null) {
+      const u = units[0] ?? w.unitById(sel.inspect!);
+      if (!u) return;
+      const r = ritualOf(w, u.id);
+      if (r) {
+        bar('rit', r.ritual.progress);
+        set('ritt', `${Math.round(r.ritual.progress * 100)}% · ${fmtEta((1 - r.ritual.progress) * ritualSeconds(w.monuments[r.index]))} left`);
+      }
       bar('hp', u.hp / u.maxHp);
       set('hpt', `${Math.ceil(u.hp)} / ${u.maxHp}`);
       const inside = u.garrison >= 0 ? w.getBuilding(u.garrison)?.kind ?? null : null;
@@ -294,10 +316,21 @@ export class SelectionPanel {
     if (def.armor > 0) stats.push(`Armour <b>${Math.round(def.armor * 100)}%</b>`);
     stats.push(`Speed <b>${def.speed}</b>`);
     html += `<div class="sp-stats">${stats.map((s) => `<span>${s}</span>`).join('')}</div>`;
+    const verb = orderVerb(settings.leftClickOrders);
     if (u.tribe === 'player' && u.kind === 'shaman') {
-      html += `<div class="sp-note">Pick a spell, then click the world. Right-click a standing stone to commune with it.</div>`;
+      const r = ritualOf(this.ctx.world, u.id);
+      if (r) {
+        html += `<div class="sp-row"><span class="lbl">Ritual</span><div class="sp-train"><div class="bar mana"><i data-k="rit"></i></div><span data-k="ritt"></span></div></div>` +
+          `<div class="sp-warn soft">${icon('shield', 14)}Communing leaves your leader open: damage breaks the ritual. Keep warriors close.</div>`;
+      } else {
+        html += `<div class="sp-note">Pick a spell, then click the world. To learn a spell, ${verb} a standing stone: your leader goes to commune there.</div>`;
+      }
     } else if (u.tribe === 'player' && u.kind === 'brave') {
       html += `<div class="sp-note">Villagers work on their own. Right-click a Shrine to pray there, or a lodge's queue will train them.</div>`;
+    } else if (u.tribe === 'wild') {
+      html += `<div class="sp-note">${escapeHtml(def.blurb)} Not yours to command: <b>Kindle</b> converts wanderers to your tribe.</div>`;
+    } else if (u.tribe !== 'player') {
+      html += `<div class="sp-note">A rival's ${escapeHtml(def.name)}. Select your fighters and ${verb} it to attack.</div>`;
     }
     return html;
   }
@@ -306,7 +339,7 @@ export class SelectionPanel {
     const groups = groupByKind(units);
     const own = units.every((u) => u.tribe === 'player');
     let html = `<div class="sp-head"><div class="sp-title"><div class="sp-name">${units.length} selected</div>` +
-      `<div class="sp-sub">${own ? 'Right-click to give orders' : 'Mixed'}</div></div></div>`;
+      `<div class="sp-sub">${own ? `${orderVerb(settings.leftClickOrders) === 'click' ? 'Click' : 'Right-click'} the ground to send them` : 'Mixed'}</div></div></div>`;
     html += `<div class="sp-kinds">${groups
       .map((g) => `<button type="button" class="sp-kind" data-a="kind" data-kind="${g.kind}">${unitIcon(g.kind, 24)}<span><div class="n">${g.ids.length}</div><div class="k">${UNITS[g.kind].name}</div></span></button>`)
       .join('')}</div>`;
@@ -387,20 +420,26 @@ export class SelectionPanel {
     const m = w.monuments[index];
     const s = spellDef(m.spell);
     const avail = w.monumentAvailable(m);
-    let html = this.head(icon('stone', 32), avail ? 'var(--gold)' : 'var(--rim-strong)', 'Standing stone', m.mode === 'teach' ? 'Teaches a spell' : 'Lends a spell');
-    html += `<div class="sp-spell">${spellIcon(m.spell, 26)}<div><b>${escapeHtml(s.name)}</b> · Tier ${s.tier}<div style="color:var(--text-2);font-size:var(--t-xs)">${escapeHtml(s.blurb)}</div></div></div>`;
+    let html = this.head(icon('stone', 32), avail ? 'var(--spirit)' : 'var(--rim-strong)', stoneName(m), `Standing stone · tier ${s.tier}`);
+    html += `<div class="sp-spell">${spellIcon(m.spell, 26)}<div><b>${escapeHtml(stoneTerms(m))}</b><div class="sp-spell-blurb">${escapeHtml(s.blurb)}</div></div></div>`;
     let note: string;
     if (m.mode === 'teach') {
       note = avail
-        ? 'The first leader to commune here learns this spell for good.'
+        ? `The first leader to finish a ${ritualSeconds(m)}s ritual here learns ${escapeHtml(s.name)} for good. Damage breaks the ritual.`
         : m.claimedBy === 'player' ? 'Your tribe learned this spell here.' : `Claimed by ${escapeHtml(tribeLabel(this.ctx, m.claimedBy ?? ''))}.`;
     } else {
-      note = `Whoever communes gets ${m.charges ?? 2} free casts, known or not. Then it sleeps for ${m.cooldown ?? 90}s.`;
+      note = `A ${ritualSeconds(m)}s ritual earns ${m.charges ?? 2} free casts, known or not. Then it sleeps for ${m.cooldown ?? 90}s.`;
     }
-    html += `<div class="sp-note">${note} <span data-k="sleep" style="color:var(--warn)"></span></div>`;
+    html += `<div class="sp-note">${note} <span data-k="sleep" class="sp-warnword"></span></div>`;
+    html += `<div class="sp-row" data-k="ritrow"><span class="lbl">Ritual</span><div class="sp-train"><div class="bar mana"><i data-k="rit"></i></div><span data-k="ritt"></span></div></div>`;
     const leader = w.leaderOf('player');
     if (avail) {
-      html += `<div class="sp-actions"><button type="button" class="tg-btn primary" data-a="commune" ${leader ? '' : 'disabled'}>${icon('worship', 14)}Send your leader to commune</button></div>`;
+      const verb = orderVerb(settings.leftClickOrders);
+      html += `<div class="sp-note sp-how">${icon('leader', 14)} Select your leader (<span class="kbd">${labelFor('select-leader')}</span>) and ${verb} this stone.</div>` +
+        `<div class="sp-actions"><button type="button" class="tg-btn" data-a="commune" ${leader ? '' : 'disabled'}>${icon('worship', 14)}Send your leader</button></div>`;
+    } else {
+      const why = stoneBlocked(w, m);
+      if (why) html += `<div class="sp-note sp-warnword">${escapeHtml(why)}</div>`;
     }
     return html;
   }

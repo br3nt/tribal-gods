@@ -116,17 +116,31 @@ export const HOTKEYS: Hotkey[] = [
   { action: 'debug', code: 'F3', group: 'Game', desc: 'Debug readout' },
 ];
 
-/** Camera + mouse controls the table also documents (handled elsewhere). */
-export const DESCRIBED_CONTROLS: Array<{ keys: string[]; desc: string; group: HotkeyGroup }> = [
-  { keys: ['W', 'A', 'S', 'D'], desc: 'Pan (or arrow keys)', group: 'Camera' },
-  { keys: ['Q', 'E'], desc: 'Rotate (or middle-drag)', group: 'Camera' },
-  { keys: ['Wheel'], desc: 'Zoom toward the cursor', group: 'Camera' },
-  { keys: ['Click'], desc: 'Select a person, building or stone', group: 'Selection' },
-  { keys: ['Drag'], desc: 'Box-select your people', group: 'Selection' },
-  { keys: ['Double-click'], desc: 'Select all of that kind on screen', group: 'Selection' },
-  { keys: ['Shift', 'Click'], desc: 'Add to / remove from the selection', group: 'Selection' },
-  { keys: ['Right-click'], desc: 'Order: move, attack, garrison, commune, rally', group: 'Selection' },
-];
+/**
+ * Camera + mouse controls the table also documents (handled elsewhere).
+ * `leftClickOrders` is the player's setting (ui/settings.ts): with it on, a
+ * plain click on the ground orders your selected people, like a right-click.
+ */
+export function describedControls(leftClickOrders: boolean): Array<{ keys: string[]; desc: string; group: HotkeyGroup }> {
+  return [
+    { keys: ['W', 'A', 'S', 'D'], desc: 'Pan (or arrow keys)', group: 'Camera' },
+    { keys: ['Q', 'E'], desc: 'Rotate (or middle-drag)', group: 'Camera' },
+    { keys: ['Wheel'], desc: 'Zoom toward the cursor', group: 'Camera' },
+    { keys: ['Click'], desc: leftClickOrders
+      ? 'Select your person, building or a stone. With people selected, click the ground or a target to send them'
+      : 'Select your person, building or a stone', group: 'Selection' },
+    { keys: ['Drag'], desc: 'Draw an area on the land: your people inside it are selected', group: 'Selection' },
+    { keys: ['Double-click'], desc: 'Select all of that kind on screen', group: 'Selection' },
+    { keys: ['Shift', 'Click'], desc: 'Add to / remove from the selection (Shift-drag too)', group: 'Selection' },
+    { keys: ['Right-click'], desc: 'Order: move, attack, garrison, commune, rally (Ctrl-click or a two-finger tap on a Mac)', group: 'Selection' },
+    { keys: ['Esc'], desc: 'Drop the selection', group: 'Selection' },
+  ];
+}
+
+/** The word hints and tooltips use for "give an order" under the current setting. */
+export function orderVerb(leftClickOrders: boolean): string {
+  return leftClickOrders ? 'click' : 'right-click';
+}
 
 /** 'KeyR' → 'R', 'Digit1' → '1', 'Space' → 'Space'… */
 export function codeLabel(code: string): string {

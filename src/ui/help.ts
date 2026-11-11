@@ -10,8 +10,9 @@
 
 import { BUILDINGS, BuildingKind, SPELLS, SpellId } from '../sim/catalog';
 import { css, escapeHtml } from './dom';
-import { DESCRIBED_CONTROLS, HOTKEYS, HotkeyGroup, keyLabel } from './hotkeys';
+import { describedControls, HOTKEYS, HotkeyGroup, keyLabel, orderVerb } from './hotkeys';
 import { buildingIcon, icon, spellIcon, UiIconName } from './icons';
+import { settings } from './settings';
 
 css('help', `
 .help { display: grid; gap: 1.5rem; }
@@ -31,11 +32,11 @@ css('help', `
 .help-group.compact .keys { min-width: 2.2rem; }
 `);
 
-const CONCEPTS: Array<{ icon: UiIconName; title: string; text: string }> = [
+const concepts = (): Array<{ icon: UiIconName; title: string; text: string }> => [
   { icon: 'population', title: 'Your tribe', text: 'Villagers fell trees, haul wood, raise buildings and move into dwellings, which breed more villagers. You guide them; they get on with life.' },
   { icon: 'mana', title: 'Mana and charges', text: 'Faith flows from your people into every spell that is charging. A spell holds a few charges; casting spends one. Switch spells off (right-click) to charge the rest faster.' },
   { icon: 'leader', title: 'Your leader', text: 'The only one who casts. Pick a spell, click the world: the leader walks into range and casts. If they fall, they return to the home circle while the tribe lives.' },
-  { icon: 'stone', title: 'Standing stones', text: 'Commune with a stone to learn its spell for good, or to borrow a few free casts. Select your leader and right-click the stone.' },
+  { icon: 'stone', title: 'Standing stones', text: `Each stone shows the spell it holds. Select your leader and ${orderVerb(settings.leftClickOrders)} the stone: the leader performs a ritual there to learn the spell for good, or to borrow a few casts. Damage breaks the ritual, so bring an escort.` },
   { icon: 'hammer', title: 'Buildings and training', text: 'Lodges turn villagers into fighters — queue them on the building. A watchtower holds two fighters; a shrine full of praying villagers charges spells faster.' },
   { icon: 'trophy', title: 'Winning', text: 'Each scenario has objectives (top right). In a skirmish: be the last tribe standing.' },
 ];
@@ -48,11 +49,11 @@ function row(keys: string[], label: string, ic = ''): string {
 
 export function helpHtml(): string {
   let html = `<div class="help"><section><h3>The idea</h3><div class="help-cards">`;
-  for (const c of CONCEPTS) html += `<div class="help-card"><span class="ic">${icon(c.icon, 20)}</span><div><b>${c.title}</b><p>${c.text}</p></div></div>`;
+  for (const c of concepts()) html += `<div class="help-card"><span class="ic">${icon(c.icon, 20)}</span><div><b>${c.title}</b><p>${c.text}</p></div></div>`;
   html += `</div></section><section><h3>Controls</h3><div class="help-keys">`;
   for (const g of GROUPS) {
     html += `<div class="help-group${g === 'Spells' || g === 'Build' ? ' compact' : ''}"><h4>${g}</h4>`;
-    for (const d of DESCRIBED_CONTROLS.filter((x) => x.group === g)) html += row(d.keys, d.desc);
+    for (const d of describedControls(settings.leftClickOrders).filter((x) => x.group === g)) html += row(d.keys, d.desc);
     if (g === 'Selection') {
       html += row(['1', '–', '9'], 'Select a control group (twice: jump to it)');
       html += row(['Ctrl', '1', '–', '9'], 'Make the selection a control group');

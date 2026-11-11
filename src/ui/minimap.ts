@@ -31,7 +31,10 @@ import { pickGroundTile } from '../render/ground-picker';
 import { TERRAIN, WATER } from '../render/look';
 import { TRIBE_COLORS } from '../sim/catalog';
 import { UiContext } from './context';
-import { css, h } from './dom';
+import { css, escapeHtml, h } from './dom';
+import { spellIcon } from './icons';
+import { ritualAt, stoneBlocked, stoneName, stoneTerms, tribeLabelOf } from './stones';
+import { tip } from './tooltip';
 import { lookAtTile, viewCentreTile } from './project';
 
 css('minimap', `
@@ -62,6 +65,7 @@ export class Minimap {
   private frame = 0;
   private dragging = false;
   private pings: Array<{ x: number; z: number; t: number; color: string }> = [];
+  private hoverTile: { x: number; z: number } | null = null;
   /** Wired by game-ui: right-click orders. */
   onOrder: ((x: number, z: number) => void) | null = null;
 
@@ -80,7 +84,7 @@ export class Minimap {
     this.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
     this.canvas.addEventListener('pointerdown', (e) => {
       const t = toTile(e);
-      if (e.button === 2) {
+      if (e.button === 2 || (e.button === 0 && e.ctrlKey && !e.metaKey)) {
         this.onOrder?.(t.x, t.z);
         this.ping(t.x, t.z, 'info');
         return;
@@ -90,6 +94,11 @@ export class Minimap {
       this.canvas.setPointerCapture(e.pointerId);
       lookAtTile(ctx.view.target, t.x, t.z);
     });
+    // What's under the pointer on the map, for the tooltip: a standing stone says what it holds.
+    this.canvas.addEventListener('pointermove', (e) => {
+      this.hoverTile = toTile(e);
+    });
+    tip(this.canvas, () => this.tooltip());
     this.canvas.addEventListener('pointermove', (e) => {
       if (this.dragging) {
         const t = toTile(e);
@@ -98,6 +107,21 @@ export class Minimap {
     });
     this.canvas.addEventListener('pointerup', () => (this.dragging = false));
     this.canvas.addEventListener('pointercancel', () => (this.dragging = false));
+  }
+
+  private tooltip(): string {
+    const w = this.ctx.world;
+    const t = this.hoverTile;
+    const idx = t ? w.monuments.findIndex((m) => Math.hypot(wrapDelta(m.x - t.x, WORLD_SIZE), wrapDelta(m.z - t.z, WORLD_SIZE)) < 5) : -1;
+    if (idx >= 0) {
+      const m = w.monuments[idx];
+      const blocked = stoneBlocked(w, m);
+      const r = ritualAt(w, idx);
+      return `<div class="sub">Standing stone</div><h4>${spellIcon(m.spell, 18)}${escapeHtml(stoneName(m))}</h4><p>${escapeHtml(stoneTerms(m))}.</p>` +
+        (r ? `<p>${escapeHtml(tribeLabelOf(w, r.tribe))} communing: ${Math.round(r.progress * 100)}%</p>` : '') +
+        (blocked ? `<div class="why">${escapeHtml(blocked)}</div>` : '') + `<div class="hint">Click to look there.</div>`;
+    }
+    return `<h4>The planet</h4><p>Click or drag to look. Right-click (or Ctrl-click) to send your selection there.</p>`;
   }
 
   ping(x: number, z: number, tone: 'bad' | 'good' | 'info'): void {

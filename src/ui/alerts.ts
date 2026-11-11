@@ -19,6 +19,7 @@ import { Alert, AlertMemory, castsBetween, deriveAlerts, Snapshot } from './aler
 import { UiContext } from './context';
 import { css, escapeHtml, h } from './dom';
 import { icon, UiIconName } from './icons';
+import { ritualAt, tribeLabelOf } from './stones';
 
 css('alerts', `
 .al { width: 17rem; display: flex; flex-direction: column; gap: 0.375rem; align-items: stretch; }
@@ -37,7 +38,7 @@ css('alerts', `
 
 const ICONS: Record<Alert['kind'], UiIconName> = {
   attack: 'attack', leaderDown: 'skull', leaderBack: 'leader', learned: 'book', gift: 'gift',
-  grew: 'housed', burning: 'fire', built: 'hammer', lost: 'demolish', objective: 'objective',
+  grew: 'housed', burning: 'fire', built: 'hammer', lost: 'demolish', objective: 'objective', ritual: 'worship', ritualBroken: 'stone',
 };
 
 export interface GameTally {
@@ -72,6 +73,10 @@ export function snapshot(w: World): Snapshot {
     buildings,
     objectives: w.objectives.map((o) => ({ text: o.text, done: o.done })),
     population: w.tribePopulation('player'),
+    rituals: w.monuments.flatMap((m, index) => {
+      const r = ritualAt(w, index);
+      return r ? [{ index, tribe: r.tribe, who: tribeLabelOf(w, r.tribe), spell: m.spell, x: m.x, z: m.z }] : [];
+    }),
   };
 }
 
@@ -105,7 +110,7 @@ export class AlertFeed {
       const fresh = deriveAlerts(this.prev, next, this.mem);
       for (const a of fresh) this.push(a);
       // One sound per batch: the most urgent.
-      if (fresh.length) alertSound(fresh.some((a) => a.kind === 'attack' || a.kind === 'leaderDown') ? 'attack' : fresh.some((a) => a.tone === 'good') ? 'good' : 'info');
+      if (fresh.length) alertSound(fresh.some((a) => a.kind === 'attack' || a.kind === 'leaderDown' || a.kind === 'ritual' || a.kind === 'ritualBroken') ? 'attack' : fresh.some((a) => a.tone === 'good') ? 'good' : 'info');
     }
     this.prev = next;
   }

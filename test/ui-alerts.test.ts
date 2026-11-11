@@ -42,6 +42,19 @@ describe('deriveAlerts', () => {
 });
 
 describe('castsBetween', () => {
+  it('a rival beginning a ritual at a stone is an alert you can jump to', () => {
+    const r = { index: 0, tribe: 'red', who: 'the Ashmark', spell: 'lightning' as const, x: 30, z: 40 };
+    const a = deriveAlerts(snap(), snap({ t: 1, rituals: [r] }), mem());
+    expect(a).toHaveLength(1);
+    expect(a[0]).toMatchObject({ kind: 'ritual', text: 'The Ashmark are communing at the Lightning stone', x: 30, z: 40 });
+    // Still going: no repeat.
+    expect(deriveAlerts(snap({ rituals: [r] }), snap({ t: 1, rituals: [r] }), mem())).toEqual([]);
+  });
+  it('your ritual ending without the spell means it was broken; ending in a lesson does not', () => {
+    const r = { index: 1, tribe: 'player', who: 'your tribe', spell: 'swamp' as const, x: 3, z: 4 };
+    expect(deriveAlerts(snap({ rituals: [r] }), snap({ t: 1 }), mem()).map((x) => x.kind)).toEqual(['ritualBroken']);
+    expect(deriveAlerts(snap({ rituals: [r] }), snap({ t: 1, known: ['blast', 'swamp'] }), mem()).map((x) => x.kind)).toEqual(['learned']);
+  });
   it('counts spent charges, not gifts received', () => {
     expect(castsBetween(snap(), snap({ casts: { blast: 1 } }))).toBe(1);
     expect(castsBetween(snap(), snap({ casts: { blast: 3 }, gifted: { blast: 1 } }))).toBe(0);
