@@ -198,12 +198,142 @@ export function stakes(k: Kit, half: number): G {
     paint(rope, 0xd8c79a);
     parts.push(rope);
   }
-  // dug earth patch
-  const dirt = cyl(half * 1.25, half * 1.3, 0.12, 20);
-  place(dirt, 0, 0.0, 0, 0, 0, 0, 1, 1, 1);
+  // dug earth patch: a dense disc that the renderer DRAPES over the real
+  // ground (BuildingModel.setGround), so it follows any slope
+  const dirt = dirtPatch(half * 1.25);
   paint(dirt, (p) => (Math.sin(p.x * 3 + p.z * 4) > 0.3 ? 0x7a5e3e : 0x8a6c48));
-  dirt.scale(1, 1, 1);
   parts.push(dirt);
+  return merge(parts);
+}
+
+/**
+ * A flat disc of dug earth at y = DRAPE_LIFT, dense enough (rings × spokes)
+ * to follow curved ground once draped, with a short skirt hanging below
+ * its rim so a steep edge never shows a gap. Ragged outline.
+ */
+export function dirtPatch(r: number, rings = 7, spokes = 36): G {
+  const pos: number[] = [];
+  const idx: number[] = [];
+  pos.push(0, DRAPE_LIFT, 0);
+  for (let i = 1; i <= rings; i++) {
+    for (let k = 0; k < spokes; k++) {
+      const a = (k / spokes) * Math.PI * 2;
+      const rag = i === rings ? 1 + 0.07 * Math.sin(a * 5 + 1.3) + 0.05 * Math.sin(a * 11) : 1;
+      const rr = (r * i * rag) / rings;
+      pos.push(Math.cos(a) * rr, DRAPE_LIFT, Math.sin(a) * rr);
+    }
+  }
+  const at = (i: number, k: number) => (i === 0 ? 0 : 1 + (i - 1) * spokes + (k % spokes));
+  for (let k = 0; k < spokes; k++) idx.push(0, at(1, k + 1), at(1, k));
+  for (let i = 1; i < rings; i++) {
+    for (let k = 0; k < spokes; k++) {
+      const a = at(i, k), b = at(i, k + 1), c = at(i + 1, k), d = at(i + 1, k + 1);
+      idx.push(a, b, c, b, d, c);
+    }
+  }
+  // skirt
+  const skirt = pos.length / 3;
+  for (let k = 0; k < spokes; k++) {
+    const o = at(rings, k) * 3;
+    pos.push(pos[o] * 1.03, DRAPE_LIFT - 0.35, pos[o + 2] * 1.03);
+  }
+  for (let k = 0; k < spokes; k++) {
+    const a = at(rings, k), b = at(rings, k + 1), c = skirt + k, d = skirt + ((k + 1) % spokes);
+    idx.push(a, b, c, b, d, c);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setIndex(idx);
+  g.computeVertexNormals();
+  return merge([g]);
+}
+
+/** How far draped ground cover floats above the drawn ground (no z-fighting). */
+export const DRAPE_LIFT = 0.05;
+
+/**
+ * THE FOUNDATION: a levelled terrace under the whole footprint, its top at
+ * y = 0 (where the building stands) and its walls running `depth` down so
+ * they always reach below the lowest ground under the footprint — on a
+ * slope it reads as a cut-and-filled platform with a retaining wall on the
+ * downhill side; on level ground only its rim shows. Per civ: dry-stone
+ * and packed earth (forest), dressed sandstone (dynasty), rough dark
+ * fieldstone (north).
+ */
+export function terrace(civ: Civ, w: number, d: number, depth: number): G {
+  const style = civ.roof;
+  const parts: G[] = [];
+  const rnd = (i: number) => Math.abs(Math.sin(i * 12.9898 + 7.13) * 43758.5453) % 1;
+  const batter = Math.min(0.1, 0.3 / w); // the wall leans back: wider at the foot
+  // The fill: a battered core in mortar/earth colour (shows in the joints).
+  const core = new THREE.BoxGeometry(w - 0.1, depth, d - 0.1, 2, 1, 2);
+  core.translate(0, -depth / 2, 0);
+  const cp = core.attributes.position;
+  for (let i = 0; i < cp.count; i++) {
+    const k = 1 + batter * -cp.getY(i);
+    cp.setXYZ(i, cp.getX(i) * k, cp.getY(i), cp.getZ(i) * k);
+  }
+  const coreG = merge([core]);
+  paint(coreG, style === 'stepped' ? 0x9c8460 : style === 'thatch' ? 0x5e4a34 : 0x46423c);
+  parts.push(coreG);
+  // The facing: courses of blocks round all four sides — dressed and
+  // regular for the dynasty, rough dry-stone for the forest folk, big dark
+  // fieldstones for the north.
+  const course = style === 'stepped' ? 0.5 : style === 'thatch' ? 0.38 : 0.55;
+  const len = style === 'stepped' ? 1.0 : style === 'thatch' ? 0.62 : 0.95;
+  const jitter = style === 'stepped' ? 0.02 : style === 'thatch' ? 0.07 : 0.06;
+  const cols = style === 'stepped'
+    ? [0xd2b583, 0xc4a674, 0xdcc193]
+    : style === 'thatch' ? [0x8f8572, 0x7d7464, 0x9b917c, 0x6f6658] : [0x6e6a62, 0x5c5953, 0x7c7870];
+  const rows = Math.ceil(depth / course);
+  let n = 0;
+  for (let r = 0; r < rows; r++) {
+    const y = -course * (r + 0.5);
+    const bat = 1 + batter * course * (r + 0.5);
+    const hw = (w / 2) * bat;
+    const hd = (d / 2) * bat;
+    for (let side = 0; side < 4; side++) {
+      const L = (side % 2 ? d : w) * bat;
+      const cnt = Math.max(2, Math.round(L / len));
+      const bl = L / cnt;
+      for (let i = 0; i < cnt; i++) {
+        n++;
+        // running bond: odd courses shift half a block (the last one wraps to the start)
+        let t = -L / 2 + bl * (i + 0.5) + (r % 2 ? bl * 0.5 : 0);
+        let bw = bl * (0.9 + rnd(n) * 0.08);
+        if (t > L / 2) {
+          t = -L / 2 + bl * 0.25;
+          bw = bl * 0.45;
+        }
+        const bh = course * (0.86 + rnd(n + 3) * 0.1);
+        const blk = rbox(bw, bh, 0.24, style === 'stepped' ? 0.03 : 0.07, 1);
+        const jx = (rnd(n + 7) - 0.5) * jitter;
+        const jy = (rnd(n + 9) - 0.5) * jitter;
+        const tilt = (rnd(n + 11) - 0.5) * jitter * 1.5;
+        if (side === 0) place(blk, t, y + jy, hd + jx, 0, 0, tilt);
+        else if (side === 2) place(blk, -t, y + jy, -hd - jx, 0, Math.PI, tilt);
+        else if (side === 1) place(blk, hw + jx, y + jy, -t, 0, Math.PI / 2, tilt);
+        else place(blk, -hw - jx, y + jy, t, 0, -Math.PI / 2, tilt);
+        const c = cols[Math.floor(rnd(n + 5) * cols.length)];
+        paint(blk, (p) => (p.y > y + bh * 0.3 ? tint(c, 1.07) : c));
+        parts.push(blk);
+      }
+    }
+  }
+  // The top: the building's yard — turf with a trodden middle (forest),
+  // swept sand (dynasty), gravel (north) — under a coping lip.
+  const top = style === 'stepped' ? 0xcdb488 : style === 'thatch' ? 0x5f7a34 : 0x7a7466;
+  const top2 = style === 'stepped' ? 0xbfa476 : style === 'thatch' ? 0x86683f : 0x8a8478;
+  const slab = new THREE.BoxGeometry(w + 0.16, 0.16, d + 0.16, Math.round(w / 0.5), 1, Math.round(d / 0.5));
+  slab.translate(0, -0.08, 0);
+  const slabG = merge([slab]);
+  paint(slabG, (p, nn) => {
+    if (nn.y < 0.5) return style === 'thatch' ? 0x4f6a2c : tint(top, 0.85);
+    const rr = Math.max(Math.abs(p.x) / (w / 2), Math.abs(p.z) / (d / 2));
+    const worn = rr < 0.62 || Math.sin(p.x * 2.1 + p.z * 1.7) > 0.75;
+    return worn ? top2 : top;
+  });
+  parts.push(slabG);
   return merge(parts);
 }
 

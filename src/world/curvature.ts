@@ -85,10 +85,16 @@ export function curvatureDrop(dx: number, dz: number): number {
 //   curvedDepthMaterial()        the matching shadow-caster material;
 //   curveObject(object)          does both for every mesh under an object.
 //
-// Do NOT use these on objects that are already curved on the CPU (the
-// current unit/tree/building renderers drop each group by CURVATURE·d²
-// themselves) — that would bend them twice. They're for meshes placed at
-// their true, unbent world position, whose vertices then bend on the GPU.
+// EVERY world object goes through these: units, trees, buildings, home
+// circles, monuments, decals and particles are placed at their true,
+// UNBENT world position and every vertex bends on the GPU exactly like the
+// ground under it. (Until v0.2 the model renderers dropped each object as a
+// rigid whole by curvatureDrop() at its origin; the ground under a 6–10
+// unit building then tilted by 2·CURVATURE·d across it, so foundations sank
+// on one side and floated on the other, differently for every camera
+// position. Never CPU-curve a model again.) curvatureDrop() remains for
+// code that needs the bent position of a point: picking, screen labels,
+// point lights.
 // ---------------------------------------------------------------------------
 
 /** Rewrite a vertex shader's source so every world position is bent. */
@@ -174,7 +180,13 @@ export function curvedDepthMaterial(fresh = false): THREE.MeshDepthMaterial {
  * position (no CPU curvature drop).
  */
 export function curveObject(root: THREE.Object3D): void {
+  root.userData.gpuCurved = true; // see applyLimbToCpuCurved
   root.traverse((o) => {
+    if ((o as THREE.Sprite).isSprite) {
+      curveSpriteMaterial((o as THREE.Sprite).material);
+      o.frustumCulled = false;
+      return;
+    }
     const mesh = o as THREE.Mesh;
     if (!mesh.isMesh && !(o as THREE.Points).isPoints) return;
     const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
@@ -185,11 +197,37 @@ export function curveObject(root: THREE.Object3D): void {
 }
 
 /**
- * TRANSITIONAL: the unit/tree/building renderers still drop their groups by
- * CURVATURE·d² on the CPU, which doesn't know about the limb. Until they
- * switch to curvatureDrop(), main.ts calls this after they sync: it adds
- * the limb's extra drop to every top-level object that is CPU-curved (i.e.
- * not tagged `userData.gpuCurved`). Inside LIMB_START it does nothing.
+ * Sprites have their own vertex shader (no project_vertex chunk): bend the
+ * sprite's centre, then expand the quad in view space as usual.
+ */
+export function curveSpriteMaterial(material: THREE.SpriteMaterial): THREE.SpriteMaterial {
+  const m = material as THREE.SpriteMaterial & { [CURVED]?: boolean };
+  if (m[CURVED]) return material;
+  m[CURVED] = true;
+  const prevKey = material.customProgramCacheKey;
+  material.onBeforeCompile = (shader) => {
+    shader.uniforms.uCamTarget = curvatureUniforms.uCamTarget;
+    shader.uniforms.uCurvature = curvatureUniforms.uCurvature;
+    shader.uniforms.uLimb = curvatureUniforms.uLimb;
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', `#include <common>\n${curvatureGlsl}`)
+      .replace(
+        'vec4 mvPosition = modelViewMatrix[ 3 ];',
+        'vec4 tgC = modelMatrix[ 3 ];\n\ttgC.xyz = applyCurvature( tgC.xyz );\n\tvec4 mvPosition = viewMatrix * tgC;',
+      );
+  };
+  material.customProgramCacheKey = () => `${prevKey.call(material)}|tg-curved-sprite`;
+  material.needsUpdate = true;
+  return material;
+}
+
+/**
+ * For objects some OTHER code still drops by CURVATURE·d² on the CPU (which
+ * doesn't know about the limb): main.ts calls this after the renderers
+ * sync; it adds the limb's extra drop to every top-level object that is
+ * not tagged `userData.gpuCurved`. All world/model renderers are GPU-curved
+ * (curveObject tags them), so they are skipped. Inside LIMB_START it does
+ * nothing.
  */
 export function applyLimbToCpuCurved(scene: THREE.Scene, camTarget: THREE.Vector3): void {
   for (const o of scene.children) {

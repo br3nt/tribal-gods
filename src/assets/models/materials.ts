@@ -38,10 +38,10 @@ export const modelUniforms = {
  * Hooks applied to every model material's shader at compile time, in
  * order, after our own glow/wind patches. Signature mirrors onBeforeCompile.
  *
- * CAUTION: figures, buildings and flora are currently curved on the CPU
- * (renderers place them with world/curvature.ts curvatureDrop()). Registering
- * the GPU curvature bend here as well would drop them twice — switch the
- * renderers to unbent placement in the same change.
+ * (The planet's curvature bend is NOT registered here: the renderers apply
+ * it per object with world/curvature.ts curveObject(), which also gives
+ * each mesh the bent shadow caster. The gallery draws the same materials
+ * unbent.)
  */
 export const materialPatches: Array<(shader: THREE.WebGLProgramParametersWithUniforms, material: THREE.Material) => void> = [];
 

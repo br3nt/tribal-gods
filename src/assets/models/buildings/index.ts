@@ -10,7 +10,11 @@
  *              course, then the roof — a smooth build-up from the dirt.
  *   gloss    — gold, bells, crystals (same reveal rule)
  *   cloth    — banners and prayer flags, wind-bent in the vertex shader
- *   site     — stakes, rope and dug earth while it's a building site
+ *   site     — stakes, rope and dug earth while it's a building site,
+ *              DRAPED over the real ground (setGround)
+ *   foundation — a levelled terrace under the footprint whose walls reach
+ *              below the lowest ground there: no floating corners on a
+ *              slope; it rises out of the plot as building starts
  *   scaffold — poles and boards climbing ahead of the walls
  *   rubble   — broken stone and planks once it's badly hurt
  *
@@ -26,7 +30,8 @@ import { merge } from '../geometry';
 import { disposeModelMaterial, glowMaterial, sharedMaterials } from '../materials';
 import { rng } from '../rng';
 import {
-  blob, cone, cyl, displace, Kit, lathe, paint, place, rbox, rubble, scaffold, shine, stakes, STONE, STONE_DARK, tint, torus, v3, WOOD_DARK,
+  blob, cone, cyl, displace, Kit, lathe, paint, place, rbox, rubble, scaffold, shine, stakes, STONE, STONE_DARK, terrace, tint, torus, v3,
+  WOOD_DARK,
 } from './kit';
 import { fillKit } from './kinds';
 
@@ -54,6 +59,15 @@ export interface BuildingModel {
   /** What should be emitting right now (set by update). */
   emit: { smoke: boolean; fire: boolean; flames: boolean; hurt: number };
   update(s: BuildingState): void;
+  /**
+   * Meet the ground. The model's origin is placed at `base` (the renderer
+   * uses the HIGHEST drawn ground under the footprint, so nothing pokes
+   * through the floor); `lo` is the lowest. `ground(lx, lz)` is the drawn
+   * ground height at a model-local point. The foundation terrace is sized
+   * to reach below `lo`; the plot (stakes, rope, dug earth) and rubble are
+   * draped over the real ground.
+   */
+  setGround(base: number, lo: number, ground: (lx: number, lz: number) => number): void;
   dispose(): void;
 }
 
@@ -124,6 +138,46 @@ function countBelow(ys: Float32Array, y: number): number {
 
 const cache = new Map<string, Cached>();
 
+/** Foundation terraces, cached per (civ, footprint, depth step). */
+const terraceCache = new Map<string, THREE.BufferGeometry>();
+const TERRACE_STEP = 0.25;
+function terraceGeo(civ: Civ, w: number, depth: number): THREE.BufferGeometry {
+  const q = Math.max(1, Math.ceil(depth / TERRACE_STEP));
+  const key = `${civ.id}|${w}|${q}`;
+  let g = terraceCache.get(key);
+  if (!g) {
+    g = terrace(civ, w, w, q * TERRACE_STEP);
+    terraceCache.set(key, g);
+  }
+  return g;
+}
+
+/** A per-instance copy of a geometry that SHARES every attribute but position (which it owns, for draping). */
+function drapeView(g: THREE.BufferGeometry): { geo: THREE.BufferGeometry; rest: Float32Array } {
+  const v = new THREE.BufferGeometry();
+  for (const [name, attr] of Object.entries(g.attributes)) if (name !== 'position') v.setAttribute(name, attr);
+  const rest = (g.attributes.position.array as Float32Array).slice();
+  v.setAttribute('position', new THREE.BufferAttribute(rest.slice(), 3));
+  v.setIndex(g.index);
+  v.boundingSphere = g.boundingSphere;
+  return { geo: v, rest };
+}
+
+/**
+ * Drape: every vertex keeps its height ABOVE THE GROUND instead of above
+ * the model origin, i.e. y += ground(x, z) − base. Stakes stay upright
+ * (their vertices share an x, z), rope sags between them, dug earth hugs
+ * every bump.
+ */
+function drape(geo: THREE.BufferGeometry, rest: Float32Array, base: number, ground: (lx: number, lz: number) => number): void {
+  const pos = geo.attributes.position as THREE.BufferAttribute;
+  const a = pos.array as Float32Array;
+  for (let i = 0; i < a.length; i += 3) {
+    a[i + 1] = rest[i + 1] + ground(rest[i], rest[i + 2]) - base;
+  }
+  pos.needsUpdate = true;
+}
+
 function build(kind: BuildingKind, tribe: Tribe, civ: Civ, tier: number): Cached {
   const key = `${kind}|${tribe}|${civ.id}|${tier}`;
   const hit = cache.get(key);
@@ -181,11 +235,25 @@ export function buildBuilding(kind: BuildingKind, tribe: Tribe, civ: Civ, tier: 
   const body = mk(view(c.body.geo), mats.matte);
   const gloss = c.gloss ? mk(view(c.gloss.geo), mats.glossy) : null;
   const cloth = c.cloth ? mk(c.cloth, mats.foliage) : null;
-  const site = mk(c.site, mats.matte);
+  const siteView = drapeView(c.site);
+  const site = mk(siteView.geo, mats.matte);
+  site.receiveShadow = true;
+  site.castShadow = true;
   const scaf = mk(view(c.scaffold.geo), mats.matte);
-  const rub = mk(c.rubble, mats.matte);
+  const rubView = drapeView(c.rubble);
+  const rub = mk(rubView.geo, mats.matte);
   rub.visible = false;
   const half = ((BUILDINGS[kind]?.size ?? 3) * TILE) / 2;
+  // The foundation: its geometry is swapped (from a small cache) when the
+  // ground under the footprint changes depth. Hidden while it's a bare plot.
+  const footW = half * 2 + 0.3;
+  let footDepth = 0.6;
+  const foot = mk(terraceGeo(civ, footW, footDepth), mats.matte);
+  foot.visible = false;
+  /** How far the terrace has risen out of the plot (0 → 1 over the first build steps). */
+  let footRise = 0;
+  let groundBase = 0;
+  let groundLo = 0;
 
   let last = -1;
   const model: BuildingModel = {
@@ -209,6 +277,11 @@ export function buildBuilding(kind: BuildingKind, tribe: Tribe, civ: Civ, tier: 
         scaf.geometry.setDrawRange(0, countBelow(c.scaffold.ys, sl) * 3);
       }
       if (cloth) cloth.visible = rev >= 0.97 && hp > 0.3;
+      // The terrace is laid first: it rises out of the dug plot over the
+      // first steps of construction, before the footings.
+      footRise = done ? 1 : smooth(p / 0.06);
+      foot.visible = footRise > 0.001;
+      foot.position.y = -(1 - footRise) * (groundBase - groundLo + 0.2);
       site.visible = !done;
       scaf.visible = !done && p > 0.02;
       rub.visible = hp < 0.6 && p > 0.3;
@@ -217,11 +290,22 @@ export function buildBuilding(kind: BuildingKind, tribe: Tribe, civ: Civ, tier: 
       this.emit.flames = done && c.flames.length > 0;
       this.emit.hurt = done ? (hp < 0.3 ? 2 : hp < 0.6 ? 1 : 0) : 0;
     },
+    setGround(base, lo, ground) {
+      groundBase = base;
+      groundLo = lo;
+      // reach 0.3 below the lowest ground under the footprint
+      footDepth = Math.max(0.5, base - lo + 0.3);
+      const g = terraceGeo(civ, footW, footDepth);
+      if (foot.geometry !== g) foot.geometry = g;
+      foot.position.y = -(1 - footRise) * (base - lo + 0.2);
+      drape(siteView.geo, siteView.rest, base, ground);
+      drape(rubView.geo, rubView.rest, base, ground);
+    },
     dispose() {
       // These are VIEWS sharing the cached attribute buffers: detach the
       // attributes first so dispose() frees only this view's VAO, never the
       // GPU buffers every other building of the same key still draws from.
-      for (const g of [body.geometry, gloss?.geometry, scaf.geometry]) {
+      for (const g of [body.geometry, gloss?.geometry, scaf.geometry, siteView.geo, rubView.geo]) {
         if (!g) continue;
         for (const n of Object.keys(g.attributes)) g.deleteAttribute(n);
         g.setIndex(null);

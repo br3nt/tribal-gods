@@ -31,6 +31,7 @@ import { GROUND_COVER, QualityTier, TERRAIN } from '../render/look';
 import { curveShader } from './curvature';
 import { GRASS_CELLS_PER_LAP, GRASS_JITTER, GRASS_SPACING } from './grass-placement';
 import { heightGlsl, noiseGlsl } from './terrain-glsl';
+import { WEAR_N, WEAR_RES } from './wear';
 import { TerrainMesh } from './terrain-mesh';
 
 /** One clump: a few tapered, bent blades fanned around the root. */
@@ -103,6 +104,7 @@ export class GroundCover {
       uFade: this.uFade,
       uHeightTex: terrain.uniforms.uHeightTex,
       uTileTex: terrain.uniforms.uTileTex,
+      uWearTex: terrain.uniforms.uWearTex,
       uRadius: { value: radius },
       uSpacing: { value: this.spacing },
       uOrigin: this.uOrigin,
@@ -131,6 +133,7 @@ export class GroundCover {
           attribute vec2 aOffset;
           attribute float aT;
           uniform sampler2D uTileTex;
+          uniform sampler2D uWearTex;
           uniform float uTime, uRadius, uSpacing, uHeightScale, uFade;
           uniform vec3 uLush, uLush2, uDry, uTip;
           uniform vec4 uBands;
@@ -158,6 +161,8 @@ export class GroundCover {
           m *= 1.0 - smoothstep(uBands.z - 3.5, uBands.z - 1.5, h);           // not alpine/snow
           m *= 1.0 - smoothstep(0.2, 0.5, td.g);                              // not swamp
           m *= 1.0 - smoothstep(0.1, 0.4, td.a);                              // not scorched
+          float wear = texture2D(uWearTex, (root / TG_TILE * ${WEAR_RES.toFixed(1)} + 0.5) / ${WEAR_N.toFixed(1)}).r;
+          m *= 1.0 - smoothstep(0.15, 0.5, wear);                             // not trodden (plots, yards, home circles)
           float patchy = tgNoise(root * 0.12, TG_WORLD_UNITS * 0.12);
           m *= smoothstep(0.3, 0.55, patchy + 0.15 + 0.2 * r2);               // tufty meadows and clearings
           // Only the FAR EDGE of the carpet fades (a thin, ragged band near

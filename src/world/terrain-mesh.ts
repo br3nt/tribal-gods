@@ -26,7 +26,9 @@
  *
  * 3. THE TILE DATA TEXTURE. Per-tile facts the shader can't derive from
  *    height alone (forest density, swamp, moisture, scorch) live in a small
- *    RGBA texture rebuilt on the CPU only when they change.
+ *    RGBA texture rebuilt on the CPU only when they change. A second, finer
+ *    texture holds WEAR (world/wear.ts): trodden earth under building
+ *    plots and inside the home circles, where the grass carpet won't grow.
  */
 
 import * as THREE from 'three';
@@ -34,6 +36,7 @@ import { TILE, VIEW_TILES, WORLD_SIZE } from '../config';
 import { curveShader } from './curvature';
 import { Heightmap } from './heightmap';
 import { bumpGlsl, heightGlsl, noiseGlsl } from './terrain-glsl';
+import { rasterWear, WEAR_N, WEAR_RES, wearVersion } from './wear';
 import { QualityTier, RIM_END, RIM_START, TERRAIN } from '../render/look';
 
 const N = WORLD_SIZE;
@@ -52,6 +55,10 @@ export class TerrainMesh {
   readonly heightTexture: THREE.DataTexture;
   /** Per-tile R forest, G swamp, B water proximity, A scorch. */
   readonly tileTexture: THREE.DataTexture;
+  /** Trodden ground (world/wear.ts), WEAR_RES texels per tile. */
+  readonly wearTexture: THREE.DataTexture;
+  private readonly wearData = new Uint8Array(WEAR_N * WEAR_N);
+  private wearUploaded = -1;
   /** Shared uniforms other world shaders (water) can reference. */
   readonly uniforms: Record<string, THREE.IUniform>;
 
@@ -114,9 +121,15 @@ export class TerrainMesh {
     this.tileTexture.minFilter = this.tileTexture.magFilter = THREE.LinearFilter;
     this.tileTexture.needsUpdate = true;
 
+    this.wearTexture = new THREE.DataTexture(this.wearData, WEAR_N, WEAR_N, THREE.RedFormat, THREE.UnsignedByteType);
+    this.wearTexture.wrapS = this.wearTexture.wrapT = THREE.RepeatWrapping;
+    this.wearTexture.minFilter = this.wearTexture.magFilter = THREE.LinearFilter;
+    this.wearTexture.needsUpdate = true;
+
     this.uniforms = {
       uHeightTex: { value: this.heightTexture },
       uTileTex: { value: this.tileTexture },
+      uWearTex: { value: this.wearTexture },
       uHaze: { value: new THREE.Color(0xb4d4ea) },
       uRim: { value: new THREE.Vector2(RIM_START, RIM_END) },
       uSeabed: col(TERRAIN.seabed),
@@ -218,6 +231,11 @@ export class TerrainMesh {
       }
     }
     if (dirty) this.writeTileTexture();
+    if (wearVersion() !== this.wearUploaded) {
+      this.wearUploaded = wearVersion();
+      rasterWear(this.wearData);
+      this.wearTexture.needsUpdate = true;
+    }
   }
 
   /** Burn the ground around fractional tile (x, z). Effects call this. */
@@ -386,6 +404,9 @@ function patchFragment(src: string, detail: boolean): string {
     #define TG_N ${N.toFixed(1)}
     #define TG_TILE ${TILE.toFixed(1)}
     uniform sampler2D uTileTex;
+    uniform sampler2D uWearTex;
+    #define TG_WEAR_RES ${WEAR_RES.toFixed(1)}
+    #define TG_WEAR_N ${WEAR_N.toFixed(1)}
     uniform vec3 uCamTarget;
     uniform vec3 uHaze;
     uniform vec2 uRim;
@@ -446,6 +467,13 @@ function patchFragment(src: string, detail: boolean): string {
     float forestK = smoothstep(0.12, 0.7, td.r + (nFine - 0.5) * 0.25);
     vec3 floorC = uForestFloor * (0.8 + 0.35 * nFine) + vec3(0.05, 0.03, 0.0) * step(0.72, nMicro);
     c = mix(c, floorC, forestK * 0.85);
+
+    // --- Trodden earth: building plots, yards, inside the stone circles ---
+    float wear = texture2D(uWearTex, (wp / TG_TILE * TG_WEAR_RES + 0.5) / TG_WEAR_N).r;
+    float wearK = smoothstep(0.25, 0.75, wear + (nFine - 0.5) * 0.35 + (dab * 0.15));
+    vec3 trodden = mix(uEarth * 1.12, uGrassDry * 0.8, smoothstep(0.35, 0.75, nMid)) * (0.88 + 0.2 * nFine);
+    c = mix(c, trodden, wearK * 0.9);
+    rough = mix(rough, 0.95, wearK);
 
     // --- Earth on banks, rock on cliffs (with sedimentary layers) ---
     float sl = slope + (nMid - 0.5) * 0.08;
