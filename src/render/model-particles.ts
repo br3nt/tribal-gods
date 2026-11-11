@@ -10,10 +10,15 @@
  * Simulation is plain CPU work: position += velocity·dt, a little drift
  * and buoyancy, size grows, alpha fades in then out. A few hundred
  * particles is nothing.
+ *
+ * Anchors sit at UNBENT world positions (like every model); the point
+ * shader bends each particle with the planet, so smoke rises from the
+ * chimney it belongs to at any distance.
  */
 
 import * as THREE from 'three';
 import { glowTexture } from '../assets/models/people/figure';
+import { curvatureGlsl, curvatureUniforms } from '../world/curvature';
 
 interface P {
   anchor: THREE.Object3D;
@@ -28,12 +33,17 @@ interface P {
 }
 
 const VERT = /* glsl */ `
+  ${curvatureGlsl}
   attribute float size;
   attribute vec4 rgba;
   varying vec4 vRgba;
   void main() {
     vRgba = rgba;
-    vec4 mv = modelViewMatrix * vec4(position, 1.0);
+    // Positions are UNBENT world space (anchors are placed unbent); bend
+    // them like the ground beneath.
+    vec4 w = modelMatrix * vec4(position, 1.0);
+    w.xyz = applyCurvature(w.xyz);
+    vec4 mv = viewMatrix * w;
     gl_PointSize = size * (520.0 / -mv.z);
     gl_Position = projectionMatrix * mv;
   }
@@ -67,7 +77,12 @@ export class ParticlePool {
     this.geo.setAttribute('rgba', new THREE.BufferAttribute(this.col, 4).setUsage(THREE.DynamicDrawUsage));
     this.geo.setAttribute('size', new THREE.BufferAttribute(this.siz, 1).setUsage(THREE.DynamicDrawUsage));
     const mat = new THREE.ShaderMaterial({
-      uniforms: { map: { value: glowTexture() } },
+      uniforms: {
+        map: { value: glowTexture() },
+        uCamTarget: curvatureUniforms.uCamTarget,
+        uCurvature: curvatureUniforms.uCurvature,
+        uLimb: curvatureUniforms.uLimb,
+      },
       vertexShader: VERT,
       fragmentShader: FRAG,
       transparent: true,
@@ -76,6 +91,7 @@ export class ParticlePool {
     });
     this.points = new THREE.Points(this.geo, mat);
     this.points.frustumCulled = false;
+    this.points.userData.gpuCurved = true;
     this.points.renderOrder = additive ? 6 : 5;
     scene.add(this.points);
   }
@@ -157,6 +173,11 @@ export class ModelFx {
   constructor(scene: THREE.Scene) {
     this.smoke = new ParticlePool(scene, 900, false);
     this.fire = new ParticlePool(scene, 700, true);
+  }
+
+  /** Whole particles due now from emitter (key, slot) at `rate` per second (for custom emitters). */
+  count(key: object, slot: number, rate: number, dt: number): number {
+    return this.tick(key, slot, rate, dt);
   }
 
   /** Fractional emission accumulator per (anchor, slot) → whole particles due now. */

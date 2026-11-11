@@ -188,8 +188,8 @@ export const LIMB_K = 0.0022;
 
 /** Grass carpet around the camera (world/ground-cover.ts). Off at `low`. */
 export const GROUND_COVER = {
-  /** Grid spacing between clumps (world units). */
-  spacing: 0.6,
+  // (Clump spacing is fixed by world/grass-placement.ts: it must divide one
+  // lap of the planet exactly so the carpet doesn't reshuffle at the seam.)
   /** Carpet radius around the camera target, by tier. */
   radiusHigh: 44,
   radiusMedium: 28,
@@ -286,4 +286,46 @@ export const UNIT_STATUS = {
   liftFall: 3.2,
   /** Rate (1/s) at which a fling's teleport is smoothed into a flight. */
   flingGlide: 3.5,
+};
+
+// ---------------------------------------------------------------------------
+// Standing stones (monuments): how each spell's stone looks (assets/models/
+// buildings/landmarks.ts draws the rune; building-renderer.ts the motes and
+// the communing ritual). `glow` is the rune's light and the ritual's colour.
+// Motes: what drifts round the stone — `pool` 'fire' is additive light,
+// 'smoke' alpha-blended matter; vy < 0 falls from the top of the stone.
+// ---------------------------------------------------------------------------
+
+export interface SpellLook {
+  glow: number;
+  mote: { pool: 'fire' | 'smoke'; color: number; vy: number; size: number; life: number; rate: number; spread: number; alpha: number; swirl?: number };
+}
+
+export const SPELL_LOOK: Record<string, SpellLook> = {
+  blast: { glow: 0xff9a40, mote: { pool: 'fire', color: 0xffb060, vy: 1.2, size: 0.28, life: 0.9, rate: 5, spread: 1.6, alpha: 0.9 } },
+  convert: { glow: 0x88eaff, mote: { pool: 'fire', color: 0x9af0ff, vy: 0.7, size: 0.3, life: 2.2, rate: 4, spread: 2.2, alpha: 0.7, swirl: 0.6 } },
+  flatten: { glow: 0xe6cf98, mote: { pool: 'smoke', color: 0xc8b48c, vy: 0.15, size: 0.5, life: 3, rate: 3, spread: 3, alpha: 0.3 } },
+  bloom: { glow: 0x8cf07a, mote: { pool: 'smoke', color: 0x6fbf3a, vy: -0.5, size: 0.22, life: 4, rate: 4, spread: 2.4, alpha: 0.95 } },
+  ward: { glow: 0xb8d4f0, mote: { pool: 'fire', color: 0xd8e8ff, vy: 0.25, size: 0.2, life: 2.6, rate: 4, spread: 2.2, alpha: 0.8 } },
+  lightning: { glow: 0xbfe0ff, mote: { pool: 'fire', color: 0xd8ecff, vy: 0.4, size: 0.18, life: 0.35, rate: 9, spread: 2.0, alpha: 1 } },
+  warsong: { glow: 0xff6a3a, mote: { pool: 'fire', color: 0xff8050, vy: 1.0, size: 0.25, life: 1.4, rate: 5, spread: 2.0, alpha: 0.85, swirl: 1.2 } },
+  swamp: { glow: 0xa8c060, mote: { pool: 'smoke', color: 0x7a8a48, vy: 0.35, size: 0.35, life: 2.4, rate: 3, spread: 2.4, alpha: 0.5 } },
+  landbridge: { glow: 0xe0c088, mote: { pool: 'smoke', color: 0xbca27a, vy: 0.2, size: 0.45, life: 2.8, rate: 3, spread: 2.6, alpha: 0.32 } },
+  cyclone: { glow: 0xd8f4ff, mote: { pool: 'smoke', color: 0xe6f2f8, vy: 1.4, size: 0.35, life: 1.8, rate: 6, spread: 1.6, alpha: 0.4, swirl: 3.5 } },
+  emberfall: { glow: 0xff7a20, mote: { pool: 'fire', color: 0xff8a30, vy: -1.4, size: 0.24, life: 1.6, rate: 7, spread: 2.0, alpha: 0.95 } },
+  sink: { glow: 0x4ab0ff, mote: { pool: 'smoke', color: 0xc8e4f4, vy: 0.12, size: 0.9, life: 4, rate: 3, spread: 3.2, alpha: 0.28 } },
+  earthquake: { glow: 0xe8955a, mote: { pool: 'smoke', color: 0x8a7258, vy: -0.8, size: 0.2, life: 1.6, rate: 5, spread: 1.8, alpha: 0.85 } },
+  volcano: { glow: 0xff5020, mote: { pool: 'fire', color: 0xff6a20, vy: 1.6, size: 0.3, life: 1.3, rate: 8, spread: 1.4, alpha: 0.95 } },
+};
+
+/** Fallback for a spell added to the catalog before its stone is designed. */
+export const SPELL_LOOK_DEFAULT: SpellLook = SPELL_LOOK.convert;
+
+/** Hover highlight (render/highlight.ts): rim light + lift applied to the model under the cursor. */
+export const HIGHLIGHT = {
+  color: 0xffffff,
+  emissive: 0x141414,
+  rim: 0xbfd8ff,
+  /** Instanced trees can't swap materials: their instance colour is multiplied instead. */
+  treeBoost: 1.45,
 };

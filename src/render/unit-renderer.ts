@@ -16,10 +16,13 @@
  *    them below the horizon; outside the camera frustum nobody can see
  *    them. Either way: no animation, no draw.
  *
- * 4. CURVE — terrain bends down with distance in its vertex shader; figures
- *    are small, so we drop the whole figure by curvatureDrop() on the CPU —
- *    the FULL drop, limb included, so far figures sit on the planet's edge
- *    (sub-pixel error at this size, and no per-vertex shader patch needed).
+ * 4. CURVE — figures are placed at their TRUE (unbent) world position and
+ *    every vertex is bent on the GPU exactly like the ground under it
+ *    (curveObject), shadows included — feet meet the ground identically
+ *    from every camera position. Feet stand on the DRAWN surface
+ *    (world/surface.ts, the terrain shader's own bicubic filter).
+ *    curvatureDrop() is used only to report where a figure is DRAWN
+ *    (picking, culling).
  *
  * 5. ANIMATE — pick a clip from the unit's state/task (chooseClip), feed
  *    the animator the MEASURED ground speed (foot sync) and turn rate (lean
@@ -54,7 +57,11 @@
 
 import * as THREE from 'three';
 import { CIVS, TILE, WORLD_SIZE } from '../config';
-import { curvatureDrop } from '../world/curvature';
+import { curvatureDrop, curveObject } from '../world/curvature';
+import { surfaceHeight } from '../world/surface';
+import { buildingBaseY, communers } from './building-renderer';
+import { isHighlighted } from './highlight';
+import { highlightMaterial } from '../assets/models/buildings/index';
 import { wrapDelta } from '../core/util';
 import { buildUnitModel, FigureModel } from '../assets/models/registry';
 import { decalMaterial, disposeModelMaterial, fadeCopy, tickModelMaterials, tintedMaterial } from '../assets/models/materials';
@@ -111,6 +118,8 @@ interface Entry {
   /** The figure's own materials, and which status variant it wears. */
   baseMats: THREE.Material[];
   tint: StatusTint;
+  /** Wearing the hover highlight (render/highlight.ts). */
+  lit: boolean;
 }
 
 /** Where a unit is drawn: world-space feet (bent, nearest image) and tile coords. */
@@ -249,13 +258,15 @@ export class UnitRenderer {
         ring.renderOrder = 1;
         ring.visible = false;
         ring.scale.setScalar(fig.height * 0.36);
+        curveObject(fig.root);
+        curveObject(ring);
         this.scene.add(fig.root, ring);
         e = {
           fig, anim: new FigureAnimator(fig, u.id), ring, kind: u.kind, tribe: u.tribe, lastHp: u.hp,
           px: NaN, pz: NaN, speed: 0, yaw: u.heading, turn: 0, lodTick: u.id % 3, accDt: 0, tx: u.x, tz: u.z, inWater: false,
           drawn: new THREE.Vector3(), drawnFrame: -1, inp: { clip: 'idle', speed: 0, turnRate: 0 },
           lift: 0, liftV: 0, ox: 0, oz: 0, simX: u.x, simZ: u.z,
-          baseMats: fig.meshes.map((m) => m.material as THREE.Material), tint: 'none',
+          baseMats: fig.meshes.map((m) => m.material as THREE.Material), tint: 'none', lit: false,
         };
         this.entries.set(u.id, e);
       }
@@ -305,12 +316,13 @@ export class UnitRenderer {
       const d2 = relX * relX + relZ * relZ;
       const wx = camTarget.x + relX;
       const wz = camTarget.z + relZ;
-      const ground = world.map.sampleHeight(ix, iz);
+      const ground = surfaceHeight(world.map, ix, iz);
       const inWater = ground < -0.25 && !spot && e.lift < 0.05;
       e.inWater = inWater;
-      let y = spot ? world.map.heightAt(Math.round(gb!.x), Math.round(gb!.z)) + spot.y : Math.max(ground, inWater ? -0.9 - 0.1 * Math.sin(this.frame * 0.1 + u.id) : 0);
-      // 4. CURVE
-      y -= curvatureDrop(relX, relZ);
+      const spotBase = spot ? buildingBaseY.get(gb!.id) ?? world.map.heightAt(Math.round(gb!.x), Math.round(gb!.z)) : 0;
+      let y = spot ? spotBase + spot.y : Math.max(ground, inWater ? -0.9 - 0.1 * Math.sin(this.frame * 0.1 + u.id) : 0);
+      // 4. CURVE: placed unbent; `bend` is how far the GPU will drop it.
+      const bend = curvatureDrop(relX, relZ);
       const groundY = y;
       if (e.lift > 0) y += e.lift * (UNIT_STATUS.liftHeight + 0.35 * Math.sin(this.clock * 3.1 + u.id));
 
@@ -322,13 +334,13 @@ export class UnitRenderer {
       }
       e.px = wx;
       e.pz = wz;
-      e.drawn.set(wx, y, wz);
+      e.drawn.set(wx, y - bend, wz); // where it is DRAWN (bent), for picking
       e.drawnFrame = this.frame;
 
-      // 3. CULL
+      // 3. CULL (against the drawn, bent position)
       let visible = d2 < VIEW_RADIUS * VIEW_RADIUS;
       if (visible && this.camera) {
-        this.sphere.center.set(wx, y + e.fig.height * 0.5, wz);
+        this.sphere.center.set(wx, y - bend + e.fig.height * 0.5, wz);
         this.sphere.radius = e.fig.height;
         visible = this.frustum.intersectsSphere(this.sphere);
       }
@@ -349,13 +361,17 @@ export class UnitRenderer {
       }
       e.fig.root.rotation.y = e.yaw;
 
-      // Stone Ward / Warsong: swap to a shared tinted variant.
+      // Stone Ward / Warsong: swap to a shared tinted variant; the hover
+      // highlight goes on top of whichever is worn.
       const tint = statusTint(u);
-      if (tint !== e.tint) {
+      const lit = isHighlighted('unit', u.id);
+      if (tint !== e.tint || lit !== e.lit) {
         e.tint = tint;
+        e.lit = lit;
         const base = e.baseMats;
         e.fig.meshes.forEach((m, i) => {
-          m.material = tint === 'none' ? base[i] : tintedMaterial(base[i], tint, UNIT_STATUS[tint]);
+          const worn = tint === 'none' ? base[i] : tintedMaterial(base[i], tint, UNIT_STATUS[tint]);
+          m.material = lit ? highlightMaterial(worn) : worn;
         });
       }
 
@@ -447,7 +463,8 @@ export class UnitRenderer {
     c.winner = winner;
     const pick = pickClip(u, c);
     const inp = e.inp;
-    inp.clip = pick.clip;
+    // A leader communing at a standing stone kneels in prayer (whatever the sim calls the task).
+    inp.clip = communers.has(u.id) && e.speed < 0.4 ? 'pray' : pick.clip;
     inp.speed = e.speed;
     inp.turnRate = e.turn;
     inp.phase = pick.phase;
@@ -461,7 +478,7 @@ export class UnitRenderer {
       g.t += dt;
       const relX = wrapDelta(g.tx * TILE - camTarget.x, WORLD_UNITS);
       const relZ = wrapDelta(g.tz * TILE - camTarget.z, WORLD_UNITS);
-      let y = Math.max(0, world.map.sampleHeight(g.tx, g.tz)) - curvatureDrop(relX, relZ);
+      let y = Math.max(0, surfaceHeight(world.map, g.tx, g.tz));
       let done = false;
       if (g.mode === 'die') {
         // fall, lie still a moment, then fade away while a wisp in the
@@ -488,7 +505,7 @@ export class UnitRenderer {
         done = g.t > DIE_END;
       } else if (g.mode === 'drown') {
         g.anim.update(dt, GHOST_DROWN);
-        y = -0.9 - g.t * 1.1 - curvatureDrop(relX, relZ);
+        y = -0.9 - g.t * 1.1;
         done = g.t > 2.5;
       } else {
         // a leader rises in light and fades

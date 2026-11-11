@@ -4,9 +4,10 @@
  * Trees are sim data (world.trees: position, alive, regrow, burning).
  * Each tree is one INSTANCE of its species-variant mesh (assets/models/
  * flora.ts), so the whole planet's flora is a dozen draw calls. Every frame
- * we re-anchor the visible instances near the camera (wrap + curvature,
- * like units), pack them into the front of each InstancedMesh and set the
- * draw count — distance culling for free.
+ * we re-anchor the visible instances near the camera (wrapped to the image
+ * nearest the camera, at their TRUE unbent position — the GPU bends every
+ * vertex like the ground, see curveObject), pack them into the front of
+ * each InstancedMesh and set the draw count — distance culling for free.
  *
  * Life cycle per tree:
  *   alive            → standing, wind-swayed (in the shader)
@@ -28,7 +29,8 @@
 
 import * as THREE from 'three';
 import { TILE, WORLD_SIZE } from '../config';
-import { curvatureDrop } from '../world/curvature';
+import { curveObject } from '../world/curvature';
+import { surfaceHeight } from '../world/surface';
 import { hash2 } from '../core/noise';
 import { wrapDelta } from '../core/util';
 import {
@@ -37,6 +39,8 @@ import {
 import { sharedMaterials } from '../assets/models/materials';
 import { World } from '../sim/world-state';
 import { ModelFx } from './model-particles';
+import { isHighlighted } from './highlight';
+import { HIGHLIGHT } from './look';
 
 const WORLD_UNITS = WORLD_SIZE * TILE;
 const VIEW_RADIUS = 150;
@@ -109,6 +113,7 @@ export class TreeRenderer {
         im.frustumCulled = false;
         im.count = 0;
         im.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(this.maxTrees * 3).fill(1), 3);
+        curveObject(im);
         scene.add(im);
         this.meshes.push(im);
       }
@@ -117,6 +122,7 @@ export class TreeRenderer {
     this.stumps.castShadow = this.stumps.receiveShadow = true;
     this.stumps.frustumCulled = false;
     this.stumps.count = 0;
+    curveObject(this.stumps);
     scene.add(this.stumps);
     this.fx = new ModelFx(scene);
     const covers: Array<[THREE.BufferGeometry, THREE.Material, boolean]> = [
@@ -131,6 +137,7 @@ export class TreeRenderer {
       im.receiveShadow = true;
       im.frustumCulled = false;
       im.count = 0;
+      curveObject(im);
       scene.add(im);
       this.covers.push({ mesh: im, rock, tiles: [] });
     }
@@ -217,7 +224,7 @@ export class TreeRenderer {
       const relZ = wrapDelta(t.z * TILE - camTarget.z, WORLD_UNITS);
       const d2 = relX * relX + relZ * relZ;
       if (d2 > VIEW_RADIUS * VIEW_RADIUS) continue;
-      const y = world.map.heightAt(t.x, t.z) - curvatureDrop(relX, relZ);
+      const y = world.map.heightAt(t.x, t.z); // trees stand on whole tiles: exactly the drawn surface
       this.p.set(camTarget.x + relX, y, camTarget.z + relZ);
       const showTree = t.alive || st.fall < 2.2;
       if (!t.alive || st.grow < 4) {
@@ -250,11 +257,13 @@ export class TreeRenderer {
       const n = counts[st.species]++;
       im.setMatrixAt(n, this.m);
       const burning = (t.burning ?? 0) > 0;
-      im.setColorAt(n, burning ? CHARRED : st.tint);
+      const c = burning ? CHARRED : st.tint;
+      im.setColorAt(n, isHighlighted('tree', i) ? _lit.copy(c).multiplyScalar(HIGHLIGHT.treeBoost) : c);
       if (burning) {
         let a = this.fireAnchors.get(i);
         if (!a) {
           a = new THREE.Object3D();
+          a.userData.gpuCurved = true; // unbent anchor: its particles bend on the GPU
           this.scene.add(a);
           this.fireAnchors.set(i, a);
         }
@@ -332,14 +341,14 @@ export class TreeRenderer {
         const d2 = relX * relX + relZ * relZ;
         if (d2 > COVER_RADIUS * COVER_RADIUS) continue;
         if (blocked.has(Math.round(t.z) * WORLD_SIZE + Math.round(t.x))) continue;
-        const h = world.map.sampleHeight(t.x, t.z);
+        const h = surfaceHeight(world.map, t.x, t.z);
         if (h < 0.35) continue;
         // villages stay readable: no boulders by the huts, bushes thinned and small
         const near = nearFactor(this.clearings, t.x, t.z);
         if (c.rock ? near < 0.75 : near < 0.35 || (near < 0.8 && (t.yaw * 7) % 1 < 0.5)) continue;
         this.e.set(0, t.yaw, 0);
         this.q.setFromEuler(this.e);
-        this.p.set(camTarget.x + relX, h - curvatureDrop(relX, relZ) - 0.05, camTarget.z + relZ);
+        this.p.set(camTarget.x + relX, h - 0.05, camTarget.z + relZ);
         this.m.compose(this.p, this.q, this.s.setScalar(t.s * (0.7 + 0.3 * near)));
         c.mesh.setMatrixAt(n++, this.m);
         if (n >= 1600) break;
@@ -365,3 +374,4 @@ function nearFactor(cl: Array<{ x: number; z: number; r: number }>, x: number, z
   return f;
 }
 const CHARRED = new THREE.Color(0.35, 0.3, 0.28);
+const _lit = new THREE.Color();

@@ -28,4 +28,4 @@ export const buildWarriorHut = (_team?: number, civ?: Civ) => legacy('warriorHut
 export const buildFireHut = (_team?: number, civ?: Civ) => legacy('fireHut', civ);
 export const buildTower = (_team?: number, civ?: Civ) => legacy('tower', civ);
 
-export { buildMonument, buildTotem, garrisonSpot, TOWER_PLATFORM_Y } from './buildings/index';
+export { buildMonumentStone, buildStoneCircle, garrisonSpot, TOWER_PLATFORM_Y } from './buildings/index';
