@@ -420,7 +420,9 @@ const CLIPS: Record<ClipName, (t: number, p: Pose, c: ClipCtx) => void> = {
     stance(p, 0.1 + 0.4 * stag * (1 - fall), 0.1);
     setR(p, BI.root, -1.5 * fall - 0.05 * settle, 0, 0.1 * fall);
     p[HX + 1] = -0.25 * stag * (1 - fall) - fall * 0.35;
-    p[HX + 2] = -0.25 * fall;
+    // lying on the back: lift by the body's depth so it rests ON the ground
+    // (root-local +z is world up once the root has tipped over)
+    p[HX + 2] = 0.2 * fall;
     setR(p, BI.spine, 0.3 * stag * (1 - fall) - 0.1 * fall, 0, 0);
     setR(p, BI.chest, -0.25 * stag, 0, 0);
     setR(p, BI.head, -0.5 * stag + 0.4 * fall, 0.3 * fall, 0);
@@ -631,11 +633,25 @@ export class FigureAnimator {
     const force = -accel * 0.02 - this.sway * 40 - this.swayV * 6;
     this.swayV += force * dt;
     this.sway += this.swayV * dt;
-    const flutter = Math.sin(this.clipTime * 7.3) * 0.04 * Math.min(1, sp / 3);
+    // Cloak: a three-bone chain. Each joint lags the one above (a travelling
+    // wave down the cloth), the hem is kicked back by whichever thigh swings
+    // behind, it sways against the hips, and a cast makes it billow.
+    const moving = Math.min(1, sp / 3);
+    const wave = this.clipTime * (4.2 + sp * 0.9);
+    const gaitPh = loco ? this.t * TAU : 0;
     const chestBack = out[BI.spine * 3] + out[BI.chest * 3];
-    out[BI.cloak1 * 3] = Math.max(0.05, 0.08 + Math.min(0.3, sp * 0.05) + this.sway * 1.5 + flutter + Math.max(0, chestBack) * 0.6 - out[BI.thighL * 3] * 0.1);
-    out[BI.cloak2 * 3] = 0.05 + Math.min(0.2, sp * 0.03) + this.sway * 2 + flutter * 1.5;
-    out[BI.cloak1 * 3 + 2] = this.lean * 0.5;
+    const thighBack = Math.max(0, out[BI.thighL * 3], out[BI.thighR * 3]);
+    const castK = this.clip === 'cast' ? Math.sin(this.t * Math.PI) ** 2 : this.clip === 'cheer' ? 0.35 : 0;
+    const gust = castK * Math.sin(this.clipTime * 9.5);
+    const idleW = 0.012 * (1 - moving);
+    out[BI.cloak1 * 3] = Math.max(0.03, 0.06 + Math.min(0.3, sp * 0.05) + this.sway * 1.5 + Math.max(0, chestBack) * 0.6 + castK * 0.3 + (0.025 * moving + idleW) * Math.sin(wave));
+    out[BI.cloak2 * 3] = 0.04 + Math.min(0.18, sp * 0.03) + this.sway * 2 + thighBack * 0.4 + (0.06 * moving + idleW) * Math.sin(wave - 1.0) + castK * 0.18 + gust * 0.12;
+    out[BI.cloak3 * 3] = 0.03 + Math.min(0.12, sp * 0.02) + this.sway * 1.6 + thighBack * 0.25 + (0.08 * moving + idleW) * Math.sin(wave - 2.0) + castK * 0.12 + gust * 0.16;
+    // don't twist with the torso; swing side to side against the hips
+    out[BI.cloak1 * 3 + 1] = -(out[BI.spine * 3 + 1] + out[BI.chest * 3 + 1]) * 0.6;
+    out[BI.cloak1 * 3 + 2] = this.lean * 0.5 - out[BI.hips * 3 + 2] * 0.8;
+    out[BI.cloak2 * 3 + 2] = -0.07 * moving * Math.sin(gaitPh - 0.8) + gust * 0.05;
+    out[BI.cloak3 * 3 + 2] = -0.09 * moving * Math.sin(gaitPh - 1.6) - gust * 0.06;
     out[BI.tail * 3] = 0.1 + Math.min(0.5, sp * 0.06) + this.sway * 2 - out[BI.head * 3] * 0.6;
     out[BI.tail * 3 + 2] = -out[BI.head * 3 + 2] * 0.5;
     const charmSwing = Math.sin(this.clipTime * 3.1) * 0.05 + this.sway * 2.5 + (this.clip === 'chant' ? Math.sin(this.clipTime * 8.4) * 0.12 : 0);

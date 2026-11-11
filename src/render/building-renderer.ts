@@ -55,6 +55,9 @@ export class BuildingRenderer {
   private monuments: Array<ReturnType<typeof buildMonument>> = [];
   private readonly fx: ModelFx;
   private last = performance.now();
+  /** Reused every frame (no per-frame allocation). */
+  private readonly active = new Set<string>();
+  private readonly live = new Set<number>();
 
   constructor(private readonly scene: THREE.Scene) {
     this.fx = new ModelFx(scene);
@@ -66,7 +69,9 @@ export class BuildingRenderer {
     this.last = now;
 
     // Home circles, built lazily per active tribe.
-    const active = new Set(activeTribes(world));
+    const active = this.active;
+    active.clear();
+    for (const id of activeTribes(world)) active.add(id);
     for (const id of active) {
       const civ = civOf(world, id);
       let t = this.totems.get(id);
@@ -78,7 +83,6 @@ export class BuildingRenderer {
       if (!t) {
         const built = buildTotem(id as Tribe, civ);
         t = { ...built, civ: civ.id };
-        t.root.userData.gpuCurved = true; // full drop applied here (curvatureDrop)
         this.scene.add(t.root);
         this.totems.set(id, t);
       }
@@ -98,7 +102,6 @@ export class BuildingRenderer {
     // Monuments.
     while (this.monuments.length < world.monuments.length) {
       const m = buildMonument();
-      m.root.userData.gpuCurved = true;
       this.scene.add(m.root);
       this.monuments.push(m);
     }
@@ -116,7 +119,8 @@ export class BuildingRenderer {
     }
 
     // Buildings.
-    const live = new Set<number>();
+    const live = this.live;
+    live.clear();
     for (const raw of world.buildings) {
       const b = raw as AnyB;
       live.add(b.id);
@@ -130,7 +134,6 @@ export class BuildingRenderer {
       if (!e) {
         const model = buildBuildingModel(b.kind, b.tribe as Tribe, civOf(world, b.tribe), tier);
         // turn every model so its door faces the sim's door (south, +Z): already the case
-        model.root.userData.gpuCurved = true;
         this.scene.add(model.root);
         e = { model, kind: b.kind, tribe: b.tribe, tier };
         this.entries.set(b.id, e);

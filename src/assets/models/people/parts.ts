@@ -13,10 +13,10 @@
 
 import * as THREE from 'three';
 import {
-  blob, capsule, cone, cyl, dome, G, hsl, lathe, mix, paint, place, rbox, shade, shine, tint, torus, tube,
+  blob, capsule, cone, cyl, dome, G, hsl, lathe, mix, paint, place, rbox, setLatheStep, shade, shine, tint, torus, tube,
 } from '../geometry';
 import { Rng } from '../rng';
-import { Body, BoneName, Rig } from './rig';
+import { Body, BoneName, CLOAK_SEG, Rig } from './rig';
 
 export type HairStyle = 'cap' | 'bun' | 'long' | 'tail' | 'braids' | 'mohawk' | 'wild' | 'bald' | 'crop';
 
@@ -49,16 +49,6 @@ export function skirtWeights(reach: number, k = 0.85) {
     const d = THREE.MathUtils.clamp(-p.y / reach, 0, 1) * k;
     const s = THREE.MathUtils.clamp(0.5 + p.x / 0.22, 0, 1);
     return [['hips', 1 - d], ['thighL', d * s], ['thighR', d * (1 - s)]];
-  };
-}
-
-/** Weights for cloth that hangs from the shoulders down the back (cloaks). */
-export function cloakWeights(len: number) {
-  return (p: THREE.Vector3): Array<[BoneName, number]> => {
-    const t = THREE.MathUtils.clamp(-p.y / len, 0, 1);
-    if (t < 0.15) return [['chest', 1 - t / 0.15], ['cloak1', t / 0.15]];
-    if (t < 0.5) return [['cloak1', 1 - (t - 0.15) / 0.35], ['cloak2', (t - 0.15) / 0.35]];
-    return [['cloak2', 1]];
   };
 }
 
@@ -101,27 +91,100 @@ export interface BodyOpts {
   chestPaint?: (p: THREE.Vector3) => number | null;
 }
 
+/**
+ * A muscled limb hanging from its joint (origin) down to y = −len, with
+ * domed ends. `radii` samples the radius along t = 0 (joint) … 1 (end) and
+ * is eased between samples; `front`/`back` add depth on the +z/−z side as
+ * a function of t (biceps, quads, calves), `sx` squashes the width. The
+ * profile is what makes a limb read as an arm rather than a dowel: full at
+ * the shoulder, narrow at the elbow, a forearm belly, a slim wrist.
+ */
+export function limb(
+  len: number,
+  radii: Array<[number, number]>,
+  segs = 10,
+  o: { front?: (t: number) => number; back?: (t: number) => number; sx?: number } = {},
+): G {
+  const rAt = (t: number) => {
+    if (t <= radii[0][0]) return radii[0][1];
+    for (let i = 1; i < radii.length; i++) {
+      const [t1, r1] = radii[i];
+      const [t0, r0] = radii[i - 1];
+      if (t <= t1) {
+        const k = (t - t0) / Math.max(1e-6, t1 - t0);
+        return r0 + (r1 - r0) * k * k * (3 - 2 * k);
+      }
+    }
+    return radii[radii.length - 1][1];
+  };
+  const r0 = rAt(0);
+  const r1 = rAt(1);
+  const prof: Array<[number, number]> = [];
+  const cap = 4;
+  for (let i = 0; i <= cap; i++) {
+    const a = (i / cap) * (Math.PI / 2);
+    prof.push([Math.sin(a) * r1, -len - Math.cos(a) * r1 * 0.8]);
+  }
+  const mid = 9;
+  for (let i = mid - 1; i >= 1; i--) {
+    const t = i / mid;
+    prof.push([rAt(t), -len * t]);
+  }
+  for (let i = cap; i >= 0; i--) {
+    const a = (i / cap) * (Math.PI / 2);
+    prof.push([Math.sin(a) * r0, Math.cos(a) * r0 * 0.8]);
+  }
+  const geo = lathe(prof, segs);
+  const pos = geo.attributes.position;
+  for (let i = 0; i < pos.count; i++) {
+    tmp.fromBufferAttribute(pos, i);
+    const t = THREE.MathUtils.clamp(-tmp.y / len, 0, 1);
+    const f = tmp.z > 0 ? o.front?.(t) ?? 0 : o.back?.(t) ?? 0;
+    pos.setXYZ(i, tmp.x * (o.sx ?? 1), tmp.y, tmp.z * (1 + f));
+  }
+  geo.computeVertexNormals();
+  return geo;
+}
+
+/** A bump centred at t = c with half-width w and height h (for limb() front/back). */
+export const bump = (c: number, w: number, h: number) => (t: number) => {
+  const d = Math.abs(t - c) / w;
+  return d >= 1 ? 0 : h * (1 - d * d) * (1 - d * d);
+};
+
+/** Limb thickness scale: a gentler curve than b.limb so heavies don't balloon. */
+export const limbScale = (b: Body) => 1.1 * (0.35 + 0.65 * b.limb);
+
+/** How far the hips reach sideways (thigh tops included) — skirts must clear this. */
+export function hipSpan(b: Body): number {
+  return Math.max(b.hipR, b.hipW + 0.12 * limbScale(b));
+}
+
 export function addBody(rig: Rig, b: Body, look: Look, o: BodyOpts = {}): void {
-  const L = b.limb;
+  const L = limbScale(b);
   const skin = look.skin;
-  const skinShade = (geo: G) => shade(geo, (p) => 0.92 + 0.08 * THREE.MathUtils.clamp(p.y * 2 + 0.5, 0, 1));
+  const skinShade = (geo: G) => shade(geo, (p) => 0.9 + 0.1 * THREE.MathUtils.clamp(p.y * 2 + 0.6, 0, 1));
+  const shirtAt = (y: number) => (o.shirt ? o.shirt(tmp.set(0, y, 0)) : skin);
 
   // --- pelvis + belly (spine bone) ---
+  // The pelvis is wide enough to seat the thighs, so legs grow out of hips
+  // instead of poking from under a narrow vase.
   const tl = b.torsoLen;
+  const hipR = hipSpan(b);
   const pelvis = lathe([
-    [0.02, -0.17], [b.hipR * 0.7, -0.15], [b.hipR * 0.98, -0.07], [b.hipR, 0.02],
-    [(b.hipR + b.waistR) / 2, 0.12], [b.waistR, tl * 0.3], [b.waistR * 1.02, tl * 0.44],
-  ], 14, 1, b.depth);
+    [0.02, -0.19], [hipR * 0.72, -0.17], [hipR * 0.97, -0.09], [hipR, 0.0],
+    [(hipR + b.waistR) / 2, 0.12], [b.waistR, tl * 0.3], [b.waistR * 1.02, tl * 0.44],
+  ], 16, 1, b.depth);
   paint(pelvis, o.shirt ? o.shirt : skin);
   rig.add('spine', pelvis);
 
   // --- chest (chest bone) ---
-  const neckR = 0.075 * (b.limb * 0.3 + 0.7);
+  const neckR = 0.095 * (b.limb * 0.3 + 0.7);
   const chestProfile: Array<[number, number]> = [
     [b.waistR * 1.02, -0.03], [b.chestR * 0.97, 0.1], [b.chestR, tl * 0.32],
     [b.chestR * 0.9, tl * 0.47], [b.chestR * 0.55, tl * 0.56], [neckR * 1.2, tl * 0.6], [neckR, tl * 0.62],
   ];
-  const chest = lathe(chestProfile, 14, 1, b.depth);
+  const chest = lathe(chestProfile, 24, 1, b.depth); // dense enough for crisp necklines
   paint(chest, (p) => {
     if (o.shirt) return o.shirt(p);
     const c = o.chestPaint?.(p);
@@ -141,11 +204,21 @@ export function addBody(rig: Rig, b: Body, look: Look, o: BodyOpts = {}): void {
     paint(pec, o.shirt ? o.shirt(tmp.set(0, tl * 0.3, 1)) : skin);
     rig.add('chest', pec);
   }
+  // Shoulder yoke: a rounded bar across the top of the torso that carries
+  // the chest out to the shoulder joints — square, readable shoulders.
+  const yoke = blob(b.shoulderW * 0.98, 0.1 * L, b.chestR * b.depth * 0.86, 14, 8);
+  place(yoke, 0, tl * 0.44, -0.012);
+  paint(yoke, o.shirt ? o.shirt : skin);
+  rig.add('chest', yoke);
+  // Trapezius: slopes from the neck down onto the yoke.
+  const trap = lathe([[b.shoulderW * 0.62, tl * 0.47], [neckR * 1.55, tl * 0.56], [neckR * 1.05, tl * 0.64]], 14, 1, b.depth * 0.95);
+  paint(trap, o.shirt ? o.shirt : skin);
+  rig.add('chest', trap);
 
   // --- neck & head ---
-  const neck = capsule(neckR, neckR * 1.1, b.neckLen + 0.06, 8);
-  place(neck, 0, b.neckLen + 0.03, 0);
+  const neck = lathe([[neckR * 1.3, -0.02], [neckR * 1.02, b.neckLen * 0.4], [neckR * 0.96, b.neckLen + 0.06], [neckR * 0.5, b.neckLen + 0.1]], 10);
   paint(neck, skin);
+  shade(neck, (p) => 0.88 + 0.12 * THREE.MathUtils.clamp(p.y / (b.neckLen + 0.1), 0, 1)); // chin shadow on the throat
   rig.add('neck', neck, { soft: 0.05 });
   addHead(rig, b, look);
 
@@ -154,24 +227,43 @@ export function addBody(rig: Rig, b: Body, look: Look, o: BodyOpts = {}): void {
     const sx = side === 'L' ? 1 : -1;
     const upperLen = b.armLen * 0.52;
     const foreLen = b.armLen * 0.48;
-    // deltoid: rounds the shoulder into the chest
-    const delt = blob(0.085 * L, 0.095 * L, 0.085 * L, 10, 7);
-    place(delt, sx * 0.005, -0.03, 0);
     const sleeve = o.sleeve ?? null;
     const sleeveLen = o.sleeveLen ?? (sleeve ? 'short' : 'none');
-    paint(delt, sleeve !== null && sleeveLen !== 'none' ? sleeve : o.shirt ? o.shirt(tmp.set(0, tl * 0.4, 0)) : skin);
+    // deltoid: a full cap that rounds the shoulder into the yoke
+    const delt = blob(0.118 * L, 0.125 * L, 0.112 * L, 12, 8);
+    place(delt, sx * 0.012, -0.03, 0);
+    paint(delt, sleeve !== null && sleeveLen !== 'none' ? sleeve : shirtAt(tl * 0.4));
     rig.add(`arm${side}`, delt, { soft: 0.06 });
 
-    const upper = capsule(0.07 * L, 0.058 * L, upperLen, 9);
+    // upper arm: full at the shoulder, a biceps belly in front, narrow at the elbow
+    const upper = limb(upperLen, [[0, 0.104 * L], [0.35, 0.098 * L], [0.75, 0.08 * L], [1, 0.07 * L]], 12, {
+      front: bump(0.45, 0.4, 0.16), back: bump(0.3, 0.35, 0.08),
+    });
     paint(upper, (p) => (sleeve !== null && (sleeveLen === 'long' || p.y > -upperLen * 0.55) ? sleeve : skin));
     skinShade(upper);
     rig.add(`arm${side}`, upper, { soft: 0.07 });
+    if (sleeve !== null && sleeveLen === 'short') {
+      const cuff = torus(0.094 * L, 0.018, 5, 16);
+      place(cuff, 0, -upperLen * 0.55, 0, Math.PI / 2, 0, 0);
+      paint(cuff, tint(sleeve, 0.8));
+      rig.add(`arm${side}`, cuff);
+    }
 
-    const fore = capsule(0.058 * L, 0.048 * L, foreLen, 9);
+    // forearm: a meaty belly just below the elbow, tapering to a slim wrist
+    const fore = limb(foreLen, [[0, 0.074 * L], [0.22, 0.086 * L], [0.65, 0.07 * L], [1, 0.056 * L]], 12, {
+      back: bump(0.25, 0.3, 0.1), sx: 1.05,
+    });
     paint(fore, sleeve !== null && sleeveLen === 'long' ? (p) => (p.y > -foreLen * 0.8 ? sleeve : skin) : skin);
+    skinShade(fore);
     rig.add(`fore${side}`, fore, { soft: 0.07 });
+    if (sleeve !== null && sleeveLen === 'long') {
+      const cuff = torus(0.07 * L, 0.02, 5, 16);
+      place(cuff, 0, -foreLen * 0.8, 0, Math.PI / 2, 0, 0);
+      paint(cuff, tint(sleeve, 0.8));
+      rig.add(`fore${side}`, cuff);
+    }
 
-    addHand(rig, `hand${side}`, b.handR * (0.85 + L * 0.15), skin, sx);
+    addHand(rig, `hand${side}`, b.handR * (0.88 + L * 0.12), skin, sx);
   }
 
   // --- legs ---
@@ -180,43 +272,60 @@ export function addBody(rig: Rig, b: Body, look: Look, o: BodyOpts = {}): void {
     const sx = side === 'L' ? 1 : -1;
     const thighLen = b.legLen * 0.52;
     const shinLen = b.legLen * 0.48;
-    const thigh = capsule(0.108 * L, 0.082 * L, thighLen, 10, 1, 0.95);
+    // thigh: heavy at the hip with a quad swell in front, narrowing to the knee
+    const thigh = limb(thighLen, [[0, 0.14 * L], [0.3, 0.132 * L], [0.8, 0.1 * L], [1, 0.09 * L]], 12, {
+      front: bump(0.4, 0.45, 0.12), back: bump(0.15, 0.3, 0.1), sx: 0.96,
+    });
     paint(thigh, legC);
-    rig.add(`thigh${side}`, thigh, { soft: 0.07 });
+    rig.add(`thigh${side}`, thigh, { soft: 0.08 });
     if (o.noLegs) continue;
-    const shin = capsule(0.08 * L, 0.06 * L, shinLen, 10);
-    // calf bulge at the back
+    // shin: a round knee, a real calf at the back, a slim ankle
+    const shin = limb(shinLen, [[0, 0.092 * L], [0.28, 0.1 * L], [0.65, 0.078 * L], [1, 0.062 * L]], 12, {
+      back: bump(0.3, 0.32, 0.38), front: bump(0.02, 0.15, 0.08),
+    });
     paint(shin, legC);
     rig.add(`shin${side}`, shin, { soft: 0.08 });
-    const calf = blob(0.058 * L, 0.12, 0.05 * L, 8, 6);
-    place(calf, 0, -shinLen * 0.3, -0.025);
-    paint(calf, legC);
-    rig.add(`shin${side}`, calf);
-    // foot
+    // foot: heel, arch and a broad rounded toe box
     const footC = o.feet ?? skin;
-    const foot = blob(0.075 * L, 0.058, 0.14 * L, 10, 7);
-    place(foot, sx * 0.008, -b.footH + 0.052, 0.06 * L);
-    paint(foot, (p) => (p.y > -b.footH + 0.06 && o.feet ? tint(footC, 0.85) : footC));
-    rig.add(`foot${side}`, foot);
+    const fl = 0.17 * (0.55 + 0.45 * L);
+    const fw = 0.085 * L;
+    const foot = blob(fw, 0.06, fl * 0.62, 12, 8);
+    place(foot, sx * 0.01, -b.footH + 0.055, fl * 0.32);
+    const toe = blob(fw * 1.06, 0.05, fl * 0.34, 10, 6);
+    place(toe, sx * 0.012, -b.footH + 0.045, fl * 0.72);
+    const heel = blob(fw * 0.82, 0.06, fl * 0.3, 8, 6);
+    place(heel, 0, -b.footH + 0.06, -fl * 0.08);
+    for (const g of [foot, toe, heel]) {
+      paint(g, (p) => (p.y < -b.footH + 0.022 && o.feet ? tint(footC, 0.7) : footC)); // a darker sole edge
+      rig.add(`foot${side}`, g);
+    }
     if (o.feet) {
-      // ankle wrap
-      const wrap = capsule(0.062 * L, 0.06 * L, 0.08, 8);
-      place(wrap, 0, 0.04, 0);
-      paint(wrap, tint(footC, 0.9));
-      rig.add(`shin${side}`, wrap.translate(0, -shinLen + 0.06, 0));
+      // ankle wrap: two turns of binding
+      for (let k = 0; k < 2; k++) {
+        const wrap = torus(0.064 * L, 0.018, 5, 14);
+        place(wrap, 0, -shinLen + 0.03 + k * 0.05, 0, Math.PI / 2 + (k ? 0.18 : -0.12), 0, 0);
+        paint(wrap, tint(footC, k ? 1.12 : 0.9));
+        rig.add(`shin${side}`, wrap);
+      }
     }
   }
 }
 
-/** A mitten hand with a thumb: reads as a hand at any distance. */
+/** A mitten hand: palm, a curled finger block with knuckles, and a thumb. */
 export function addHand(rig: Rig, bone: BoneName, r: number, skin: number, sx: number): void {
-  const palm = blob(r * 0.82, r * 1.2, r * 0.55, 9, 7);
-  place(palm, 0, -r * 0.95, 0.005);
-  const thumb = capsule(r * 0.3, r * 0.26, r * 0.7, 6);
-  place(thumb, sx * r * 0.55, -r * 0.45, r * 0.25, 0.3, 0, sx * 0.7);
-  paint(palm, skin);
-  paint(thumb, skin);
+  const palm = blob(r * 0.86, r * 0.95, r * 0.55, 10, 7);
+  place(palm, 0, -r * 0.75, 0.005);
+  const fingers = blob(r * 0.82, r * 0.7, r * 0.5, 10, 7);
+  place(fingers, 0, -r * 1.45, r * 0.12, 0.35, 0, 0);
+  const knuckles = capsule(r * 0.22, r * 0.22, r * 1.25, 6);
+  place(knuckles, sx * r * 0.62, -r * 1.25, r * 0.28, 0, 0, -Math.PI / 2 * sx);
+  const thumb = limb(r * 0.85, [[0, r * 0.32], [1, r * 0.24]], 7);
+  place(thumb, sx * r * 0.62, -r * 0.45, r * 0.25, 0.45, 0, sx * 0.55);
+  for (const g of [palm, fingers, knuckles, thumb]) paint(g, skin);
+  shade(fingers, () => 0.95);
   rig.add(bone, palm, { soft: 0.03 });
+  rig.add(bone, fingers);
+  rig.add(bone, knuckles);
   rig.add(bone, thumb);
 }
 
@@ -280,29 +389,36 @@ export function addHead(rig: Rig, b: Body, look: Look, f: FaceOpts = {}): void {
   // Eyes: dark ovals with a bright catchlight — the "alive" switch.
   const es = f.eyeScale ?? 1;
   for (const sx of [1, -1]) {
-    const ex = c.x + sx * r * 0.36;
-    const ey = c.y + r * 0.08;
-    const ez = c.z + Math.sqrt(Math.max(0, r * r * 0.96 - (sx * r * 0.36) ** 2 - (r * 0.08) ** 2)) - 0.005;
-    const eye = blob(r * 0.12 * es, r * 0.17 * es, r * 0.07, 8, 6);
-    place(eye, ex, ey, ez, 0, sx * 0.35, 0);
+    const ex = c.x + sx * r * 0.37;
+    const ey = c.y + r * 0.06;
+    const ez = c.z + Math.sqrt(Math.max(0, r * r * 0.96 - (sx * r * 0.37) ** 2 - (r * 0.06) ** 2)) - 0.005;
+    // Big eyes with whites: at the default camera a face is ~15px, so the
+    // eyes and brows carry it on their own — and dark pupils alone vanish
+    // on dark skin, while a pale almond reads on any complexion.
+    const white = blob(r * 0.19 * es, r * 0.2 * es, r * 0.07, 10, 7);
+    place(white, ex - sx * r * 0.01, ey - r * 0.01, ez - r * 0.02, 0, sx * 0.35, 0);
+    paint(white, 0xf3ede2);
+    rig.add('head', white);
+    const eye = blob(r * 0.125 * es, r * 0.175 * es, r * 0.08, 9, 7);
+    place(eye, ex + sx * r * 0.015, ey, ez + r * 0.012, 0, sx * 0.35, 0);
     paint(eye, look.eye);
     rig.add('head', eye);
-    const glint = blob(r * 0.045 * es, r * 0.045 * es, r * 0.03, 5, 4);
-    place(glint, ex + r * 0.04, ey + r * 0.06, ez + r * 0.05);
+    const glint = blob(r * 0.05 * es, r * 0.05 * es, r * 0.03, 5, 4);
+    place(glint, ex + r * 0.045, ey + r * 0.07, ez + r * 0.055);
     paint(glint, 0xffffff);
     shine(glint, 0xffffff, 0.25);
     rig.add('head', glint);
     // Brow: a short tilted bar of hair colour. Tilt = attitude.
-    const brow = capsule(r * 0.055, r * 0.045, r * 0.3, 5);
+    const brow = capsule(r * 0.075, r * 0.055, r * 0.34, 5);
     const tilt = (f.brow ?? 0.1) * sx;
-    place(brow, ex + sx * r * 0.14, ey + r * 0.26, ez + r * 0.01, 0, 0, Math.PI / 2 * sx + tilt);
-    paint(brow, look.hair);
+    place(brow, ex + sx * r * 0.16, ey + r * 0.3, ez + r * 0.0, 0, 0, Math.PI / 2 * sx + tilt);
+    paint(brow, tint(look.hair, 0.8));
     rig.add('head', brow);
   }
   // Mouth: a small dark smile line.
-  const mouth = capsule(r * 0.04, r * 0.04, r * 0.24, 5);
-  place(mouth, c.x + r * 0.12, c.y - r * 0.4, c.z + r * 0.84, 0, 0, Math.PI / 2);
-  paint(mouth, mix(look.skin, 0x3a1a14, 0.6));
+  const mouth = capsule(r * 0.05, r * 0.05, r * 0.28, 5);
+  place(mouth, c.x + r * 0.14, c.y - r * 0.4, c.z + r * 0.84, 0, 0, Math.PI / 2);
+  paint(mouth, mix(look.skin, 0x3a1a14, 0.7));
   rig.add('head', mouth);
 }
 
@@ -427,7 +543,7 @@ function warp(geo: G, sx: number): void {
 
 /** Waist-to-knee skirt / kilt / tunic tail hanging from the hips. */
 export function addSkirt(rig: Rig, b: Body, color: (p: THREE.Vector3) => number, len: number, flare = 0.08, top = 0.16, slit = false): void {
-  const r0 = b.hipR + 0.025;
+  const r0 = hipSpan(b) + 0.03;
   const prof: Array<[number, number]> = [
     [b.waistR + 0.02, top], [r0, 0.03], [r0 + flare * 0.4, -len * 0.35], [r0 + flare * 0.8, -len * 0.75], [r0 + flare, -len],
   ];
@@ -451,7 +567,7 @@ export function addSkirt(rig: Rig, b: Body, color: (p: THREE.Vector3) => number,
 /** A floor-length robe: skirt that reaches the ankles and follows the legs strongly. */
 export function addRobe(rig: Rig, b: Body, color: (p: THREE.Vector3) => number, flare = 0.2): void {
   const len = b.legLen + b.footH - 0.04;
-  const r0 = b.hipR + 0.03;
+  const r0 = hipSpan(b) + 0.035;
   const prof: Array<[number, number]> = [
     [b.waistR + 0.025, 0.2], [r0, 0.02], [r0 + flare * 0.25, -len * 0.3], [r0 + flare * 0.6, -len * 0.7], [r0 + flare, -len + 0.02], [r0 + flare * 0.9, -len],
   ];
@@ -499,31 +615,154 @@ export function addSash(rig: Rig, b: Body, color: number, width = 0.05, leftShou
   rig.add('chest', sash);
 }
 
-/** Simple short shoulder cape (two layers) hanging on the cloak bones. */
-export function addCloak(rig: Rig, b: Body, outer: (p: THREE.Vector3) => number, inner: number, len: number, width = 1, collar?: number): void {
-  const w = (b.shoulderW + 0.12) * width;
-  // A half-cylinder shell behind the back, flaring toward the hem.
+export interface CloakOpts {
+  /** Collar colour: a raised collar behind the neck. */
+  collar?: number;
+  /** Number of vertical folds round the back (drape). */
+  folds?: number;
+  /** Hem outline. */
+  hem?: 'straight' | 'scallop' | 'points' | 'ragged';
+  /** Colour of a band along the hem. */
+  hemTrim?: number;
+  /** How far round the body the cloth wraps (1 = to the shoulder line). */
+  wrap?: number;
+  /** Extra outward drape at the hem (world units). */
+  drape?: number;
+  /** Shorter overlapping tiers on top of the main cloak (layered hems): lengths as fractions of len. */
+  tiers?: number[];
+  /** Colour fn for the tiers (defaults to the outer colour). */
+  tierColor?: (p: THREE.Vector3) => number;
+  /** A shoulder mantle (capelet) over the cloak's top: its colour fn. */
+  mantle?: (p: THREE.Vector3) => number;
+  /** Mantle length. */
+  mantleLen?: number;
+  seed?: number;
+  /** Segments round the cloak (more = crisper painted motifs). */
+  segs?: number;
+}
+
+/** One cloth shell hanging from the cloak bone: the back of an ellipse that flares and folds toward the hem. */
+function cloakShell(b: Body, len: number, width: number, o: CloakOpts, inset = 0): G {
+  const wrap = o.wrap ?? 1.05;
+  const A = (Math.PI / 2) * wrap;
+  const rows = Math.max(8, Math.round(len / ((o.segs ?? 26) > 30 ? 0.045 : 0.06)));
   const prof: Array<[number, number]> = [];
-  const steps = 7;
-  for (let i = 0; i <= steps; i++) {
-    const t = i / steps;
-    prof.push([w * (0.5 + 0.7 * Math.sqrt(t)), -t * len]); // gathered at the shoulders, flaring to the hem
+  for (let i = rows; i >= 0; i--) prof.push([1, -len * (i / rows)]);
+  setLatheStep(10); // our own rows; don't refine
+  const geo = lathe(prof, o.segs ?? 26, 1, 1, Math.PI - A, 2 * A);
+  setLatheStep(0.045);
+  const pos = geo.attributes.position;
+  const zc = b.chestR * b.depth * 0.75; // ellipse centre sits inside the body
+  const folds = o.folds ?? 7;
+  const drape = o.drape ?? 0.16;
+  const seed = o.seed ?? 3;
+  for (let i = 0; i < pos.count; i++) {
+    tmp.fromBufferAttribute(pos, i);
+    const t = THREE.MathUtils.clamp(-tmp.y / len, 0, 1);
+    const a = Math.atan2(tmp.x, -tmp.z); // 0 = straight back
+    const rx = b.shoulderW * 0.92 + (width - 1) * 0.2 + 0.2 * Math.sqrt(t) * width + 0.06 * t - inset;
+    const rz = zc + 0.045 + drape * t * t + 0.1 * Math.sqrt(t) - inset;
+    // vertical folds: deeper toward the hem, strongest across the back
+    const fold = Math.sin(a * folds + seed) * (0.02 + 0.075 * t) * (0.6 + 0.4 * Math.cos(a));
+    const k = 1 + fold / Math.max(0.1, rx);
+    let y = tmp.y;
+    if (t > 0.98) {
+      const n = folds * 2;
+      if (o.hem === 'scallop') y += len * 0.035 * Math.abs(Math.sin(a * n * 0.5));
+      else if (o.hem === 'points') y += len * 0.06 * Math.abs(((a * n) / Math.PI) % 2 - 1);
+      else if (o.hem === 'ragged') y += len * 0.06 * Math.max(0, Math.sin(a * 11 + seed) * Math.sin(a * 5.3 + seed * 2));
+    }
+    // the back of the hem swings a touch lower than the sides (it drapes)
+    y -= 0.03 * t * Math.cos(a);
+    pos.setXYZ(i, Math.sin(a) * rx * k, y, zc - Math.cos(a) * rz * k);
   }
-  const shell = lathe(prof.reverse(), 16, 1, 0.5, Math.PI / 2, Math.PI);
-  // Arc π/2..3π/2 sweeps +x → −z → −x: the back half, open side forward.
-  paint(shell, outer);
-  rig.add('cloak1', shell, { weights: cloakWeights(len) });
-  // inner lining: same shell slightly smaller, inverted normals by flipping
-  const lining = lathe(prof.map(([r, y]) => [r - 0.015, y] as [number, number]).reverse(), 16, 1, 0.5, Math.PI / 2, Math.PI);
-  flip(lining);
+  geo.computeVertexNormals();
+  return geo;
+}
+
+/** Weights for cloth that hangs from the shoulders down the back (cloaks): chest → cloak1 → cloak2 → cloak3. */
+export function cloakWeights(_len: number) {
+  return (p: THREE.Vector3): Array<[BoneName, number]> => {
+    const d = Math.max(0, -p.y);
+    if (d < 0.12) {
+      const k = d / 0.12;
+      return [['chest', 1 - k], ['cloak1', k]];
+    }
+    const s = Math.min(2, (d - 0.06) / CLOAK_SEG);
+    const chain: BoneName[] = ['cloak1', 'cloak2', 'cloak3'];
+    const i = Math.min(1, Math.floor(s));
+    const f = Math.min(1, s - i);
+    return [[chain[i], 1 - f], [chain[i + 1], f]];
+  };
+}
+
+/**
+ * A cloak with volume: an outer shell that wraps round the shoulders and
+ * flares into vertical folds, a contrasting lining, optional layered tiers
+ * with shaped hems, a hem band, a shoulder mantle and a raised collar. It
+ * hangs on the cloak1→cloak2→cloak3 chain, so the animator can make it
+ * trail, billow and ripple.
+ */
+export function addCloak(
+  rig: Rig, b: Body, outer: (p: THREE.Vector3) => number, inner: number, len: number, width = 1, collar?: number, o: CloakOpts = {},
+): void {
+  const opts: CloakOpts = { ...o, collar: o.collar ?? collar };
+  const hemTrim = opts.hemTrim;
+  const withHem = (fn: (p: THREE.Vector3) => number, l: number) => (p: THREE.Vector3) =>
+    hemTrim !== undefined && -p.y > l * 0.93 ? hemTrim : fn(p);
+  const w = cloakWeights(len);
+
+  const shell = cloakShell(b, len, width, opts);
+  paint(shell, withHem(outer, len));
+  shade(shell, (p) => 0.84 + 0.16 * THREE.MathUtils.clamp(1 + p.y / len, 0, 1)); // darker toward the hem
+  rig.add('cloak1', shell, { weights: w });
+  const lining = flip(cloakShell(b, len - 0.01, width, opts, 0.014));
   paint(lining, inner);
-  rig.add('cloak1', lining, { weights: cloakWeights(len) });
-  if (collar !== undefined) {
-    const col = torus(b.chestR * 0.9, 0.06, 6, 18, Math.PI * 1.2);
-    place(col, 0, 0.0, 0.12, Math.PI / 2, 0, Math.PI * -0.1 - Math.PI * 0.5);
-    col.rotateZ(0);
-    paint(col, collar);
-    rig.add('cloak1', col);
+  rig.add('cloak1', lining, { weights: w });
+
+  // layered tiers, each a little wider so it sits over the one below
+  (opts.tiers ?? []).forEach((f, i) => {
+    const tlen = len * f;
+    const to: CloakOpts = { ...opts, folds: (opts.folds ?? 7) + i, drape: (opts.drape ?? 0.16) * f + 0.02 * (i + 1), seed: (opts.seed ?? 3) + i * 2 };
+    const out = -0.02 * (i + 1);
+    const tier = cloakShell(b, tlen, width, to, out);
+    paint(tier, withHem(opts.tierColor ?? outer, tlen));
+    shade(tier, (p) => 0.9 + 0.1 * THREE.MathUtils.clamp(1 + p.y / tlen, 0, 1));
+    rig.add('cloak1', tier, { weights: w });
+    const under = flip(cloakShell(b, tlen - 0.01, width, to, out + 0.012));
+    paint(under, tint(inner, 0.85));
+    rig.add('cloak1', under, { weights: w });
+  });
+
+  const tl = b.torsoLen;
+  if (opts.mantle) {
+    // capelet over the shoulders: a short, round shell open at the front
+    const ml = opts.mantleLen ?? 0.3;
+    const prof: Array<[number, number]> = [];
+    const steps = 6;
+    for (let i = steps; i >= 0; i--) {
+      const t = i / steps;
+      prof.push([b.chestR * 0.62 + (b.shoulderW + 0.1 - b.chestR * 0.62) * Math.sqrt(t) + 0.06 * t, tl * 0.64 - ml * t]);
+    }
+    const arc = Math.PI * 1.62;
+    const sz = b.depth * 1.12 + 0.12;
+    const m = lathe(prof, 26, 1, sz, Math.PI - arc / 2, arc);
+    paint(m, opts.mantle);
+    rig.add('chest', m);
+    const mi = flip(lathe(prof.map(([r, y]) => [r - 0.012, y] as [number, number]), 26, 1, sz, Math.PI - arc / 2, arc));
+    paint(mi, tint(inner, 0.8));
+    rig.add('chest', mi);
+  }
+  if (opts.collar !== undefined) {
+    // a raised collar standing behind the neck, flaring outward
+    const arc = Math.PI * 1.15;
+    const prof: Array<[number, number]> = [[b.chestR * 0.6, tl * 0.58], [b.chestR * 0.7, tl * 0.72], [b.chestR * 0.95, tl * 0.86]];
+    const c = lathe(prof, 18, 1, b.depth * 1.05, Math.PI - arc / 2, arc);
+    paint(c, opts.collar);
+    rig.add('chest', c);
+    const ci = flip(lathe(prof.map(([r, y]) => [r - 0.015, y] as [number, number]), 18, 1, b.depth * 1.05, Math.PI - arc / 2, arc));
+    paint(ci, tint(opts.collar, 0.75));
+    rig.add('chest', ci);
   }
 }
 

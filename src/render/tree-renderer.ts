@@ -18,6 +18,12 @@
  * scattered deterministically by tile hash on dry land, kept clear of
  * buildings, and follows the terrain as gods reshape it. It has no
  * gameplay meaning at all.
+ *
+ * SCALE AROUND HOMES: people are ~2.3 units tall, so a full-grown tree
+ * (5–7 units) or a boulder next to a hut would hide the village. Flora
+ * near a tribe's home circle or a building is drawn smaller (trees) or
+ * thinned out (bushes, rocks); the wild forests further out stay full
+ * size. See `nearFactor`.
  */
 
 import * as THREE from 'three';
@@ -41,6 +47,8 @@ interface TreeState {
   scale: number;
   yaw: number;
   wasAlive: boolean;
+  /** 0 right beside a home/building … 1 out in the wild (see nearFactor). */
+  near: number;
   /** Seconds since felled (topple), or since regrowth started. */
   fall: number;
   grow: number;
@@ -49,6 +57,7 @@ interface TreeState {
 
 interface Cover {
   mesh: THREE.InstancedMesh;
+  rock: boolean;
   tiles: Array<{ x: number; z: number; s: number; yaw: number }>;
 }
 
@@ -76,7 +85,18 @@ export class TreeRenderer {
   private readonly p = new THREE.Vector3();
   private last = performance.now();
   private coverKey = '';
+  private nearKey = '';
   private readonly maxTrees = 2400;
+  /** Reused every frame (no per-frame allocation). */
+  private readonly counts: number[] = [];
+  private readonly burningNow = new Set<number>();
+  private readonly blocked = new Set<number>();
+  /** Homes and buildings flora should give way to: tile x, z and clear radius. */
+  private readonly clearings: Array<{ x: number; z: number; r: number }> = [];
+  private lastCamX = NaN;
+  private lastCamZ = NaN;
+  private lastMapVersion = -1;
+  private lastBuildings = -1;
 
   constructor(private readonly scene: THREE.Scene) {
     const mats = sharedMaterials();
@@ -103,13 +123,14 @@ export class TreeRenderer {
     ];
     // (Grass and flowers are the LOOK stream's GPU ground cover — world/ground-cover.ts.)
     for (const [g, mat, shadow] of covers) {
+      const rock = mat === mats.bark;
       const im = new THREE.InstancedMesh(g, mat, 1600);
       im.castShadow = shadow;
       im.receiveShadow = true;
       im.frustumCulled = false;
       im.count = 0;
       scene.add(im);
-      this.covers.push({ mesh: im, tiles: [] });
+      this.covers.push({ mesh: im, rock, tiles: [] });
     }
   }
 
@@ -125,7 +146,7 @@ export class TreeRenderer {
     const r = hash2(x, z, 99);
     const tint = new THREE.Color().setHSL(0.0, 0, 0.88 + hash2(x, z, 5) * 0.2);
     void i;
-    return { species: sp * VARIANTS_PER_SPECIES + v, scale: 0.85 + r * 0.4, yaw: r * Math.PI * 2, wasAlive: alive, fall: 99, grow: 99, tint };
+    return { species: sp * VARIANTS_PER_SPECIES + v, scale: 0.8 + r * 0.36, yaw: r * Math.PI * 2, wasAlive: alive, near: 1, fall: 99, grow: 99, tint };
   }
 
   /** Deterministic ground cover on dry, gentle land. */
@@ -141,12 +162,13 @@ export class TreeRenderer {
         this.covers[k].tiles.push({
           x: x + (hash2(x, z, 45) - 0.5) * 0.8,
           z: z + (hash2(x, z, 46) - 0.5) * 0.8,
-          s: 0.7 + hash2(x, z, 47) * 0.7,
+          s: (k < 2 ? 0.5 : 0.55) + hash2(x, z, 47) * 0.45,
           yaw: hash2(x, z, 48) * 6.28,
         });
       }
     }
     this.coverKey = '';
+    this.nearKey = '';
   }
 
   /** Re-anchor every tree relative to the camera. Called once per frame. */
@@ -163,9 +185,14 @@ export class TreeRenderer {
         this.states.push(st);
       }
       this.states.length = world.trees.length;
+      this.nearKey = '';
     }
-    const counts = new Array(this.meshes.length).fill(0);
-    const burningNow = new Set<number>();
+    this.updateClearings(world);
+    const counts = this.counts;
+    counts.length = this.meshes.length;
+    counts.fill(0);
+    const burningNow = this.burningNow;
+    burningNow.clear();
     let stumps = 0;
     for (let i = 0; i < world.trees.length; i++) {
       const t = world.trees[i] as typeof world.trees[number] & { burning?: number };
@@ -191,7 +218,7 @@ export class TreeRenderer {
         }
       }
       if (!showTree) continue;
-      let scale = st.scale;
+      let scale = st.scale * (0.6 + 0.4 * st.near);
       let tilt = 0;
       let sink = 0;
       if (!t.alive) {
@@ -217,7 +244,6 @@ export class TreeRenderer {
         let a = this.fireAnchors.get(i);
         if (!a) {
           a = new THREE.Object3D();
-          a.userData.gpuCurved = true; // we already applied the full drop
           this.scene.add(a);
           this.fireAnchors.set(i, a);
         }
@@ -244,12 +270,52 @@ export class TreeRenderer {
     this.fx.update(dt);
   }
 
+  /**
+   * Recompute each tree's `near` factor when homes or buildings change.
+   * A clearing is a tribe's home circle (radius 9 tiles) or a building
+   * (its footprint + 4); flora scales up smoothly from inside it.
+   */
+  private updateClearings(world: World): void {
+    const tribes = world.tribes as Record<string, { home?: { x: number; z: number } } | undefined>;
+    let key = `${world.buildings.length}|${world.trees.length}`;
+    for (const id in tribes) {
+      const h = tribes[id]?.home;
+      if (h) key += `|${h.x},${h.z}`;
+    }
+    if (key === this.nearKey) return;
+    this.nearKey = key;
+    this.coverKey = ''; // cover thins around the new clearings too
+    const cl = this.clearings;
+    cl.length = 0;
+    for (const id in tribes) {
+      const h = tribes[id]?.home;
+      if (h) cl.push({ x: h.x, z: h.z, r: 9 });
+    }
+    for (const b of world.buildings) {
+      const size = (b as unknown as { size?: number }).size ?? 3;
+      cl.push({ x: b.x, z: b.z, r: size / 2 + 4 });
+    }
+    for (let i = 0; i < world.trees.length; i++) {
+      const t = world.trees[i];
+      this.states[i].near = nearFactor(cl, t.x, t.z);
+    }
+  }
+
   private syncCover(world: World, camTarget: THREE.Vector3): void {
-    const key = `${camTarget.x.toFixed(2)},${camTarget.z.toFixed(2)},${(world.map as unknown as { version?: number }).version ?? 0},${world.buildings.length}`;
-    if (key === this.coverKey) return;
-    this.coverKey = key;
+    // Only when something moved: the camera, the land, or the buildings.
+    const ver = (world.map as unknown as { version?: number }).version ?? 0;
+    if (
+      Math.abs(camTarget.x - this.lastCamX) < 0.005 && Math.abs(camTarget.z - this.lastCamZ) < 0.005 &&
+      ver === this.lastMapVersion && world.buildings.length === this.lastBuildings && this.coverKey === 'ok'
+    ) return;
+    this.lastCamX = camTarget.x;
+    this.lastCamZ = camTarget.z;
+    this.lastMapVersion = ver;
+    this.lastBuildings = world.buildings.length;
+    this.coverKey = 'ok';
     // tiles covered by buildings stay clear
-    const blocked = new Set<number>();
+    const blocked = this.blocked;
+    blocked.clear();
     for (const b of world.buildings) {
       const half = Math.floor(((b as unknown as { size?: number }).size ?? 3) / 2) + 1;
       for (let dz = -half; dz <= half; dz++) for (let dx = -half; dx <= half; dx++) {
@@ -266,10 +332,13 @@ export class TreeRenderer {
         if (blocked.has(Math.round(t.z) * WORLD_SIZE + Math.round(t.x))) continue;
         const h = world.map.sampleHeight(t.x, t.z);
         if (h < 0.35) continue;
+        // villages stay readable: no boulders by the huts, bushes thinned and small
+        const near = nearFactor(this.clearings, t.x, t.z);
+        if (c.rock ? near < 0.75 : near < 0.35 || (near < 0.8 && (t.yaw * 7) % 1 < 0.5)) continue;
         this.e.set(0, t.yaw, 0);
         this.q.setFromEuler(this.e);
         this.p.set(camTarget.x + relX, h - curvatureDrop(relX, relZ) - 0.05, camTarget.z + relZ);
-        this.m.compose(this.p, this.q, this.s.setScalar(t.s));
+        this.m.compose(this.p, this.q, this.s.setScalar(t.s * (0.7 + 0.3 * near)));
         c.mesh.setMatrixAt(n++, this.m);
         if (n >= 1600) break;
       }
@@ -280,4 +349,17 @@ export class TreeRenderer {
 }
 
 const ZERO = new THREE.Vector3();
+
+/** 0 inside a clearing (home circle / around a building), easing to 1 in the wild. Wrap-aware. */
+function nearFactor(cl: Array<{ x: number; z: number; r: number }>, x: number, z: number): number {
+  let f = 1;
+  for (const c of cl) {
+    const dx = wrapDelta(x - c.x, WORLD_SIZE);
+    const dz = wrapDelta(z - c.z, WORLD_SIZE);
+    const d = Math.sqrt(dx * dx + dz * dz);
+    const k = THREE.MathUtils.smoothstep(d, c.r * 0.55, c.r * 1.35);
+    if (k < f) f = k;
+  }
+  return f;
+}
 const CHARRED = new THREE.Color(0.35, 0.3, 0.28);

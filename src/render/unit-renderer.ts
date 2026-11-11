@@ -17,7 +17,8 @@
  *    them. Either way: no animation, no draw.
  *
  * 4. CURVE — terrain bends down with distance in its vertex shader; figures
- *    are small, so we drop the whole figure by curvatureDrop() on the CPU
+ *    are small, so we drop the whole figure by curvatureDrop() on the CPU —
+ *    the FULL drop, limb included, so far figures sit on the planet's edge
  *    (sub-pixel error at this size, and no per-vertex shader patch needed).
  *
  * 5. ANIMATE — pick a clip from the unit's state/task (chooseClip), feed
@@ -27,7 +28,15 @@
  *
  * Deaths: the sim deletes dead units immediately, so the renderer keeps a
  * GHOST of the figure to play the fall (or the drowning, or — for a
- * leader — an ascension in light) before letting it go.
+ * leader — an ascension in light) before letting it go. An ordinary body
+ * falls, lies still a moment, then fades out while a small wisp in its
+ * tribe's colour rises from it.
+ *
+ * Picking: `visualPosition(unitId)` returns where a unit is DRAWN this
+ * frame — tower lookouts on their platform, swimmers bobbing low in the
+ * water, everyone wrapped and curved like the picture. Selection code
+ * (src/ui) should prefer it over the sim's (x, z) + ground height; it is
+ * not wired into the UI yet.
  *
  * Sim fields read DEFENSIVELY (the v2 sim adds them; absent = default):
  *   u.maxHp, u.garrison (building id, −1 none), u.wardTime, u.warsongTime,
@@ -45,6 +54,7 @@ import { decalMaterial, disposeModelMaterial, fadeCopy, tickModelMaterials } fro
 import { garrisonSpot } from '../assets/models/buildings/index';
 import { spellDef, TRIBE_COLORS, Tribe, UNITS, UnitKind } from '../sim/catalog';
 import { AnimInput, ClipName, FigureAnimator, runThreshold } from './figure-animator';
+import { ParticlePool } from './model-particles';
 import { Unit, World } from '../sim/world-state';
 
 const WORLD_UNITS = WORLD_SIZE * TILE;
@@ -76,6 +86,22 @@ interface Entry {
   tx: number;
   tz: number;
   inWater: boolean;
+  /** Where the figure was drawn this frame (bent world space), for picking. */
+  drawn: THREE.Vector3;
+  drawnFrame: number;
+  /** Animation input, refilled every frame. */
+  inp: AnimInput;
+}
+
+/** Where a unit is drawn: world-space feet (bent, nearest image) and tile coords. */
+export interface VisualPosition {
+  /** World-space position of the feet as drawn (wrap + curvature applied). */
+  world: THREE.Vector3;
+  /** Tile coordinates of the drawn spot (a lookout's platform, not the tower base). */
+  tileX: number;
+  tileZ: number;
+  /** Figure height in world units (feet → head top). */
+  height: number;
 }
 
 interface Ghost {
@@ -87,7 +113,19 @@ interface Ghost {
   tz: number;
   yaw: number;
   fade: THREE.Material[] | null;
+  tribe: string;
+  /** Fractional wisp emission carried between frames. */
+  wispAcc: number;
 }
+
+/** Ordinary death timeline (seconds): fall, lie still, fade out with a wisp. */
+const DIE_LIE = 2.1;
+const DIE_FADE = 1.1;
+const DIE_END = DIE_LIE + DIE_FADE + 1.3; // the wisp's last particles outlive the body
+const _wisp = new THREE.Vector3();
+const GHOST_DIE: AnimInput = { clip: 'die', speed: 0, turnRate: 0 };
+const GHOST_DROWN: AnimInput = { clip: 'drown', speed: 0, turnRate: 0 };
+const GHOST_CAST: AnimInput = { clip: 'cast', speed: 0, turnRate: 0 };
 
 function civOf(world: World, tribe: Tribe) {
   const t = (world.tribes as Record<string, { civ?: string } | undefined>)[tribe];
@@ -104,11 +142,17 @@ export class UnitRenderer {
   private camera: THREE.Camera | null = null;
   private frame = 0;
   private readonly sphere = new THREE.Sphere();
+  /** Reused every frame (no per-frame allocation). */
+  private readonly live = new Set<number>();
+  private readonly buildingsById = new Map<number, { kind: string; x: number; z: number; garrison?: number[] }>();
+  /** Tribe-coloured wisps rising from the dead. */
+  private readonly wisps: ParticlePool;
 
   constructor(private readonly scene: THREE.Scene) {
     // Selection ring: a soft-edged band on the ground, tinted by tribe.
     this.ringGeo = new THREE.RingGeometry(0.85, 1.15, 32, 1);
     this.ringGeo.rotateX(-Math.PI / 2);
+    this.wisps = new ParticlePool(scene, 400, true);
   }
 
   /** Give the renderer the camera so it can frustum-cull (optional; main.ts may not call it). */
@@ -136,8 +180,10 @@ export class UnitRenderer {
       this.projScreen.multiplyMatrices(this.camera.projectionMatrix, this.camera.matrixWorldInverse);
       this.frustum.setFromProjectionMatrix(this.projScreen);
     }
-    const live = new Set<number>();
-    const buildingsById = new Map<number, { kind: string; x: number; z: number; garrison?: number[] }>();
+    const live = this.live;
+    live.clear();
+    const buildingsById = this.buildingsById;
+    buildingsById.clear();
     for (const b of world.buildings) buildingsById.set(b.id, b as never);
     const winner = (world as unknown as { gameOver?: string | null }).gameOver;
 
@@ -174,14 +220,12 @@ export class UnitRenderer {
         const ring = new THREE.Mesh(this.ringGeo, this.ringMat(u.tribe));
         ring.renderOrder = 1;
         ring.visible = false;
-        // We apply the full planet drop (curvatureDrop) ourselves: opt out of main.ts's limb pass.
-        fig.root.userData.gpuCurved = true;
-        ring.userData.gpuCurved = true;
         ring.scale.setScalar(fig.height * 0.36);
         this.scene.add(fig.root, ring);
         e = {
           fig, anim: new FigureAnimator(fig, u.id), ring, kind: u.kind, tribe: u.tribe, lastHp: u.hp,
           px: NaN, pz: NaN, speed: 0, yaw: u.heading, turn: 0, lodTick: u.id % 3, accDt: 0, tx: u.x, tz: u.z, inWater: false,
+          drawn: new THREE.Vector3(), drawnFrame: -1, inp: { clip: 'idle', speed: 0, turnRate: 0 },
         };
         this.entries.set(u.id, e);
       }
@@ -219,6 +263,8 @@ export class UnitRenderer {
       }
       e.px = wx;
       e.pz = wz;
+      e.drawn.set(wx, y, wz);
+      e.drawnFrame = this.frame;
 
       // 3. CULL
       let visible = d2 < VIEW_RADIUS * VIEW_RADIUS;
@@ -280,7 +326,7 @@ export class UnitRenderer {
       if (e.fig.root.visible && !reset) {
         const mode: Ghost['mode'] = e.kind === 'shaman' ? 'ascend' : e.inWater ? 'drown' : 'die';
         let fade: THREE.Material[] | null = null;
-        if (mode === 'ascend') {
+        if (mode !== 'drown') {
           // a private transparent copy of the materials, so the fade is ours alone
           fade = e.fig.meshes.map((m) => {
             const mm = fadeCopy(m.material as THREE.Material);
@@ -288,12 +334,30 @@ export class UnitRenderer {
             return mm;
           });
         }
-        this.ghosts.push({ fig: e.fig, anim: e.anim, t: 0, mode, tx: e.tx, tz: e.tz, yaw: e.yaw, fade });
+        this.ghosts.push({ fig: e.fig, anim: e.anim, t: 0, mode, tx: e.tx, tz: e.tz, yaw: e.yaw, fade, tribe: e.tribe, wispAcc: 0 });
       } else {
         this.disposeFig(e.fig);
       }
     }
     this.updateGhosts(world, camTarget, dt);
+    this.wisps.update(dt, 0.1);
+  }
+
+  /**
+   * Where a unit is DRAWN this frame, for picking: a tower lookout stands on
+   * the platform (not at the tower's base), a swimmer bobs low in the water.
+   * Null when the unit isn't drawn (hidden, culled, over the horizon).
+   * `out` is reused if given.
+   */
+  visualPosition(unitId: number, out?: VisualPosition): VisualPosition | null {
+    const e = this.entries.get(unitId);
+    if (!e || !e.fig.root.visible || e.drawnFrame !== this.frame) return null;
+    const v = out ?? { world: new THREE.Vector3(), tileX: 0, tileZ: 0, height: 0 };
+    v.world.copy(e.drawn);
+    v.tileX = e.tx;
+    v.tileZ = e.tz;
+    v.height = e.fig.height;
+    return v;
   }
 
   /** Map sim state → clip. */
@@ -342,7 +406,13 @@ export class UnitRenderer {
     }
     // still moving visibly but sim says idle (end of path) → let the blend handle it
     if (clip === 'idle' && speed > 1.2 && !garrisonKind) clip = 'walk';
-    return { clip, speed, turnRate, phase, period };
+    const inp = e.inp;
+    inp.clip = clip;
+    inp.speed = speed;
+    inp.turnRate = turnRate;
+    inp.phase = phase;
+    inp.period = period;
+    return inp;
   }
 
   private updateGhosts(world: World, camTarget: THREE.Vector3, dt: number): void {
@@ -354,17 +424,35 @@ export class UnitRenderer {
       let y = Math.max(0, world.map.sampleHeight(g.tx, g.tz)) - curvatureDrop(relX, relZ);
       let done = false;
       if (g.mode === 'die') {
-        g.anim.update(dt, { clip: 'die', speed: 0, turnRate: 0 });
-        // lie still, then sink into the earth
-        y -= Math.max(0, g.t - 2.2) * 0.6;
-        done = g.t > 4;
+        // fall, lie still a moment, then fade away while a wisp in the
+        // tribe's colour rises from the body
+        if (g.t < DIE_LIE + DIE_FADE) g.anim.update(dt, GHOST_DIE);
+        const k = 1 - THREE.MathUtils.clamp((g.t - DIE_LIE) / DIE_FADE, 0, 1);
+        for (const m of g.fade ?? []) m.opacity = k * k;
+        if (g.t > DIE_LIE) for (const m of g.fig.meshes) m.castShadow = false;
+        if (k <= 0) for (const m of g.fig.meshes) m.visible = false;
+        if (g.t > DIE_LIE - 0.2 && g.t < DIE_LIE + DIE_FADE) {
+          g.wispAcc += dt * 34;
+          const col = TRIBE_COLORS[g.tribe as Tribe] ?? 0xffe9a8;
+          const s = g.fig.scale;
+          for (; g.wispAcc >= 1; g.wispAcc--) {
+            // the body lies along local −Z (it falls backward): spread along it
+            const along = -Math.random() * g.fig.height * 0.75;
+            _wisp.set((Math.random() - 0.5) * 0.4, 0.25 + Math.random() * 0.2, along);
+            this.wisps.emit(g.fig.root, _wisp, {
+              vy: 0.9 + Math.random() * 0.8, life: 1.1 + Math.random() * 0.5, size: 0.45 * s + 0.2, grow: 0.8,
+              color: Math.random() < 0.15 ? 0xffffff : col, alpha: 0.7, spread: 0.25,
+            });
+          }
+        }
+        done = g.t > DIE_END;
       } else if (g.mode === 'drown') {
-        g.anim.update(dt, { clip: 'drown', speed: 0, turnRate: 0 });
+        g.anim.update(dt, GHOST_DROWN);
         y = -0.9 - g.t * 1.1 - curvatureDrop(relX, relZ);
         done = g.t > 2.5;
       } else {
         // a leader rises in light and fades
-        g.anim.update(dt, { clip: g.t < 1.2 ? 'die' : 'cast', speed: 0, turnRate: 0 });
+        g.anim.update(dt, g.t < 1.2 ? GHOST_DIE : GHOST_CAST);
         y += Math.max(0, g.t - 1.0) ** 1.5 * 1.6;
         const k = 1 - THREE.MathUtils.clamp((g.t - 1.2) / 1.8, 0, 1);
         for (const m of g.fade ?? []) m.opacity = k;
@@ -402,11 +490,17 @@ export class UnitRenderer {
     camTarget: THREE.Vector3,
     camera: THREE.Camera,
   ): { x: number; y: number } | null {
-    const relX = wrapDelta(u.x * TILE - camTarget.x, WORLD_UNITS);
-    const relZ = wrapDelta(u.z * TILE - camTarget.z, WORLD_UNITS);
-    const y = Math.max(0, world.map.sampleHeight(u.x, u.z)) - curvatureDrop(relX, relZ);
     const h = UNITS[u.kind as UnitKind]?.height ?? 2.3;
-    const v = new THREE.Vector3(camTarget.x + relX, y + h * 0.45, camTarget.z + relZ); // chest height
+    const v = _proj;
+    const e = this.entries.get(u.id);
+    if (e && e.drawnFrame === this.frame && e.fig.root.visible) {
+      v.copy(e.drawn).setY(e.drawn.y + e.fig.height * 0.45); // as drawn (lookouts, swimmers)
+    } else {
+      const relX = wrapDelta(u.x * TILE - camTarget.x, WORLD_UNITS);
+      const relZ = wrapDelta(u.z * TILE - camTarget.z, WORLD_UNITS);
+      const y = Math.max(0, world.map.sampleHeight(u.x, u.z)) - curvatureDrop(relX, relZ);
+      v.set(camTarget.x + relX, y + h * 0.45, camTarget.z + relZ); // chest height
+    }
     v.project(camera);
     if (v.z > 1) return null;
     return { x: (v.x + 1) * 0.5 * innerWidth, y: (1 - v.y) * 0.5 * innerHeight };
@@ -421,6 +515,7 @@ function winnerMatches(gameOver: string, tribe: string): boolean {
 }
 
 const _n = new THREE.Vector3();
+const _proj = new THREE.Vector3();
 const _up = new THREE.Vector3(0, 1, 0);
 /** Lay a ground decal flat on the local slope. */
 function tiltToGround(m: THREE.Object3D, world: World, x: number, z: number): void {
