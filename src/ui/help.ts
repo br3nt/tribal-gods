@@ -57,7 +57,7 @@ export function helpHtml(): string {
       html += row(['1', '–', '9'], 'Select a control group (twice: jump to it)');
       html += row(['Ctrl', '1', '–', '9'], 'Make the selection a control group');
     }
-    for (const hk of HOTKEYS.filter((x) => x.group === g && !x.action.startsWith('group-'))) {
+    for (const hk of HOTKEYS.filter((x) => x.group === g && !x.action.startsWith('group-') && x.code !== 'Backspace')) {
       if (hk.action.startsWith('spell:')) {
         const id = hk.action.slice(6) as SpellId;
         html += row([keyLabel(hk)], `${escapeHtml(SPELLS.find((s) => s.id === id)!.name)} <span style="color:var(--text-3)">· tier ${SPELLS.find((s) => s.id === id)!.tier}</span>`, spellIcon(id, 18));

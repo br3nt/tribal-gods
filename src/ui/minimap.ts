@@ -57,6 +57,7 @@ export class Minimap {
   private readonly terrain: HTMLCanvasElement;
   private terrainKey = '';
   private treeClock = 0;
+  private repaintCooldown = 0;
   private frustum: Array<{ x: number; z: number }> = [];
   private frame = 0;
   private dragging = false;
@@ -96,6 +97,7 @@ export class Minimap {
       }
     });
     this.canvas.addEventListener('pointerup', () => (this.dragging = false));
+    this.canvas.addEventListener('pointercancel', () => (this.dragging = false));
   }
 
   ping(x: number, z: number, tone: 'bad' | 'good' | 'info'): void {
@@ -182,7 +184,9 @@ export class Minimap {
     const s = px / WORLD_SIZE;
     this.treeClock -= dt;
     const key = `${w.map.version}|${w.treesVersion}`;
-    if (key !== this.terrainKey || this.treeClock <= 0) {
+    this.repaintCooldown -= dt;
+    if ((key !== this.terrainKey && this.repaintCooldown <= 0) || this.treeClock <= 0) {
+      this.repaintCooldown = 0.25; // terrain spells bump map.version every tick
       this.paintTerrain();
       this.terrainKey = key;
       this.treeClock = 4;

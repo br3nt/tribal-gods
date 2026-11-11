@@ -3,7 +3,7 @@
  *
  * Every control that has a key shows it (spell slots, build tiles, top-bar
  * buttons), the How-to-play page prints this table, and the one keyboard
- * handler (ui/input-keys.ts) dispatches through matchHotkey(). Change a
+ * handler (ui/game-ui.ts onKey) dispatches through matchHotkey(). Change a
  * key here and every one of those follows.
  *
  * The layout, and why:
@@ -20,7 +20,7 @@
  * Pure data + pure functions: no DOM, so Vitest can check for collisions.
  */
 
-import { BUILD_ORDER, BuildingKind, SPELLS, SpellId } from '../sim/catalog';
+import { BUILD_ORDER, BUILDINGS, BuildingKind, SPELLS, SpellId } from '../sim/catalog';
 
 export type ActionId =
   | `spell:${SpellId}`
@@ -60,6 +60,9 @@ export const SPELL_ROWS = [
   ['KeyV', 'KeyB', 'KeyN', 'KeyM'],
 ] as const;
 
+/** Debug-only keys (F3 on): - and = arm the sculpt brush. Not bound in play. */
+export const DEBUG_CODES = ['Minus', 'Equal'];
+
 /** Keys the camera rig reads directly; nothing else may bind them. */
 export const CAMERA_CODES = ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyQ', 'KeyE', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
 
@@ -81,7 +84,7 @@ function buildHotkeys(): Hotkey[] {
     code: `Digit${i + 1}`,
     shift: true,
     group: 'Build' as const,
-    desc: kind,
+    desc: BUILDINGS[kind].name,
   }));
 }
 
@@ -107,6 +110,7 @@ export const HOTKEYS: Hotkey[] = [
   { action: 'speed-down', code: 'BracketLeft', group: 'Game', desc: 'Slower' },
   { action: 'speed-up', code: 'BracketRight', group: 'Game', desc: 'Faster' },
   { action: 'demolish', code: 'Delete', group: 'Selection', desc: 'Demolish the selected building' },
+  { action: 'demolish', code: 'Backspace', group: 'Selection', desc: 'Demolish (Mac delete key)' },
   { action: 'cancel', code: 'Escape', group: 'Game', desc: 'Cancel aiming / placing; else open the menu' },
   { action: 'help', code: 'F1', group: 'Game', desc: 'How to play' },
   { action: 'debug', code: 'F3', group: 'Game', desc: 'Debug readout' },

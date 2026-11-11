@@ -100,7 +100,9 @@ export function groupByKind(units: Array<{ id: number; kind: UnitKind }>): KindG
     if (list) list.push(u.id);
     else map.set(u.kind, [u.id]);
   }
-  return KIND_ORDER.filter((k) => map.has(k)).map((k) => ({ kind: k, ids: map.get(k)! }));
+  // Kinds the catalog adds later still show, after the known ones.
+  const order = [...KIND_ORDER.filter((k) => map.has(k)), ...[...map.keys()].filter((k) => !KIND_ORDER.includes(k))];
+  return order.map((k) => ({ kind: k, ids: map.get(k)! }));
 }
 
 /** Ctrl+N stores the selection; N recalls it (minus anyone who has died since). */
@@ -118,6 +120,10 @@ export class ControlGroups {
     if (list.length === 0) this.groups.delete(n);
     else this.groups.set(n, list);
     return list;
+  }
+
+  clear(): void {
+    this.groups.clear();
   }
 
   /** Which group numbers are set (for the little group badges). */

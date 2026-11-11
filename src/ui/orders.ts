@@ -113,6 +113,10 @@ export class OrderControl {
       }
     });
 
+    addEventListener('pointercancel', () => {
+      this.dragStart = null;
+      this.marquee.hidden = true;
+    });
     addEventListener('pointerup', (e) => {
       if (e.button !== 0 || !this.dragStart) return;
       const r = this.dragRect(e.clientX, e.clientY);

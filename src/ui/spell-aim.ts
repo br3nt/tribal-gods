@@ -57,6 +57,7 @@ export class SpellAim {
       if (appState.mode !== 'game' || e.button !== 0) return;
       const spell = activeSpell();
       if (!spell) return;
+      e.stopImmediatePropagation();
       const hit = pickGroundTile(e.clientX, e.clientY, ctx.view.camera, ctx.world.map, ctx.view.target);
       if (!hit) return;
       const why = ctx.world.orderCast('player', spell, hit.x, hit.z);
@@ -145,7 +146,7 @@ export class SpellAim {
     const w = this.ctx.world;
     const l = w.leaderOf('player');
     const s = w.spellState('player', spell);
-    const key = `${spell}|${Math.round(x)}|${Math.round(z)}|${l ? `${Math.round(l.x)},${Math.round(l.z)}` : '-'}|${s.charges + s.gifted > 0}|${w.map.version}`;
+    const key = `${spell}|${Math.round(x)}|${Math.round(z)}|${l ? `${Math.round(l.x)},${Math.round(l.z)}` : '-'}|${s.charges + s.gifted > 0}`;
     if (key !== this.lastKey) {
       this.lastKey = key;
       this.lastWhy = w.castCheck('player', spell, x, z);

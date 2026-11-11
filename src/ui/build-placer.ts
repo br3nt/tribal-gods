@@ -49,6 +49,7 @@ export class BuildPlacer {
       if (appState.mode !== 'game' || e.button !== 0) return;
       const kind = activeBuilding();
       if (!kind) return;
+      e.stopImmediatePropagation();
       this.update();
       const c = this.candidate;
       if (!c || c.kind !== kind) return;

@@ -131,6 +131,7 @@ centerOnHome();
 let lastStart: { settings?: Parameters<World['reset']>[1]; level?: LevelData } = {};
 
 function newWorld(settings?: Parameters<World['reset']>[1]): void {
+  startToken++;
   world.reset(Math.floor(Math.random() * 1e9), settings);
   treeRenderer.rebuild(world);
   centerOnHome();
@@ -172,11 +173,16 @@ menu.onRestart = () => {
 };
 menu.onQuit = () => quitToMenu();
 function restart(): void {
-  appState.mode = 'game';
-  if (lastStart.level) void startLevel(lastStart.level, !!testingLevel);
-  else newWorld(lastStart.settings);
+  if (lastStart.level) {
+    appState.mode = 'menu'; // hold the sim until the level has loaded
+    void startLevel(lastStart.level, !!testingLevel);
+  } else {
+    appState.mode = 'game';
+    newWorld(lastStart.settings);
+  }
 }
 function quitToMenu(): void {
+  startToken++;
   appState.mode = 'menu';
   appState.paused = false;
   backBtn.style.display = 'none';
@@ -189,8 +195,13 @@ function showTitle(): void {
 }
 
 /** Launch any level document as a playable skirmish. */
+/** Bumped by every start/quit: a level load that finishes after the player moved on is dropped. */
+let startToken = 0;
+
 async function startLevel(level: LevelData, asTest = false): Promise<void> {
+  const token = ++startToken;
   await world.loadLevel(level, menu.settings);
+  if (token !== startToken) return;
   treeRenderer.rebuild(world);
   centerOnHome();
   ui?.reset();
@@ -288,7 +299,7 @@ const stats = startLoop({
   // Per-frame rendering: camera + input, then sync visuals to sim state.
   render(dt, alpha) {
     if (appState.mode === 'menu' && menu.visible) rig.yaw += dt * 0.04; // the planet turns behind the menu
-    rig.update(dt);
+    rig.update(menu.visible || ui?.gameOver.visible ? 0 : dt); // no panning behind a menu
     brush.update(dt);
     ui?.update(dt);
 

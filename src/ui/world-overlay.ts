@@ -104,9 +104,14 @@ export class WorldOverlay {
     return false;
   }
 
+  /** Re-measure the panels (called ~8×/s, not per frame, to avoid forced layouts). */
+  refreshBlockers(): void {
+    this.blockers = [...document.querySelectorAll('#ui .tg-panel')].map((e) => e.getBoundingClientRect()).filter((r) => r.width > 0);
+  }
+
   update(): void {
     this.used = 0;
-    this.blockers = [...document.querySelectorAll('#ui .tg-panel')].map((e) => e.getBoundingClientRect()).filter((r) => r.width > 0);
+
     const { world, view, selection } = this.ctx;
     const camD = view.camera.position.distanceTo(view.target);
     // Zoomed far out, only selected things get bars (otherwise: confetti).

@@ -221,6 +221,7 @@ export class SpellBook {
     const w = this.ctx.world;
     const armed = activeSpell();
     let charging = 0;
+    const leaderHere = !!w.leaderOf('player');
     for (const slot of this.slots) {
       const s: SpellState = w.spellState('player', slot.def.id);
       const usable = s.charges + s.gifted > 0;
@@ -259,7 +260,7 @@ export class SpellBook {
       setClass(slot.el, 'off', s.known && !s.charging);
       setClass(slot.el, 'gifted', s.gifted > 0);
       setClass(slot.el, 'armed', armed === slot.def.id);
-      setClass(slot.el, 'blocked', usable && !w.leaderOf('player'));
+      setClass(slot.el, 'blocked', usable && !leaderHere);
     }
     setText(this.flow, charging > 0 ? `${charging} charging` : 'none charging');
   }

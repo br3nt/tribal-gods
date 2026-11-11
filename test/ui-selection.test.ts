@@ -48,6 +48,19 @@ describe('ControlGroups', () => {
     expect(cg.get(1, () => false)).toEqual([]);
     expect(cg.numbers()).toEqual([]);
   });
+  it('clear() forgets every group (a new world reuses unit ids)', () => {
+    const cg = new ControlGroups();
+    cg.set(2, [1]);
+    cg.clear();
+    expect(cg.get(2, () => true)).toEqual([]);
+  });
+});
+
+describe('groupByKind with unknown kinds', () => {
+  it('keeps kinds it has no order for, at the end', () => {
+    const g = groupByKind([{ id: 1, kind: 'brave' }, { id: 2, kind: 'newkind' as never }]);
+    expect(g.map((x) => x.kind)).toEqual(['brave', 'newkind']);
+  });
 });
 
 describe('nextInCycle', () => {

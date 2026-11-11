@@ -123,6 +123,10 @@ export class GameUi {
     this.root.appendChild(dock);
 
     // --- World interaction ---
+    // Aim + placer register their canvas pointerdown FIRST and stop it when
+    // they use the click, so a cast/placement never also starts a box drag.
+    this.aim = new SpellAim(this.ctx);
+    this.placer = new BuildPlacer(this.ctx);
     this.orders = new OrderControl(this.ctx);
     this.minimap.onOrder = (x, z) => this.orders.orderAt(x, z);
     this.orders.intercept = (x, z) => {
@@ -133,13 +137,16 @@ export class GameUi {
       return true;
     };
     this.overlay = new WorldOverlay(this.ctx);
-    this.aim = new SpellAim(this.ctx);
-    this.placer = new BuildPlacer(this.ctx);
     this.hints = new Hints(this.ctx);
     this.debug = new DebugOverlay(stats, world, brushRadius);
     this.gameOver = new GameOverScreen({ onRestart: () => hooks.restart(), onMenu: () => hooks.quitToMenu() });
 
     addEventListener('keydown', (e) => this.onKey(e));
+    // A mouse click on a HUD button must not leave it focused (Space would
+    // then also "click" it). Keyboard users still Tab to buttons normally.
+    this.root.addEventListener('mousedown', (e) => {
+      if ((e.target as HTMLElement).closest('button')) e.preventDefault();
+    });
   }
 
   // ---------------------------------------------------------------------------
@@ -228,6 +235,11 @@ export class GameUi {
     const hk = matchHotkey(e);
     if (!hk) return;
     const act = hk.action;
+    // Holding a key must not flicker toggles (pause, menu, groups); only cycling repeats.
+    if (e.repeat && act !== 'idle-villager') {
+      e.preventDefault();
+      return;
+    }
     if (act === 'cancel') {
       if (!a.cancelTool()) {
         if (!this.selection.empty) this.selection.clear();
@@ -281,6 +293,8 @@ export class GameUi {
     this.gameOver.hide();
     this.shownGameOver = false;
     this.lastIdle = null;
+    this.lastRecall = null;
+    this.ctx.groups.clear(); // unit ids restart at 1 in a new world
     appState.paused = false;
     appState.speed = 1;
   }
@@ -311,6 +325,7 @@ export class GameUi {
       this.buildMenu.update();
       this.objectives.update();
       this.selectionPanel.update();
+      this.overlay.refreshBlockers();
     }
 
     const w = this.ctx.world;

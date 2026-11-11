@@ -104,6 +104,7 @@ export class Menu {
       if (!this.visible || this.overlay.classList.contains('custom')) return;
       if (e.code === 'Escape') {
         e.preventDefault();
+        if (e.repeat) return e.stopImmediatePropagation();
         e.stopImmediatePropagation(); // the game's own Esc handler must not re-open us
         this.back();
       } else if (e.code === 'F1' && this.screen === 'title') {

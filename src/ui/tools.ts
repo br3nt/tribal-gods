@@ -7,7 +7,7 @@
  * build menu and keyboard all write it. Everyone agrees by construction.
  *
  * Keys are not bound here any more: ui/hotkeys.ts is the table and
- * ui/input-keys.ts the one handler.
+ * ui/game-ui.ts the one handler.
  */
 
 import { BUILD_ORDER, BuildingKind, SPELLS, SpellId } from '../sim/catalog';

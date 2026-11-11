@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { BUILD_ORDER, SPELLS } from '../src/sim/catalog';
-import { CAMERA_CODES, codeLabel, HOTKEYS, keyLabel, labelFor, matchHotkey } from '../src/ui/hotkeys';
+import { CAMERA_CODES, DEBUG_CODES, codeLabel, HOTKEYS, keyLabel, labelFor, matchHotkey } from '../src/ui/hotkeys';
 
 const ev = (code: string, mods: Partial<{ shiftKey: boolean; ctrlKey: boolean; metaKey: boolean; altKey: boolean }> = {}) => ({
   code, shiftKey: false, ctrlKey: false, metaKey: false, altKey: false, ...mods,
@@ -15,8 +15,15 @@ describe('hotkey table', () => {
       seen.add(k);
     }
   });
-  it('never binds a camera key', () => {
-    for (const hk of HOTKEYS) expect(CAMERA_CODES).not.toContain(hk.code);
+  it('never binds a camera key or a debug key', () => {
+    for (const hk of HOTKEYS) {
+      expect(CAMERA_CODES).not.toContain(hk.code);
+      expect(DEBUG_CODES).not.toContain(hk.code);
+    }
+  });
+  it('demolish works from the Mac delete key too', () => {
+    expect(matchHotkey(ev('Backspace'))?.action).toBe('demolish');
+    expect(matchHotkey(ev('Delete'))?.action).toBe('demolish');
   });
   it('every spell and every building has a key', () => {
     for (const s of SPELLS) expect(labelFor(`spell:${s.id}`), s.id).not.toBe('');
