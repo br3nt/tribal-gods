@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BUILDINGS, TribeId } from '../src/sim/catalog';
+import { BUILDINGS, EFFECT_EVENTS, TribeId } from '../src/sim/catalog';
 import { World } from '../src/sim/world-state';
 import { rulesFor } from './helpers';
 
@@ -60,6 +60,13 @@ describe('AI soak', () => {
     expect(stats.trainingBuilt.get('gold')?.size ?? 0).toBeGreaterThan(0);
     expect(stats.trained.has('warrior')).toBe(true);
     expect(stats.events.get('trained') ?? 0).toBeGreaterThan(3);
+    // the AI uses the v2 toolkit: towers manned, shrines staffed, new units, new spells
+    expect(stats.garrisoned).toBeGreaterThan(0);
+    expect(stats.praying).toBeGreaterThan(0);
+    expect(stats.trained.size).toBeGreaterThanOrEqual(3);
+    expect(stats.events.get('built') ?? 0).toBeGreaterThan(10);
+    // every event the sim emitted is one the renderer has a name for
+    for (const type of stats.events.keys()) expect(EFFECT_EVENTS as readonly string[]).toContain(type);
   }, 240_000);
 
   it('three AIs share a planet for five minutes without exceptions', () => {

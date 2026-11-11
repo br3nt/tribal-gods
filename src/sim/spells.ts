@@ -450,6 +450,7 @@ function tickCyclone(world: World, job: SpellJob, dt: number): void {
     const a = Math.atan2(dz, dx) + 1.2 + world.random() * 0.8;
     const fling = 1.5 + world.random() * 1.5;
     world.displaceUnit(u, Math.cos(a) * fling, Math.sin(a) * fling);
+    u.lifted = 0.6;
   }
   for (const b of [...world.buildings]) {
     if (dist(b.x, b.z, job.x, job.z) > R + b.size / 2) continue;

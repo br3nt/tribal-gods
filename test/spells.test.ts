@@ -68,6 +68,7 @@ describe('new spells', () => {
     run(w, 4);
     expect(eventsOf(w, 'cycloneTouch').length).toBeGreaterThan(0);
     expect(Math.hypot(aura.x - x0, aura.z - z0)).toBeGreaterThan(0.5);
+    expect(victims.some((v) => v.lifted > 0) || eventsOf(w, 'cycloneTouch').length > 1).toBe(true);
     const hurt = victims.filter((v) => v.hp < UNITS.brave.hp || !w.units.includes(v));
     expect(hurt.length).toBeGreaterThan(0);
     run(w, spellDef('cyclone').duration);

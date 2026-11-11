@@ -170,6 +170,8 @@ export interface Unit {
   wardTime: number;
   /** Seconds left of Warsong (faster move + attack). */
   warsongTime: number;
+  /** Seconds left airborne (a cyclone picked this unit up) — for the renderer. */
+  lifted: number;
   /** >0 while a hostile chant holds this unit (it cannot attack). */
   pacified: number;
   /** Chanter whose chant this unit is hearing (-1 none) and for how long. */
@@ -600,6 +602,7 @@ export class World implements SimQueries {
       u.prevZ = u.z;
       if (u.wardTime > 0) u.wardTime = Math.max(0, u.wardTime - dt);
       if (u.warsongTime > 0) u.warsongTime = Math.max(0, u.warsongTime - dt);
+      if (u.lifted > 0) u.lifted = Math.max(0, u.lifted - dt);
       switch (u.state) {
         case 'idle': this.tickIdle(u, dt); break;
         case 'moving': this.tickMoving(u, dt); break;
@@ -2036,6 +2039,7 @@ export class World implements SimQueries {
       garrison: -1,
       wardTime: 0,
       warsongTime: 0,
+      lifted: 0,
       pacified: 0,
       chantBy: -1,
       chantProgress: 0,
