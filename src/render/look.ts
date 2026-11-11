@@ -288,7 +288,10 @@ export const UNIT_BURN = { color: 0x8a6656, emissive: 0x3a0e02, desaturate: 0.25
  * Stone guardians (wild fighters set round a standing stone): skin and
  * cloth painted the grey of the stone, cold eyes. Dormant they kneel.
  */
-export const GUARDIAN = { color: 0xb8bcc4, emissive: 0x05080c, desaturate: 0.92, roughnessShift: 0.05, metalnessShift: 0, rim: 0x5fd8ff, eyes: 0x7af0ff };
+export const GUARDIAN = {
+  color: 0xffffff, emissive: 0x050608, desaturate: 0.9, paint: 0xa8a69e, paintAmount: 0.72,
+  roughnessShift: 0.08, metalnessShift: 0, rim: 0x163038, eyes: 0x7af0ff,
+};
 
 export const UNIT_STATUS = {
   /** Stone Ward: a cool, faintly polished stone sheen. */

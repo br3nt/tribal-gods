@@ -229,6 +229,7 @@ export class UnitRenderer {
     this.eyeMat = new THREE.SpriteMaterial({
       map: glowTexture(), color: GUARDIAN.eyes, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false,
     });
+    this.eyeMat.color.multiplyScalar(4); // HDR: the bloom pass makes them burn
   }
 
   /** Give the renderer the camera so it can frustum-cull (optional; main.ts may not call it). */
@@ -461,7 +462,7 @@ export class UnitRenderer {
       if (e.eyes.length) {
         const awake = !!world.monuments[u.guardOf!]?.guardsAwake;
         const k = awake ? 1 : 0.55 + 0.15 * Math.sin(this.clock * 1.3 + u.id);
-        for (const eye of e.eyes) eye.scale.setScalar((awake ? 0.2 : 0.13) * k);
+        for (const eye of e.eyes) eye.scale.setScalar((awake ? 0.34 : 0.22) * k);
       }
 
       // hit flinch
