@@ -15,6 +15,7 @@
  *   progress=0..1         building construction progress (default 1)
  *   hp=0..1               building health fraction
  *   burning=1             set buildings alight
+ *   kinds=a,b             only these building kinds
  *   zoom=<k>              camera distance multiplier
  *   speed=<u/s>           locomotion speed for walk/run/carry (default 3.6)
  */
@@ -26,6 +27,7 @@ import { buildBuildingModel, buildUnitModel, FigureModel, BuildingModel } from '
 import { tickModelMaterials } from '../assets/models/materials';
 import { AnimInput, ClipName, FigureAnimator, CLIP_NAMES } from './figure-animator';
 import { buildFloraPreview } from '../assets/models/flora';
+import { ModelFx } from './model-particles';
 
 interface Actor {
   fig: FigureModel;
@@ -82,6 +84,7 @@ export function startGallery(): Promise<never> {
   ground.receiveShadow = true;
   scene.add(ground);
 
+  const fx = new ModelFx(scene);
   const camera = new THREE.PerspectiveCamera(32, innerWidth / innerHeight, 0.1, 600);
   const actors: Actor[] = [];
   const buildings: BuildingModel[] = [];
@@ -123,8 +126,10 @@ export function startGallery(): Promise<never> {
   if (view === 'buildings' || view === 'tiers' || view === 'all') {
     const civs: CivId[] = civQ ? [civQ] : ['forest', 'dynasty', 'north'];
     const tribes: Tribe[] = ['player', 'red', 'gold'];
-    const list: Array<[BuildingKind, number]> =
-      view === 'tiers' ? [['hut', 0], ['hut', 1], ['hut', 2]] : BUILD_ORDER.map((k) => [k, 0] as [BuildingKind, number]);
+    const only = q.get('kinds')?.split(',') ?? null;
+    const list: Array<[BuildingKind, number]> = ([
+      ...(view === 'tiers' ? [['hut', 0], ['hut', 1], ['hut', 2]] : BUILD_ORDER.map((k) => [k, 0]))
+    ] as Array<[BuildingKind, number]>).filter(([k]) => !only || only.includes(k as string)) as Array<[BuildingKind, number]>;
     const zBase = view === 'all' ? -14 : 0;
     civs.forEach((civ, row) => {
       let x = 0;
@@ -136,7 +141,7 @@ export function startGallery(): Promise<never> {
         x += widths[i] / 2;
         m.root.position.set(x, 0, zBase - row * 13);
         x += widths[i] / 2;
-        m.update({ progress, hp: hp * BUILDINGS[k].hp, burning, dt: 0 });
+        m.update({ progress, hpFrac: hp, burning, dt: 0 });
         scene.add(m.root);
         buildings.push(m);
       });
@@ -203,7 +208,12 @@ export function startGallery(): Promise<never> {
       }
     }
     for (const s of spinners) s.rotation.y = spin ? time * 0.6 : fixedYaw;
-    for (const b of buildings) b.update({ progress, hp: hp * BUILDINGS[b.kind].hp, burning, dt });
+    for (const b of buildings) {
+      b.update({ progress, hpFrac: hp, burning, dt });
+      fx.building(b.root, b, dt);
+    }
+    scene.updateMatrixWorld();
+    fx.update(dt);
     renderer.render(scene, camera);
     requestAnimationFrame(loop);
   };
