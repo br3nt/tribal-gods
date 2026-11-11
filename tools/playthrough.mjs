@@ -409,13 +409,22 @@ await step('commune: select your leader, click a standing stone — the leader g
   await wait(120);
   const task = await tg((id) => { const u = window.__tg.world.unitById(id); return `${u.task}/${u.state}`; }, setup.l.id);
   expect(/^worship/.test(task), `leader is ${task} after clicking the stone`);
-  // Let the ritual run: the stone's marker grows a ring, and the leader arrives and communes.
-  await ticks(4);
-  await wait(200);
-  await shot('01f-ritual');
-  await tg((id) => { const w = window.__tg.world; const u = w.unitById(id); w.abandonTask(u); }, setup.l.id);
+  // Let the ritual run to the end: the leader walks over, communes (the marker grows a ring), and the spell is theirs.
+  let ritualSeen = false;
+  let got = false;
+  for (let i = 0; i < 60 && !got; i++) {
+    await ticks(1);
+    if (!ritualSeen && (await page.locator('.stone-mk .ritual:not([hidden])').count()) > 0) {
+      ritualSeen = true;
+      await wait(150);
+      await shot('01f-ritual');
+    }
+    got = await tg((s) => { const t = window.__tg.world.tribes.player; return t.known.has(s) || (t.spells[s]?.gifted ?? 0) > 0; }, setup.m.spell);
+  }
+  expect(got, `after 60s the leader has not learned ${setup.m.spell} (ritual ${ritualSeen ? 'was' : 'never'} shown)`);
+  expect(ritualSeen, 'no ritual ring was shown over the stone');
   await deselect();
-  return `leader ${task}, tag "${tag.slice(0, 50)}…"`;
+  return `leader communed and learned ${setup.m.spell}; tag "${tag.slice(0, 40)}…"`;
 });
 
 // --- Buildings -------------------------------------------------------------

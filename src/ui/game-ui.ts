@@ -21,6 +21,7 @@
 
 import * as THREE from 'three';
 import type { LoopStats } from '../core/loop';
+import { setHighlight } from '../render/highlight';
 import { BuildingKind, SpellId, UNITS } from '../sim/catalog';
 import type { World } from '../sim/world-state';
 import { AlertFeed } from './alerts';
@@ -321,6 +322,8 @@ export class GameUi {
     this.root.style.display = inGame ? '' : 'none';
     if (!inGame) {
       if (activeSpell() || activeBuilding()) resetTool();
+      setHighlight(null);
+      this.ctx.hover.unit = this.ctx.hover.building = this.ctx.hover.monument = null;
       this.worldHover.update(dt);
       this.aim.update();
       this.placer.update();

@@ -159,7 +159,7 @@ body {
   display: flex;
   align-items: center;
   gap: var(--s2);
-  font-size: 0.95rem;
+  font-size: 1.05rem;
   color: var(--text-3);
   line-height: 1;
 }

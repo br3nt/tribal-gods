@@ -80,7 +80,7 @@ const G: Record<string, [number, Stroke[]]> = {
 };
 
 const SPACING = 1.9;
-const WEIGHT = 2.05;
+const WEIGHT = 2.35;
 
 function hash(s: string): number {
   let h = 2166136261;

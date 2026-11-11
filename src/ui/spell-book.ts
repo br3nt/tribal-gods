@@ -73,7 +73,7 @@ css('spell-book', `
 .sb-gift { position: absolute; top: -0.05rem; right: -0.05rem; z-index: 2; display: flex; align-items: center; gap: 1px;
   padding: 0 0.2rem 0 0.12rem; height: 0.85rem; border-radius: 0.15rem 0.28rem; background: linear-gradient(#ffd27a, #d39537); color: #2a1606; font: 800 0.5625rem/1 var(--font); box-shadow: 0 0 0 1px rgba(30,14,2,0.8); }
 /* Seconds to the next charge, on a bone tag: "gathering power", not "broken". */
-.sb-eta { position: absolute; top: -0.05rem; right: -0.05rem; z-index: 2; height: 0.85rem; padding: 0 0.2rem; display: grid; place-items: center;
+.sb-eta { position: absolute; top: 0.05rem; right: 0.1rem; z-index: 2; height: 0.85rem; padding: 0 0.2rem; display: grid; place-items: center;
   border-radius: 0.15rem 0.28rem; background: linear-gradient(#fbf3df, #ddc9a2); color: #1f4a50; font: 800 0.625rem/1 var(--font); box-shadow: 0 0 0 1px rgba(30,16,6,0.75); pointer-events: none; }
 .sb-eta:empty { display: none; }
 /* The ember: lit while mana is poured in, snuffed when it isn't. */

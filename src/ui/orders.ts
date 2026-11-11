@@ -41,6 +41,7 @@ import { denied, orderAck } from '../core/audio';
 import { WORLD_SIZE } from '../config';
 import { wrapDelta } from '../core/util';
 import { pickGroundTile } from '../render/ground-picker';
+import { setHighlight } from '../render/highlight';
 import { BUILDINGS, TRIBE_COLORS } from '../sim/catalog';
 import { ATTACK_PICK_RADIUS, Building, Unit } from '../sim/world-state';
 import { appState } from './app-state';
@@ -527,6 +528,11 @@ export class OrderControl {
         hover.monument = m >= 0 ? m : null;
       }
     }
+    // The renderers light up the model itself (render/highlight.ts); world-hover adds the ground ring.
+    if (hover.unit !== null) setHighlight('unit', hover.unit);
+    else if (hover.building !== null) setHighlight('building', hover.building);
+    else if (hover.monument !== null) setHighlight('monument', hover.monument);
+    else setHighlight(null);
     if (appState.mode === 'game' && ptr.onCanvas && toolState.tool === 'select' && !this.dragging) {
       const hu = hover.unit !== null ? this.ctx.world.unitById(hover.unit) : null;
       const hb = hover.building !== null ? this.ctx.world.getBuilding(hover.building) : null;
