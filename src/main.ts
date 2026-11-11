@@ -30,6 +30,7 @@ import { LevelData } from './level/level-format';
 import type { ScenarioRules } from './sim/catalog';
 import { BuildingRenderer } from './render/building-renderer';
 import { CameraRig } from './render/camera-rig';
+import { pickGroundTile } from './render/ground-picker';
 import { EffectsRenderer } from './render/effects';
 import { Lighting } from './render/lighting';
 import { CAMERA, initialQuality, QUALITY, sunPreset } from './render/look';
@@ -535,6 +536,8 @@ ui = new GameUi(world, { camera: rig.camera, target: rig.target, map: world.map 
   },
   /** Screen position (CSS px) of tile (x, z) at height h above the ground, or null if off screen. */
   screenOf: (x: number, z: number, h = 0) => toScreen({ camera: rig.camera, target: rig.target, map: world.map }, x, z, h),
+  /** The ground tile under screen pixel (px, py), as a click would pick it (null = sky). */
+  groundAt: (px: number, py: number) => pickGroundTile(px, py, rig.camera, world.map, rig.target),
 };
 if (query.get('play') !== '1') rig.zoom = 0.78;
 if (query.get('play') === '1') {

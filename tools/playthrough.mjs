@@ -429,11 +429,14 @@ await step('spells: all 14 aimed by hotkey and cast with a click', async () => {
   const failed = [];
   for (const [spell, key] of Object.entries(SPELL_KEYS)) {
     // Setup: the leader knows it, holds a charge, and stands clear of buildings.
-    const target = await tg((s) => {
+    const setup = await tg((s) => {
       const w = window.__tg.world;
       const t = w.tribes.player;
       t.known.add(s);
       t.spells[s].charges = Math.max(1, t.spells[s].charges);
+      // Stop it charging for the check: a charge completing during the cast
+      // would put the count back where it was and read as "not cast".
+      w.setSpellCharging('player', s, false);
       let l = w.leaderOf('player');
       if (!l) l = w.spawnNearWalkable('shaman', 'player', t.home.x, t.home.z);
       w.abandonTask(l);
@@ -442,23 +445,44 @@ await step('spells: all 14 aimed by hotkey and cast with a click', async () => {
       // test the order of this list rather than the spell under test.
       w.jobs.length = 0;
       w.auras.length = 0;
-      // A spot 8 tiles from the leader, on land, where nobody of ours stands.
+      // Rival gods wake when their people are hurt (our towers and soldiers
+      // fight on their own), and a rival leader's Blast knocking ours over
+      // cancels the cast under test. Put them back to sleep for this check.
+      for (const id of w.activeTribes()) {
+        if (id === 'player') continue;
+        w.tribes[id].ai.awake = false;
+        w.tribes[id].threatTimer = 0;
+        const rl = w.leaderOf(id);
+        if (rl) w.abandonTask(rl);
+      }
+      // Spots 8 tiles from the leader, on land, that the spell accepts.
+      const spots = [];
       for (let a = 0; a < 16; a++) {
         const x = Math.round(l.x + Math.cos(a / 16 * Math.PI * 2) * 8);
         const z = Math.round(l.z + Math.sin(a / 16 * Math.PI * 2) * 8);
-        if (w.castCheck('player', s, x, z) === null && w.map.heightAt(x, z) > 0.5) {
-          if (s === 'convert') w.spawnNearWalkable('wildman', 'wild', x, z);
-          return { x, z, before: t.spells[s].charges + t.spells[s].gifted };
-        }
+        if (w.castCheck('player', s, x, z) === null && w.map.heightAt(x, z) > 0.5) spots.push({ x, z });
       }
-      return null;
+      return { spots, before: t.spells[s].charges + t.spells[s].gifted };
     }, spell);
+    // The first spot a click would actually land on: a hill between the
+    // camera and the mark would catch the click (correctly) and the spell
+    // would land on the hill instead — testing the terrain, not the spell.
+    let target = null;
+    for (const spot of setup.spots) {
+      await lookAt(spot.x, spot.z);
+      await wait(200);
+      const p = await screenOf(spot.x, spot.z);
+      const hit = p && (await tg(([x, y]) => window.__tg.groundAt(x, y), [p.x, p.y]));
+      if (hit && Math.hypot(hit.x - spot.x, hit.z - spot.z) < 1.5) {
+        target = { ...spot, before: setup.before };
+        break;
+      }
+    }
     if (!target) {
-      failed.push(`${spell}: no target`);
+      failed.push(`${spell}: no clickable target (${setup.spots.length} spots)`);
       continue;
     }
-    await lookAt(target.x, target.z);
-    await wait(200);
+    if (spell === 'convert') await tg(([x, z]) => window.__tg.world.spawnNearWalkable('wildman', 'wild', x, z), [target.x, target.z]);
     await page.keyboard.press(key);
     await wait(120);
     const armed = await tg(() => window.__tg.toolState.tool);
@@ -472,10 +496,21 @@ await step('spells: all 14 aimed by hotkey and cast with a click', async () => {
     const note = await page.locator('.tg-cursor-note').first().textContent().catch(() => '');
     await page.mouse.click(p.x, p.y);
     const toastText = await page.locator('.tg-toast').last().textContent({ timeout: 300 }).catch(() => '');
-    await ticks(3);
+    const justAfter = await tg((s) => { const w = window.__tg.world; const l = w.leaderOf('player'); const sp = w.tribes.player.spells[s]; return `castSpell=${l?.castSpell} state=${l?.state} charges=${sp.charges}+${sp.gifted} tool=${window.__tg.toolState.tool}`; }, spell);
+    const evs = await tg(() => {
+      const w = window.__tg.world; const l = w.leaderOf('player'); const out = [];
+      for (let i = 0; i < 45; i++) { const n = w.events.length; w.tick(1 / 15); for (const e of w.events.slice(n)) if (Math.hypot(e.x - l.x, e.z - l.z) < 6) out.push(`${i}:${e.type}@${e.x.toFixed(1)},${e.z.toFixed(1)}`); if (!l.castSpell) { out.push(`cast ended tick ${i} state ${l.state} task ${l.task}`); break; } }
+      const foes = w.units.filter((u) => u.tribe !== 'player' && Math.hypot(u.x - l.x, u.z - l.z) < 8).map((u) => `${u.tribe}:${u.kind}`);
+      foes.push('bldgs:' + w.buildings.filter((b) => Math.hypot(b.x - l.x, b.z - l.z) < 8).map((b) => `${b.tribe}:${b.kind}:hp${b.hp.toFixed(0)}:burn${b.burning.toFixed(1)}`).join('/'));
+      foes.push('jobs:' + w.jobs.map((j) => j.spell ?? j.kind ?? '?').join('/'));
+      return out.join(',') + ' foes:' + foes.join(',');
+    });
     const after = await tg((s) => { const sp = window.__tg.world.tribes.player.spells[s]; return sp.charges + sp.gifted; }, spell);
     if (after < target.before) cast.push(spell);
-    else failed.push(`${spell}: not cast (aim note "${note}", toast "${toastText}")`);
+    else {
+      const why = await tg(() => { const w = window.__tg.world; const l = w.leaderOf('player'); return l ? `leader ${l.state}/${l.task} cast=${l.castSpell} at ${l.x.toFixed(1)},${l.z.toFixed(1)} hp ${l.hp.toFixed(0)}` : 'no leader'; });
+      failed.push(`${spell}: not cast (aim note "${note}", toast "${toastText}", ${why}, target ${target.x},${target.z}, right after click: ${justAfter}, during: ${evs}, before ${target.before})`);
+    }
     await wait(150);
   }
   await shot('03-spells');
