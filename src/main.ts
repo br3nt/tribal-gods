@@ -125,6 +125,7 @@ const post = new PostChain(renderer, scene, rig.camera, quality);
 post.onQualityChange = (q) => {
   quality = q;
   lighting.applyQuality(q);
+  effects.applyQuality(q);
 };
 /** Settings → Graphics, applied live. True if the terrain mesh still wants a reload for it. */
 const bootTerrain = { subdiv: quality.terrainSubdiv, detail: quality.terrainDetail };
@@ -133,6 +134,7 @@ function applyQuality(q: QualitySetting): boolean {
   quality = tier;
   post.setQuality(tier);
   lighting.applyQuality(tier);
+  effects.applyQuality(tier);
   if (groundCover) groundCover.mesh.visible = tier.name !== 'low';
   return tier.terrainSubdiv !== bootTerrain.subdiv || tier.terrainDetail !== bootTerrain.detail;
 }
