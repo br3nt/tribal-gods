@@ -33,6 +33,10 @@ describe('loadout extras', () => {
       ]),
     );
     expect(w.spellState('player', 'blast').max).toBe(spellDef('blast').maxCharges + 1);
+    // The UI reads the tribe's effective numbers from the sim, not the catalog.
+    expect(w.spellState('player', 'blast').bonusCharges).toBe(1);
+    expect(w.spellState('player', 'convert').chargeMana).toBe(spellDef('convert').chargeMana * 2);
+    expect(w.spellState('player', 'blast').chargeMana).toBe(spellDef('blast').chargeMana);
     run(w, 200);
     expect(w.spellState('player', 'blast').charges).toBe(spellDef('blast').maxCharges + 1);
     // Fresh world: compare charge speed of convert with and without the cost.

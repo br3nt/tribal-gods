@@ -441,6 +441,10 @@ export interface SpellState {
   gifted: number;
   /** Estimated seconds to the next charge at the current mana income (Infinity if not charging). */
   eta: number;
+  /** Mana per charge for THIS tribe (catalog chargeMana × scenario/boon chargeCost). */
+  chargeMana: number;
+  /** Charges above the catalog's maxCharges from the scenario/boons (already in `max`). */
+  bonusCharges: number;
 }
 
 export interface BuildState {

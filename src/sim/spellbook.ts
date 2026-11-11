@@ -92,6 +92,8 @@ export function slotState(book: SpellBook, known: Set<SpellId>, id: SpellId, inc
     charging: slot.charging,
     gifted: slot.gifted,
     eta: share > 0 ? (cost - slot.mana) / share : Infinity,
+    chargeMana: cost,
+    bonusCharges: slot.bonus,
   };
 }
 

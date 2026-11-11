@@ -1933,7 +1933,7 @@ export class World implements SimQueries {
     const t = this.tribes[tribe];
     if (!t) {
       const def = spellDef(id);
-      return { known: false, charges: 0, max: def.maxCharges, progress: 0, charging: false, gifted: 0, eta: Infinity };
+      return { known: false, charges: 0, max: def.maxCharges, progress: 0, charging: false, gifted: 0, eta: Infinity, chargeMana: def.chargeMana, bonusCharges: 0 };
     }
     return slotState(t.spells, t.known, id, t.income);
   }
