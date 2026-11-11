@@ -20,23 +20,25 @@ import { CAMPAIGN } from '../level/campaign';
 import { deleteLevel, getRating, listLevels, saveLevel, setRating } from '../level/store';
 import { css } from './dom';
 import { icon } from './icons';
+import { carve } from './lettering';
 
 css('library', `
-.lib { position: fixed; inset: 0; z-index: 30; display: none; overflow-y: auto; background: rgba(8,11,18,0.82); backdrop-filter: blur(6px);
+.lib { position: fixed; inset: 0; z-index: 30; display: none; overflow-y: auto; background: radial-gradient(ellipse at 50% 20%, rgba(40,25,14,0.9), rgba(16,9,4,0.95));
   color: var(--text); font: var(--t-md)/1.45 var(--font); padding: 2rem 0 4rem; pointer-events: auto; }
 .lib-inner { max-width: 60rem; margin: 0 auto; padding: 0 1.25rem; }
 .lib-head { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 1.25rem; flex-wrap: wrap; }
-.lib-head h2 { flex: 1; margin: 0; font: 600 var(--t-xl)/1 var(--font-display); }
-.lib input, .lib select { min-height: 2rem; padding: 0 0.6rem; border-radius: var(--r2); border: 1px solid var(--rim); background: var(--ink-2); color: var(--text); font: var(--t-sm) var(--font); }
-.lib select option { background: var(--ink-solid); }
-.lib-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr)); gap: 0.75rem; }
-.lib-card { padding: 1rem; display: flex; flex-direction: column; gap: 0.5rem; }
-.lib-card .name { font-size: var(--t-lg); font-weight: 650; }
-.lib-card .by { color: var(--text-3); font-size: var(--t-sm); }
-.lib-card .off { display: inline-block; margin-left: 0.4rem; padding: 0 0.4rem; border-radius: var(--r1); background: var(--gold-soft); color: var(--gold); font-size: var(--t-xs); font-weight: 600; vertical-align: 2px; }
+.lib-head h2 { flex: 1; margin: 0; font-size: 1.6rem; line-height: 1; }
+.lib input, .lib select { min-height: 2rem; padding: 0 0.6rem; border: 0; border-radius: 0.2rem 0.35rem; background: linear-gradient(#f3e4c4, #e0c99c); color: #24160c;
+  box-shadow: inset 0 1px 3px rgba(60,32,10,0.45), 0 0 0 1px #1a0e06; font: 600 var(--t-sm) var(--font); }
+.lib select option { background: #f3e4c4; color: #24160c; }
+.lib-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr)); gap: 0.9rem; }
+.lib-card { padding: 0.85rem 0.95rem; display: flex; flex-direction: column; gap: 0.45rem; }
+.lib-card .name { font: 700 var(--t-lg)/1.2 var(--font-display); }
+.lib-card .by { color: var(--text-3); font-size: var(--t-sm); font-weight: 600; }
+.lib-card .off { display: inline-block; margin-left: 0.4rem; padding: 0.05rem 0.4rem; border-radius: 0.15rem; background: linear-gradient(#ffd27a, #d39537); color: #2a1606; font: 700 var(--t-xs) var(--font); vertical-align: 2px; }
 .lib-card .desc { color: var(--text-2); font-size: var(--t-sm); min-height: 2.6em; }
-.lib-stars span { cursor: pointer; font-size: 1.05rem; color: var(--text-3); }
-.lib-stars span.on { color: var(--gold); }
+.lib-stars span { cursor: pointer; font-size: 1.1rem; color: rgba(70,40,15,0.35); }
+.lib-stars span.on { color: #b06d12; text-shadow: 0 1px 0 rgba(255,240,200,0.6); }
 .lib-acts { display: flex; gap: 0.4rem; flex-wrap: wrap; }
 `);
 
@@ -79,7 +81,7 @@ export class LevelLibrary {
     const header = document.createElement('div');
     header.className = 'lib-head';
     const title = document.createElement('h2');
-    title.textContent = 'Level library';
+    title.innerHTML = carve('Level library');
 
     this.search = document.createElement('input');
     this.search.placeholder = 'Search…';
@@ -187,7 +189,7 @@ export class LevelLibrary {
 
   private card(e: CardEntry): HTMLDivElement {
     const card = document.createElement('div');
-    card.className = 'lib-card tg-panel';
+    card.className = 'lib-card tg-panel mat-hide';
     const name = e.campaign ? `${e.campaign.chapter}. ${e.campaign.title}` : e.level?.name ?? OFFICIAL_NAMES[e.id] ?? e.id;
     const author = e.level?.author ?? 'Tribal Gods';
     const desc = e.campaign ? (e.campaign.locked ? 'Locked — reach this chapter in the campaign.' : e.campaign.tagline) : e.level?.desc ?? OFFICIAL_DESCS[e.id] ?? '';

@@ -41,6 +41,7 @@ import { UnitRenderer } from './render/unit-renderer';
 import { restoreWorld, saveWorld } from './sim/save';
 import { World } from './sim/world-state';
 import './ui/theme.css';
+import { installMaterials } from './ui/materials';
 import { SculptBrush } from './ui/brush';
 import { appState } from './ui/app-state';
 import { clearSave, clock, readSave, savedTally, writeSave } from './ui/autosave';
@@ -72,6 +73,7 @@ world.reset(querySeed ?? Math.floor(Math.random() * 1e9));
 // --- Renderer & scene (the look: render/look.ts, sky.ts, lighting.ts, post.ts) ---
 writeQualityToUrl(true); // the player's saved graphics setting becomes ?q= before the renderer reads it
 applyUiScale();
+installMaterials(); // the HUD's wood, hide, stone and bark (ui/materials.ts)
 let quality = initialQuality();
 const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
 renderer.setSize(innerWidth, innerHeight);

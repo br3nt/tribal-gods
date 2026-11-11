@@ -16,7 +16,7 @@ import { toolState } from './tools';
 
 css('debug', `
 .dbg { position: absolute; left: var(--edge); top: calc(var(--edge) + 4.2rem); padding: 0.5rem 0.75rem; white-space: pre;
-  font: 0.6875rem/1.55 ui-monospace, Menlo, monospace; color: var(--text-2); pointer-events: none; }
+  font: 0.6875rem/1.55 ui-monospace, Menlo, monospace; color: var(--bone-2); pointer-events: none; }
 `);
 
 export class DebugOverlay {

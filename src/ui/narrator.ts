@@ -15,16 +15,16 @@
 import { css, h } from './dom';
 
 css('narrator', `
-.hud-centre { position: absolute; top: calc(var(--edge) + 3.9rem); left: 50%; transform: translateX(-50%); width: min(36rem, calc(100vw - 2rem));
+.hud-centre { position: absolute; top: calc(var(--edge) + 4rem); left: 50%; transform: translateX(-50%); width: min(36rem, calc(100vw - 2rem));
   display: flex; flex-direction: column; align-items: center; gap: 0.5rem; pointer-events: none; }
-.narr { max-width: 100%; padding: 0.55rem 1.4rem 0.6rem; text-align: center; color: #f3ead6;
-  font: italic 500 var(--t-lg)/1.45 var(--font-display); text-shadow: 0 1px 2px rgba(0,0,0,0.85), 0 0 1.25rem rgba(0,0,0,0.6);
-  background: radial-gradient(closest-side, rgba(8,11,18,0.62), rgba(8,11,18,0.38) 70%, transparent);
+/* The narrator's line: written on a long banner of hide, ends cut in swallowtails. */
+.narr { max-width: 100%; padding: 0.5rem 2.1rem 0.55rem; text-align: center; color: #24160c;
+  font: italic 600 var(--t-lg)/1.45 var(--font);
+  background: radial-gradient(120% 160% at 50% 50%, transparent 55%, rgba(110,64,24,0.4)), var(--tex-hide) 0 0 / 14rem;
+  clip-path: polygon(0 0, 100% 0, calc(100% - 1.1rem) 50%, 100% 100%, 0 100%, 1.1rem 50%);
+  filter: drop-shadow(0 3px 4px rgba(0,0,0,0.5));
   opacity: 0; transform: translateY(-0.25rem); transition: opacity 700ms var(--ease), transform 700ms var(--ease); }
 .narr.on { opacity: 1; transform: none; }
-.narr::before, .narr::after { content: ''; display: block; width: 2.5rem; height: 1px; margin: 0 auto; background: linear-gradient(90deg, transparent, var(--gold), transparent); opacity: 0.7; }
-.narr::before { margin-bottom: 0.35rem; }
-.narr::after { margin-top: 0.4rem; }
 `);
 
 /** Seconds a line stays up: a calm reading pace, never shorter than 4.5 s. */

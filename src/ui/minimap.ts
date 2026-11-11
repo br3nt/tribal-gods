@@ -38,8 +38,17 @@ import { tip } from './tooltip';
 import { lookAtTile, viewCentreTile } from './project';
 
 css('minimap', `
-.mm { padding: 0.375rem; position: relative; }
-.mm canvas { display: block; width: 12.5rem; height: 12.5rem; border-radius: var(--r2); cursor: crosshair; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.4); }
+/* The planet painted on hide, stretched in a round wooden hoop; a notch marks north. */
+.mm { position: relative; padding: 0.55rem; border: 0; border-image: none; border-radius: 50%;
+  background: radial-gradient(circle, transparent 66%, rgba(0,0,0,0.35) 70%), var(--tex-wood-light) 0 0 / 9rem;
+  box-shadow: inset 0 0.15rem 0 rgba(255,236,200,0.35), inset 0 -0.2rem 0.3rem rgba(0,0,0,0.5), 0 0 0 1px #140b05, 0 0 0 0.2rem #5a3a1f, 0 0 0 0.26rem #140b05, var(--shadow); }
+.mm canvas { display: block; width: 11.5rem; height: 11.5rem; border-radius: 34%; cursor: crosshair; filter: sepia(0.28) saturate(0.85) contrast(1.05);
+  box-shadow: 0 0 0 0.16rem #2a170b, 0 0 0 0.3rem #c9a66b; }
+.mm .hide { position: absolute; inset: 0.55rem; border-radius: 34%; pointer-events: none; background: var(--tex-hide) 0 0 / 9rem; mix-blend-mode: multiply; opacity: 0.45;
+  box-shadow: inset 0 0 0.8rem rgba(80,46,16,0.75); }
+.mm .notch { position: absolute; top: -0.05rem; left: 50%; width: 0; height: 0; transform: translateX(-50%); pointer-events: none;
+  border-left: 0.45rem solid transparent; border-right: 0.45rem solid transparent; border-top: 0.6rem solid var(--ochre-hi); filter: drop-shadow(0 1px 0 #140b05) drop-shadow(0 0 1px #140b05); }
+.mm .notch::after { content: 'N'; position: absolute; top: -0.62rem; left: -0.24rem; font: 800 0.5rem/1 var(--font); color: #2a1606; }
 `);
 
 /** How far (world units) the eye reaches over the curved horizon, for the view outline. */
@@ -72,7 +81,7 @@ export class Minimap {
   constructor(private readonly ctx: UiContext) {
     this.el = h('div.mm.tg-panel');
     this.canvas = h('canvas', { 'aria-label': 'Minimap' });
-    this.el.append(this.canvas);
+    this.el.append(this.canvas, h('div.hide'), h('div.notch'));
     this.g = this.canvas.getContext('2d')!;
     this.terrain = document.createElement('canvas');
     this.terrain.width = this.terrain.height = WORLD_SIZE;

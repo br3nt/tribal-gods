@@ -10,11 +10,12 @@
  *                      choice when one is on offer, next / retry / map.
  *
  * Self-contained and logic-free: each screen takes data and callbacks
- * (ui/campaign.ts decides what they mean). Styling is one injected sheet
- * whose colours, fonts and radii read `--tg-…` overrides first, then the
- * shared theme (ui/theme.css: --gold, --ink-1, --font-display …), then a
- * literal fallback — so the screens follow the design system and still
- * render on their own.
+ * (ui/campaign.ts decides what they mean). They wear the same materials as
+ * the HUD (ui/theme.css): chapters are hide plaques in timber frames with
+ * their numerals cut into wooden discs, joined by a rope; briefings and
+ * debriefs are hide sheets; titles are carved lettering (ui/lettering.ts).
+ * Every colour falls back to a literal, so the screens still render on
+ * their own.
  */
 
 import { BOONS, BoonId } from '../campaign/boons';
@@ -22,73 +23,72 @@ import { BUILDINGS, FailCondition, ScenarioRules, spellDef, SpellId, TribeId, tr
 import { STARTER_SPELLS } from '../sim/rules';
 import { START_BRAVES, START_WOOD } from '../config';
 import type { LevelData } from '../level/level-format';
+import { carve } from './lettering';
 
 const CSS = `
 .tgc-overlay {
   position: fixed; inset: 0; z-index: 40; overflow-y: auto;
-  background: var(--tg-overlay, radial-gradient(ellipse at 50% 20%, rgba(28,40,58,0.94), rgba(8,11,16,0.97)));
-  color: var(--tg-text, var(--text, #ece6d6)); font: 14px/1.5 var(--tg-font, var(--font, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif));
+  background: var(--tg-overlay, radial-gradient(ellipse at 50% 15%, rgba(54,34,18,0.94), rgba(16,9,4,0.98)));
+  color: var(--bone, #f4e8cf); font: 600 14px/1.5 var(--tg-font, var(--font, ui-sans-serif, system-ui, sans-serif));
   padding: 32px 16px 64px; box-sizing: border-box;
 }
 .tgc-overlay * { box-sizing: border-box; }
 .tgc-inner { max-width: 920px; margin: 0 auto; }
-.tgc-head { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; margin-bottom: 18px; }
-.tgc-title { font: 600 30px/1.1 var(--tg-display-font, var(--font-display, Georgia, 'Times New Roman', serif)); letter-spacing: 0.5px; flex: 1; margin: 0; }
-.tgc-sub { color: var(--tg-muted, var(--text-2, #a59f90)); }
-.tgc-btn {
-  padding: 9px 16px; border-radius: var(--tg-radius, var(--r2, 8px)); cursor: pointer; font: inherit;
-  border: 1px solid var(--tg-border, var(--rim, rgba(255,255,255,0.18))); background: var(--tg-button, var(--ink-2, rgba(255,255,255,0.07))); color: inherit;
-}
-.tgc-btn:hover { border-color: var(--tg-accent, var(--gold, #f1c96b)); }
-.tgc-btn.primary { background: var(--tg-accent, var(--gold, #f1c96b)); color: var(--tg-on-accent, var(--ink-solid, #17120a)); border-color: transparent; font-weight: 600; }
-.tgc-btn:disabled { opacity: 0.45; cursor: default; }
+.tgc-head { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 18px; }
+.tgc-title { font-size: 34px; line-height: 1; flex: 1; margin: 0; --carve-paint: var(--ochre-hi, #f2c56a); }
+.tgc-sub { color: var(--bone-2, #dfcda9); }
+.tgc-panel .tgc-sub, .tgc-node .tgc-sub { color: var(--text-3); }
+.tgc-btn { padding: 9px 16px; cursor: pointer; font: 700 14px var(--font, system-ui); }
 .tgc-panel {
-  background: var(--tg-panel, var(--ink-1, rgba(255,255,255,0.05))); border: 1px solid var(--tg-border, var(--rim, rgba(255,255,255,0.14)));
-  border-radius: var(--tg-radius-lg, var(--r3, 12px)); padding: 16px 18px;
+  padding: 14px 18px;
+  color: var(--text);
 }
 .tgc-trail { position: relative; display: grid; gap: 14px; }
-.tgc-trail svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
-.tgc-node.tgc-panel { background: var(--tg-panel-solid, var(--ink-solid, rgba(19,26,36,0.97))); }
+.tgc-trail svg.rope { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+/* Each chapter: a hide plaque, its number cut in a wooden disc. */
 .tgc-node { position: relative; display: grid; grid-template-columns: 54px 1fr auto; gap: 14px; align-items: center; width: min(100%, 560px); cursor: pointer; }
 .tgc-node.right { margin-left: auto; }
-.tgc-node.locked { cursor: default; opacity: 0.5; }
-.tgc-node:not(.locked):hover { border-color: var(--tg-accent, var(--gold, #f1c96b)); }
-.tgc-node.current { border-color: var(--tg-accent, var(--gold, #f1c96b)); box-shadow: 0 0 0 1px var(--tg-accent, var(--gold, #f1c96b)), 0 0 24px rgba(241,201,107,0.18); }
+.tgc-node.locked { cursor: default; filter: grayscale(0.75) brightness(0.72); }
+.tgc-node:not(.locked):hover { filter: brightness(1.06); }
+.tgc-node.current { box-shadow: inset 0 0 0 1px rgba(60,34,12,0.5), 0 0 0 3px var(--ochre-hi, #f2c56a), 0 0 28px rgba(242,197,106,0.35); }
 .tgc-num {
-  width: 54px; height: 54px; border-radius: 50%; display: grid; place-items: center;
-  font: 600 20px var(--tg-display-font, var(--font-display, Georgia, serif)); border: 2px solid var(--tg-border, var(--rim, rgba(255,255,255,0.25)));
-  background: var(--tg-bg, var(--ink-solid, #0d131b));
+  width: 54px; height: 54px; border-radius: 50%; display: grid; place-items: center; font-size: 24px; line-height: 0; color: #2a1708;
+  background: radial-gradient(circle at 45% 35%, rgba(255,236,200,0.4), rgba(0,0,0,0.12) 70%), var(--tex-wood-light) 0 0 / 90px;
+  box-shadow: 0 0 0 3px #6b4527, 0 0 0 4.5px #1a0e06, 0 3px 4px 3px rgba(0,0,0,0.25);
+  --carve-paint: #2a1708; --carve-cut: rgba(255,236,200,0.35); --carve-edge: rgba(0,0,0,0);
 }
-.tgc-node.won .tgc-num { border-color: var(--tg-good, var(--good, #7fc98f)); color: var(--tg-good, var(--good, #7fc98f)); }
-.tgc-node.current .tgc-num { border-color: var(--tg-accent, var(--gold, #f1c96b)); color: var(--tg-accent, var(--gold, #f1c96b)); }
-.tgc-name { font: 600 17px var(--tg-display-font, var(--font-display, Georgia, serif)); }
-.tgc-tag { color: var(--tg-muted, var(--text-2, #a59f90)); font-size: 13px; }
-.tgc-teach { font-size: 12px; color: var(--tg-accent-2, var(--mana, #8fb8e8)); margin-top: 2px; }
-.tgc-meta { text-align: right; font-size: 12px; color: var(--tg-muted, var(--text-2, #a59f90)); white-space: nowrap; }
-.tgc-stars { color: var(--tg-accent, var(--gold, #f1c96b)); letter-spacing: 2px; font-size: 14px; }
-.tgc-grid { display: grid; grid-template-columns: 1.4fr 1fr; gap: 16px; }
+.tgc-node.won .tgc-num { box-shadow: 0 0 0 3px #4f8d2c, 0 0 0 4.5px #1a0e06; }
+.tgc-node.current .tgc-num { box-shadow: 0 0 0 3px var(--ochre, #d39537), 0 0 0 4.5px #1a0e06; }
+.tgc-name { font: 700 18px/1.2 var(--font-display, Georgia, serif); color: var(--text); }
+.tgc-tag { color: var(--text-2); font-size: 13px; }
+.tgc-teach { font-size: 12px; color: var(--mana); margin-top: 2px; font-weight: 700; }
+.tgc-meta { text-align: right; font-size: 12px; color: var(--text-3); white-space: nowrap; font-weight: 700; }
+.tgc-stars { color: #a3600f; letter-spacing: 2px; font-size: 15px; }
+.tgc-grid { display: grid; grid-template-columns: 1.4fr 1fr; gap: 18px; }
 @media (max-width: 720px) { .tgc-grid { grid-template-columns: 1fr; } .tgc-node { grid-template-columns: 44px 1fr; } .tgc-meta { grid-column: 2; text-align: left; } }
-.tgc-h { font: 600 12px var(--tg-font, var(--font, system-ui)); text-transform: uppercase; letter-spacing: 1.4px; color: var(--tg-muted, var(--text-2, #a59f90)); margin: 14px 0 6px; }
+.tgc-h { font: 800 12px var(--font, system-ui); text-transform: uppercase; letter-spacing: 1.4px; color: var(--text-3); margin: 14px 0 6px; padding-bottom: 3px; border-bottom: 1px dashed rgba(70,40,15,0.35); }
 .tgc-h:first-child { margin-top: 0; }
-.tgc-body { font-size: 15px; line-height: 1.65; margin: 0; }
-.tgc-list { margin: 0; padding-left: 18px; }
+.tgc-body { font: 500 15px/1.65 var(--font, system-ui); margin: 0; color: var(--text); }
+.tgc-list { margin: 0; padding-left: 18px; color: var(--text-2); font-weight: 500; }
 .tgc-list li { margin: 3px 0; }
 .tgc-chips { display: flex; flex-wrap: wrap; gap: 6px; }
-.tgc-chip { padding: 3px 9px; border-radius: 999px; font-size: 12px; background: var(--tg-chip, var(--ink-2, rgba(255,255,255,0.08))); border: 1px solid var(--tg-border, var(--rim, rgba(255,255,255,0.12))); }
-.tgc-chip.gift { border-color: var(--tg-accent, var(--gold, #f1c96b)); }
-.tgc-obj { display: flex; gap: 8px; align-items: baseline; margin: 4px 0; }
-.tgc-obj .mark { width: 18px; flex: none; text-align: center; }
-.tgc-obj.done .mark { color: var(--tg-good, var(--good, #7fc98f)); }
-.tgc-obj.miss .mark { color: var(--tg-bad, var(--bad, #e07a6a)); }
-.tgc-obj.optional { color: var(--tg-muted, var(--text-2, #c9c2b0)); }
+.tgc-chip { padding: 3px 9px; border-radius: 3px 6px; font-size: 12px; font-weight: 700; background: rgba(70,40,15,0.1); box-shadow: inset 0 0 0 1px rgba(70,40,15,0.35); color: var(--text); }
+.tgc-chip.gift { background: rgba(23,106,116,0.12); box-shadow: inset 0 0 0 1px rgba(23,106,116,0.5); color: var(--mana); }
+.tgc-obj { display: flex; gap: 8px; align-items: baseline; margin: 4px 0; color: var(--text); }
+.tgc-obj .mark { width: 18px; flex: none; text-align: center; color: #7a3a10; }
+.tgc-obj.done .mark { color: var(--good); }
+.tgc-obj.miss .mark { color: var(--bad); }
+.tgc-obj.optional { color: var(--text-2); }
 .tgc-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 18px; justify-content: flex-end; }
-.tgc-result { font: 600 44px/1 var(--tg-display-font, var(--font-display, Georgia, serif)); margin: 0 0 6px; }
-.tgc-result.victory { color: var(--tg-accent, var(--gold, #f1c96b)); }
-.tgc-result.defeat { color: var(--tg-bad, var(--bad, #e07a6a)); }
+.tgc-result { font-size: 52px; line-height: 1; margin: 6px 0 10px; }
+.tgc-result.victory { --carve-paint: var(--ochre-hi, #f2c56a); }
+.tgc-result.defeat { --carve-paint: #e2624a; }
+.tgc-overlay > .tgc-inner > div > .tgc-body { color: var(--bone-2, #dfcda9); }
 .tgc-boons { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; }
-.tgc-boon { cursor: pointer; text-align: left; }
-.tgc-boon.chosen { border-color: var(--tg-accent, var(--gold, #f1c96b)); box-shadow: 0 0 0 1px var(--tg-accent, var(--gold, #f1c96b)); }
+.tgc-boon { cursor: pointer; text-align: left; display: block; padding: 10px 12px; }
+.tgc-boon.chosen { box-shadow: inset 0 2px 4px rgba(0,0,0,0.45), 0 0 0 3px var(--ochre-hi, #f2c56a); }
 .tgc-boon b { display: block; font-size: 15px; margin-bottom: 2px; }
+.tgc-boon .tgc-sub { color: var(--bone-2, #dfcda9); font-weight: 500; }
 `;
 
 let injected = false;
@@ -108,8 +108,15 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, text?: 
   return e;
 }
 
+/** An element whose text is carved lettering (ui/lettering.ts); the words stay in the DOM for readers. */
+function carved<K extends keyof HTMLElementTagNameMap>(tag: K, cls: string, text: string): HTMLElementTagNameMap[K] {
+  const e = el(tag, cls);
+  e.innerHTML = carve(text);
+  return e;
+}
+
 function button(label: string, onClick: () => void, primary = false): HTMLButtonElement {
-  const b = el('button', primary ? 'tgc-btn primary' : 'tgc-btn', label);
+  const b = el('button', primary ? 'tgc-btn tg-btn primary' : 'tgc-btn tg-btn', label);
   b.addEventListener('click', onClick);
   return b;
 }
@@ -177,7 +184,7 @@ export class CampaignMapScreen extends Overlay {
   show(nodes: MapNode[]): void {
     this.open();
     const head = el('div', 'tgc-head');
-    head.append(el('h1', 'tgc-title', 'The Long Tide'), el('span', 'tgc-sub', `${nodes.filter((n) => n.state === 'won').length} of ${nodes.length} chapters`));
+    head.append(carved('h1', 'tgc-title', 'The Long Tide'), el('span', 'tgc-sub', `${nodes.filter((n) => n.state === 'won').length} of ${nodes.length} chapters`));
     head.appendChild(button('Back', () => this.hooks.onClose()));
     this.inner.appendChild(head);
     const intro = el('p', 'tgc-sub', 'The sea is rising. The Lantern-folk have lost one shore already; this is the road to the last one.');
@@ -187,9 +194,9 @@ export class CampaignMapScreen extends Overlay {
     const trail = el('div', 'tgc-trail');
     const cards: HTMLElement[] = [];
     nodes.forEach((n, i) => {
-      const card = el('div', `tgc-panel tgc-node ${n.state}${n.current ? ' current' : ''}${i % 2 ? ' right' : ''}`);
+      const card = el('div', `tgc-panel tg-panel mat-hide tgc-node ${n.state}${n.current ? ' current' : ''}${i % 2 ? ' right' : ''}`);
       card.dataset.id = n.id;
-      const num = el('div', 'tgc-num', n.state === 'locked' ? '·' : roman(n.chapter));
+      const num = n.state === 'locked' ? el('div', 'tgc-num', '·') : carved('div', 'tgc-num', roman(n.chapter));
       const text = el('div');
       text.append(el('div', 'tgc-name', n.state === 'locked' ? `${roman(n.chapter)}. ${n.title}` : n.title), el('div', 'tgc-tag', n.tagline));
       if (n.state !== 'locked') text.appendChild(el('div', 'tgc-teach', n.teaches));
@@ -217,6 +224,7 @@ function drawTrail(trail: HTMLElement, cards: HTMLElement[]): void {
   if (!box.width) return;
   const ns = 'http://www.w3.org/2000/svg';
   const svg = document.createElementNS(ns, 'svg');
+  svg.setAttribute('class', 'rope');
   const pts = cards.map((c) => {
     const r = c.querySelector('.tgc-num')!.getBoundingClientRect();
     return [r.left + r.width / 2 - box.left, r.top + r.height / 2 - box.top];
@@ -231,10 +239,15 @@ function drawTrail(trail: HTMLElement, cards: HTMLElement[]): void {
   const path = document.createElementNS(ns, 'path');
   path.setAttribute('d', d);
   path.setAttribute('fill', 'none');
-  path.setAttribute('stroke', 'var(--tg-trail, rgba(241,201,107,0.35))');
-  path.setAttribute('stroke-width', '2');
-  path.setAttribute('stroke-dasharray', '6 6');
-  svg.appendChild(path);
+  // A rope laid between the chapters: a dark core, then a twisted, paler strand.
+  path.setAttribute('stroke', 'rgba(20,10,4,0.85)');
+  path.setAttribute('stroke-width', '6');
+  path.setAttribute('stroke-linecap', 'round');
+  const strand = path.cloneNode() as SVGPathElement;
+  strand.setAttribute('stroke', 'var(--cord, #c7a15f)');
+  strand.setAttribute('stroke-width', '3.5');
+  strand.setAttribute('stroke-dasharray', '5 2');
+  svg.append(path, strand);
   trail.prepend(svg);
 }
 
@@ -292,14 +305,14 @@ export class BriefingScreen extends Overlay {
     this.open();
     const b = d.rules.briefing;
     const head = el('div', 'tgc-head');
-    head.append(el('span', 'tgc-sub', `Chapter ${roman(d.chapter)}`), el('h1', 'tgc-title', b.title));
+    head.append(el('span', 'tgc-sub', `Chapter ${roman(d.chapter)}`), carved('h1', 'tgc-title', b.title));
     head.style.flexDirection = 'column';
     head.style.alignItems = 'flex-start';
     head.style.gap = '4px';
     this.inner.appendChild(head);
 
     const grid = el('div', 'tgc-grid');
-    const story = el('div', 'tgc-panel');
+    const story = el('div', 'tgc-panel tg-panel mat-hide');
     story.append(el('p', 'tgc-body', b.body), el('div', 'tgc-h', 'Counsel'));
     const tips = el('ul', 'tgc-list');
     for (const t of b.tips) tips.appendChild(el('li', undefined, t));
@@ -321,7 +334,7 @@ export class BriefingScreen extends Overlay {
       }
     }
 
-    const side = el('div', 'tgc-panel');
+    const side = el('div', 'tgc-panel tg-panel mat-hide');
     const lo = describeLoadout(d.rules);
     const chips = (items: string[], cls = '') => {
       const c = el('div', 'tgc-chips');
@@ -351,7 +364,7 @@ export class BriefingScreen extends Overlay {
       side.append(el('div', 'tgc-h', `Unclaimed boon — ${d.pendingBoon.chapterTitle}`));
       const grid = el('div', 'tgc-boons');
       for (const id of d.pendingBoon.offer) {
-        const b = el('button', 'tgc-btn tgc-boon');
+        const b = el('button', 'tgc-btn tg-btn tgc-boon');
         b.append(el('b', undefined, BOONS[id].name), el('span', 'tgc-sub', BOONS[id].blurb));
         b.addEventListener('click', () => this.hooks.onBoon!(id));
         grid.appendChild(b);
@@ -396,11 +409,11 @@ export class DebriefScreen extends Overlay {
     this.open();
     const win = d.result === 'victory';
     const head = el('div');
-    head.append(el('div', 'tgc-sub', `Chapter ${roman(d.chapter)} · ${d.title}`), el('h1', `tgc-result ${d.result}`, win ? 'Victory' : 'Defeat'), el('p', 'tgc-body', d.reason));
+    head.append(el('div', 'tgc-sub', `Chapter ${roman(d.chapter)} · ${d.title}`), carved('h1', `tgc-result ${d.result}`, win ? 'Victory' : 'Defeat'), el('p', 'tgc-body', d.reason));
     head.style.marginBottom = '18px';
     this.inner.appendChild(head);
 
-    const panel = el('div', 'tgc-panel');
+    const panel = el('div', 'tgc-panel tg-panel mat-hide');
     panel.appendChild(el('div', 'tgc-h', 'Time'));
     panel.appendChild(el('div', undefined, `${formatTime(d.seconds)}${win && d.bestTime !== null ? ` · best ${formatTime(d.bestTime)}` : ''}`));
     panel.appendChild(el('div', 'tgc-h', 'Objectives'));
@@ -413,7 +426,7 @@ export class DebriefScreen extends Overlay {
 
     let next: HTMLButtonElement | null = null;
     if (win && d.boonOffer.length) {
-      const boonPanel = el('div', 'tgc-panel');
+      const boonPanel = el('div', 'tgc-panel tg-panel mat-hide');
       boonPanel.style.marginTop = '14px';
       boonPanel.append(el('div', 'tgc-h', 'Choose a boon to carry forward'));
       const grid = el('div', 'tgc-boons');
@@ -423,7 +436,7 @@ export class DebriefScreen extends Overlay {
         if (next) next.disabled = !chosen;
       };
       for (const id of d.boonOffer) {
-        const b = el('button', 'tgc-btn tgc-boon');
+        const b = el('button', 'tgc-btn tg-btn tgc-boon');
         b.dataset.boon = id;
         b.append(el('b', undefined, BOONS[id].name), el('span', 'tgc-sub', BOONS[id].blurb));
         b.addEventListener('click', () => {

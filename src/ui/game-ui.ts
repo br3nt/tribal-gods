@@ -52,7 +52,7 @@ css('game-ui', `
 .hud-right { position: absolute; top: calc(var(--edge) + 3.4rem); right: var(--edge); display: flex; flex-direction: column; gap: 0.5rem; align-items: flex-end; }
 .hud-dock { position: absolute; left: var(--edge); right: var(--edge); bottom: var(--edge); display: flex; align-items: flex-end; gap: 0.5rem; }
 .hud-dock .mid { flex: 1; min-width: 0; display: flex; justify-content: center; }
-.hud-dock .mid > .sp { max-width: 100%; }
+.hud-dock .mid > .sp { max-width: min(27rem, 100%); }
 .hud-rally { position: fixed; z-index: 54; pointer-events: none; }
 `);
 
@@ -149,7 +149,7 @@ export class GameUi {
     this.worldHover = new WorldHover(this.ctx);
     this.worldHover.preview = this.orders.preview;
     // One calm column at top-centre: the narrator's line, then the hint chip.
-    const centre = h('div.hud-centre', {}, this.narrator.el);
+    const centre = h('div.hud-centre', {}, this.topBar.pausedBanner, this.narrator.el);
     this.root.appendChild(centre);
     this.hints = new Hints(this.ctx, centre);
     this.debug = new DebugOverlay(stats, world, brushRadius);

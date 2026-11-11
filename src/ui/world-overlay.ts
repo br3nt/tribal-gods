@@ -167,7 +167,7 @@ export class WorldOverlay {
 
   /** Re-measure the panels (called ~8×/s, not per frame, to avoid forced layouts). */
   refreshBlockers(): void {
-    this.blockers = [...document.querySelectorAll('#ui .tg-panel')].map((e) => e.getBoundingClientRect()).filter((r) => r.width > 0);
+    this.blockers = [...document.querySelectorAll('#ui .tg-panel, #ui .al-card')].map((e) => e.getBoundingClientRect()).filter((r) => r.width > 0);
   }
 
   update(): void {

@@ -22,18 +22,26 @@ import { icon, UiIconName } from './icons';
 import { ritualAt, tribeLabelOf } from './stones';
 
 css('alerts', `
-.al { width: 17rem; display: flex; flex-direction: column; gap: 0.375rem; align-items: stretch; }
-.al-card { display: flex; align-items: center; gap: 0.5rem; padding: 0.45rem 0.6rem; border-radius: var(--r2); text-align: left; cursor: default;
-  font: 600 var(--t-sm)/1.25 var(--font); color: var(--text); animation: al-in 260ms var(--ease); transition: opacity 600ms var(--ease); }
+.al { width: 16.5rem; display: flex; flex-direction: column; gap: 0.35rem; align-items: stretch; }
+/* A strip of bark with a stripe of paint down its edge, hung on a cord. */
+.al-card { position: relative; display: flex; align-items: center; gap: 0.5rem; padding: 0.4rem 0.55rem 0.4rem 0.75rem; text-align: left; cursor: default;
+  border: 0; border-radius: 0.2rem 0.45rem 0.3rem 0.5rem / 0.4rem 0.25rem 0.5rem 0.3rem;
+  background: linear-gradient(90deg, var(--paint) 0 0.3rem, rgba(0,0,0,0.5) 0.3rem 0.38rem, transparent 0.38rem), linear-gradient(rgba(30,19,11,0.5), rgba(30,19,11,0.62)), var(--tex-bark) 0 0 / 11rem;
+  box-shadow: 0 0 0 1px #120a04, inset 0 1px 0 rgba(255,226,180,0.15), 0 3px 8px rgba(0,0,0,0.45);
+  font: 700 var(--t-sm)/1.25 var(--font); color: var(--bone); text-shadow: 0 1px 0 rgba(0,0,0,0.8);
+  animation: al-in 260ms var(--ease); transition: opacity 600ms var(--ease); --paint: var(--woad); }
+.al-card.bad { --paint: var(--red-ochre); }
+.al-card.good { --paint: #6aa843; }
+.al-card.info { --paint: #3d8fa8; }
 .al-card.jump { cursor: pointer; }
-.al-card.jump:hover { border-color: var(--rim-strong); }
-.al-card .i { flex: none; width: 1.6rem; height: 1.6rem; border-radius: 50%; display: grid; place-items: center; background: var(--ink-2); }
-.al-card.bad .i { color: var(--bad); background: var(--bad-soft); }
-.al-card.good .i { color: var(--good); background: rgba(127,220,140,0.15); }
-.al-card.info .i { color: var(--mana); background: var(--mana-soft); }
-.al-card .go-hint { margin-left: auto; color: var(--text-3); display: inline-flex; }
+.al-card.jump:hover { filter: brightness(1.15); }
+.al-card .i { flex: none; width: 1.55rem; height: 1.55rem; border-radius: 50%; display: grid; place-items: center; background: rgba(0,0,0,0.35); box-shadow: inset 0 0 0 1px rgba(255,226,180,0.15); }
+.al-card.bad .i { color: #ff9a7c; }
+.al-card.good .i { color: var(--leaf); }
+.al-card.info .i { color: var(--spirit); }
+.al-card .go-hint { margin-left: auto; color: var(--bone-3); display: inline-flex; }
 .al-card.fade { opacity: 0; }
-@keyframes al-in { from { opacity: 0; transform: translateX(1rem); } to { opacity: 1; transform: none; } }
+@keyframes al-in { from { opacity: 0; transform: translateX(1rem) rotate(1deg); } to { opacity: 1; transform: none; } }
 `);
 
 const ICONS: Record<Alert['kind'], UiIconName> = {
@@ -118,7 +126,7 @@ export class AlertFeed {
   push(a: Alert): void {
     const hasPlace = a.x !== undefined && a.z !== undefined;
     const card = h(hasPlace ? 'button' : 'div', {
-      class: `al-card tg-panel ${a.tone}${hasPlace ? ' jump' : ''}`,
+      class: `al-card tg-hit ${a.tone}${hasPlace ? ' jump' : ''}`,
       html: `<span class="i">${icon(ICONS[a.kind], 15)}</span><span>${escapeHtml(a.text)}</span>${hasPlace ? `<span class="go-hint">${icon('eye', 14)}</span>` : ''}`,
     });
     if (hasPlace) {

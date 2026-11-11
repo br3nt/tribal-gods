@@ -47,7 +47,7 @@ import { appState } from './app-state';
 import { UiContext } from './context';
 import { css, h, worldLayer } from './dom';
 import { Drape } from './drape';
-import { UI_ICONS } from './icons';
+import { iconMarkup, UI_ICONS } from './icons';
 import { GroundMarquee, inGroundQuad, quadArea } from './marquee';
 import { monumentAtScreen, pickAtScreen } from './picking';
 import { tileDist, toScreen } from './project';
@@ -100,7 +100,7 @@ const hex6 = (c: number) => `#${c.toString(16).padStart(6, '0')}`;
 /** A CSS cursor built from an icon: a carved stone disc with the icon painted on it. */
 function cursorCss(kind: OrderKind): string {
   if (kind === 'none') return '';
-  const inner = UI_ICONS[CURSOR_ICON[kind]];
+  const inner = iconMarkup(UI_ICONS[CURSOR_ICON[kind]]);
   const c = hex6(ORDER_COLORS[kind]);
   const svg =
     `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">` +

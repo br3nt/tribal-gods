@@ -12,21 +12,23 @@ import { css, h } from './dom';
 import { applyUiScale, QualitySetting, saveSettings, setQuality, settings } from './settings';
 
 css('settings-panel', `
-.set { display: grid; gap: 1.1rem; }
+.set { display: grid; gap: 1.05rem; }
 .set-row { display: grid; grid-template-columns: 10rem 1fr; gap: 1rem; align-items: center; }
-.set-row .name { font-weight: 600; color: var(--text); font-size: var(--t-md); }
-.set-row .desc { grid-column: 2; margin-top: -0.6rem; font-size: var(--t-xs); color: var(--text-3); }
-.seg { justify-self: start; display: inline-flex; gap: 0.125rem; padding: 0.125rem; border-radius: var(--r2); background: rgba(0,0,0,0.3); border: 1px solid var(--rim); flex-wrap: wrap; }
-.seg .tg-btn { border: 0; background: transparent; min-height: 1.9rem; padding: 0 0.8rem; color: var(--text-2); }
-.seg .tg-btn.on { background: var(--gold-soft); color: var(--gold); }
-.switch { position: relative; width: 2.6rem; height: 1.5rem; border-radius: var(--r-pill); border: 1px solid var(--rim-strong); background: rgba(0,0,0,0.35); cursor: pointer; padding: 0; }
-.switch::after { content: ''; position: absolute; top: 0.15rem; left: 0.15rem; width: 1.1rem; height: 1.1rem; border-radius: 50%; background: var(--text-2); transition: transform var(--fast) var(--ease), background var(--fast); }
-.switch.on { background: var(--gold-soft); border-color: var(--gold); }
-.switch.on::after { transform: translateX(1.1rem); background: var(--gold); }
+.set-row .name { font: 700 var(--t-md)/1.2 var(--font-display); color: var(--text); }
+.set-row .desc { grid-column: 2; margin-top: -0.6rem; font-size: var(--t-xs); color: var(--text-3); font-weight: 600; }
+.seg { justify-self: start; display: inline-flex; gap: 0.3rem; flex-wrap: wrap; }
+.seg .tg-btn { min-height: 1.9rem; padding: 0 0.8rem; }
+/* A switch: a peg slid along a groove. */
+.switch { position: relative; width: 2.8rem; height: 1.5rem; border: 0; border-radius: 0.8rem; cursor: pointer; padding: 0;
+  background: #3a2414; box-shadow: inset 0 2px 4px rgba(0,0,0,0.7), 0 0 0 1px #1a0e06, 0 1px 0 1px rgba(255,236,200,0.4); }
+.switch::after { content: ''; position: absolute; top: 0.17rem; left: 0.17rem; width: 1.16rem; height: 1.16rem; border-radius: 50%;
+  background: radial-gradient(circle at 40% 35%, #e9d3a6, #a7774a 60%, #4a2c14); box-shadow: 0 1px 2px rgba(0,0,0,0.7); transition: transform var(--fast) var(--ease); }
+.switch.on { background: repeating-linear-gradient(90deg, rgba(0,0,0,0.25) 0 2px, transparent 2px 5px), linear-gradient(var(--tribe-light), var(--tribe) 45%, var(--tribe-dark)); }
+.switch.on::after { transform: translateX(1.3rem); }
 .set-note { font-size: var(--t-sm); color: var(--text-3); display: flex; align-items: center; gap: 0.6rem; }
 .vol { display: flex; align-items: center; gap: 0.75rem; }
-.vol input[type=range] { width: 12rem; accent-color: var(--gold); }
-.vol .pct { min-width: 2.6rem; font-variant-numeric: tabular-nums; color: var(--text-2); font-size: var(--t-sm); }
+.vol input[type=range] { width: 12rem; accent-color: #9a5a12; }
+.vol .pct { min-width: 2.6rem; font-variant-numeric: tabular-nums; color: var(--text-2); font-size: var(--t-sm); font-weight: 700; }
 @media (max-width: 640px) { .set-row { grid-template-columns: 1fr; } .set-row .desc { grid-column: 1; margin-top: -0.6rem; } }
 `);
 

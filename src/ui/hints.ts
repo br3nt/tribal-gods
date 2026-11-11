@@ -31,12 +31,12 @@ interface Hint {
 const KEY = 'tg.hints.v1';
 
 css('hints', `
-.hint-chip { display: flex; align-items: center; gap: 0.6rem;
-  max-width: 100%; padding: 0.5rem 0.5rem 0.5rem 0.75rem; font-size: var(--t-sm); line-height: 1.35; color: var(--text);
-  animation: hint-in 400ms var(--ease); }
-.hint-chip .ic { flex: none; width: 1.9rem; height: 1.9rem; border-radius: 50%; display: grid; place-items: center; background: var(--gold-soft); color: var(--gold); }
+/* A tag of hide, its icon painted in an ochre ring. */
+.hint-chip { display: flex; align-items: center; gap: 0.55rem; max-width: 100%; padding: 0.3rem 0.35rem 0.3rem 0.5rem; font-size: var(--t-sm); line-height: 1.35; font-weight: 600; color: var(--text);
+  --frame: 0.3125rem; animation: hint-in 400ms var(--ease); }
+.hint-chip .ic { flex: none; width: 1.85rem; height: 1.85rem; border-radius: 50%; display: grid; place-items: center; color: #7a3a10; background: rgba(211,149,55,0.2); box-shadow: inset 0 0 0 2px #b97a2c; }
 .hint-chip .kbd { margin: 0 0.1rem; }
-.hint-chip .tg-btn { flex: none; }
+.hint-chip .tg-btn { flex: none; min-height: 1.7rem; min-width: 1.7rem; }
 @keyframes hint-in { from { opacity: 0; transform: translateY(-0.5rem); } to { opacity: 1; transform: none; } }
 `);
 
@@ -194,7 +194,7 @@ export class Hints {
       this.hide();
     });
     this.textEl = h('span.txt', { html: next.html() });
-    this.el = h('div.hint-chip.tg-panel', { role: 'status' }, h('span.ic', { html: icon(next.icon, 16) }), this.textEl, close);
+    this.el = h('div.hint-chip.tg-panel.mat-hide', { role: 'status' }, h('span.ic', { html: icon(next.icon, 16) }), this.textEl, close);
     this.column.appendChild(this.el); // below the narrator line (ui/narrator.ts)
   }
 }
