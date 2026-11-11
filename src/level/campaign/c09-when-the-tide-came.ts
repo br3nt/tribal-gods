@@ -53,9 +53,9 @@ export const scenario: CampaignScenario = {
     const { home, gold, summit, ward } = LAYOUT;
     t.landFrom((x, z) => inside(dist(x, z, 62, 64) + t.wobble(x, z, 1) * 12, 50, 8), { base: 1.7, roll: 0.7 });
     // The Last Hill: three terraces and a crown, each step a short steep bank.
-    t.mesa(summit.x, summit.z, 22, 4.2, 3).mesa(summit.x + 1, summit.z - 1, 14, 7.2, 2.5).mesa(summit.x, summit.z, 6, 10, 2.5);
+    t.mesa(summit.x, summit.z, 22, 5, 3).mesa(summit.x + 1, summit.z - 1, 14, 9.5, 3).mesa(summit.x, summit.z, 6, 14, 3);
     // Cliffs on the north face: the hill is climbed from the south and west.
-    t.ridge([{ x: 46, z: 46 }, { x: 62, z: 40 }, { x: 80, z: 48 }], 5, 13, 0.3);
+    t.ridge([{ x: 46, z: 46 }, { x: 62, z: 40 }, { x: 80, z: 48 }], 5, 11, 0.3);
     // The Saltborn's hill.
     t.mesa(gold.x, gold.z, 12, 4.6, 4).peak(gold.x + 8, gold.z - 8, 7, 3);
     t.smooth(1);

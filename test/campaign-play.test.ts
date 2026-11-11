@@ -94,6 +94,9 @@ describe('campaign: fail conditions fire when forced', () => {
   it('9 Tide: holding the crown wins; the clock loses', async () => {
     const w = await loadScenario('c09_when_the_tide_came');
     const o = w.rules.objectives[0].objective as { x: number; z: number };
+    // Only the hold is under test here: send the Saltborn's fighters home for good.
+    w.units = w.units.filter((u) => u.tribe !== 'gold' || u.kind === 'brave');
+    w.tribes.gold!.ai = null;
     for (let i = 0; i < 4; i++) w.spawn('warrior', 'player', o.x + (i % 2), o.z + (i >> 1));
     run(w, 152);
     expect(w.objectives[0].done).toBe(true);

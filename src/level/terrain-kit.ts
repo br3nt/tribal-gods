@@ -142,7 +142,10 @@ export class Terrain {
       const d = lineDist(x, z, pts);
       if (d > width) return h;
       const k = 1 - smoothstep(Math.max(width * 0.35, width - 2.2), width, d);
-      return Math.max(h, h * (1 - k) + (height * (1 + this.wobble(x, z, 11) * jag)) * k);
+      // A crest, not a table: higher toward the spine line, with crags.
+      const crest = 0.7 + 0.6 * (1 - d / width);
+      const crag = (hash2(x, z, this.seed + 77) - 0.5) * 2.4;
+      return Math.max(h, h * (1 - k) + (height * crest * (1 + this.wobble(x, z, 11) * jag) + crag) * k);
     });
   }
 
