@@ -459,10 +459,10 @@ const CLIPS: Record<ClipName, (t: number, p: Pose, c: ClipCtx) => void> = {
     p[HX] = 0.03 * sway;
     stance(p, 0.14, 0.07);
     setR(p, BI.hips, 0, 0, 0.05 * sway);
-    setR(p, BI.spine, 0.16 + c.style.hunch, 0, -0.05 * sway);
-    setR(p, BI.chest, 0.1, 0, -0.03 * sway);
-    setR(p, BI.neck, 0.22, 0, 0);
-    setR(p, BI.head, 0.42 + 0.04 * Math.sin(ph * 2), 0.08 * sway, 0.06 * sway);
+    setR(p, BI.spine, 0.2 + c.style.hunch, 0, -0.05 * sway);
+    setR(p, BI.chest, 0.12, 0, -0.03 * sway);
+    setR(p, BI.neck, 0.26, 0, 0);
+    setR(p, BI.head, 0.5 + 0.04 * Math.sin(ph * 2), 0.08 * sway, 0.08 * sway);
     setR(p, BI.clavL, 0, 0, -0.1);
     setR(p, BI.clavR, 0, 0, 0.1);
     setR(p, BI.armL, 0.06 + 0.04 * sway, 0, 0.05);

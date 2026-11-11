@@ -194,6 +194,70 @@ export function fadeCopy(m: THREE.Material): THREE.Material {
   return c;
 }
 
+/** How a status variant differs from its base surface. */
+export interface TintSpec {
+  /** Multiplies the vertex colours. */
+  color: number;
+  emissive: number;
+  emissiveIntensity?: number;
+  /** Added to the base roughness / metalness (clamped 0..1). */
+  roughnessShift?: number;
+  metalnessShift?: number;
+  /** 0..1: pull the vertex colours toward their grey (before `color` multiplies). */
+  desaturate?: number;
+  /** Fresnel rim light (linear radiance at grazing angles), for a sheen. */
+  rim?: number;
+}
+
+const glslVec3 = (hex: number) => {
+  const c = new THREE.Color(hex); // linear
+  return `vec3(${c.r.toFixed(4)}, ${c.g.toFixed(4)}, ${c.b.toFixed(4)})`;
+};
+
+const tinted = new Map<string, THREE.Material>();
+/**
+ * A SHARED tinted variant of a shared factory material (Stone Ward,
+ * Warsong): one instance per (base, key), so a hundred warded villagers
+ * still draw from two materials. Keeps the base's shader hooks. Never
+ * dispose it.
+ */
+export function tintedMaterial(base: THREE.Material, key: string, spec: TintSpec): THREE.Material {
+  const id = `${base.uuid}|${key}`;
+  let m = tinted.get(id);
+  if (m) return m;
+  const c = base.clone() as THREE.MeshStandardMaterial;
+  const desat = spec.desaturate ?? 0;
+  const rim = spec.rim ?? 0;
+  c.onBeforeCompile = (shader, renderer) => {
+    base.onBeforeCompile(shader, renderer);
+    if (desat > 0) {
+      shader.fragmentShader = shader.fragmentShader.replace(
+        '#include <color_fragment>',
+        `#include <color_fragment>
+         diffuseColor.rgb = mix(diffuseColor.rgb, vec3(dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722))), ${desat.toFixed(3)});`,
+      );
+    }
+    if (rim > 0) {
+      shader.fragmentShader = shader.fragmentShader.replace(
+        '#include <lights_fragment_begin>',
+        `#include <lights_fragment_begin>
+         totalEmissiveRadiance += ${glslVec3(rim)} * pow(1.0 - saturate(dot(geometryNormal, geometryViewDir)), 3.0);`,
+      );
+    }
+  };
+  const baseKey = base.customProgramCacheKey.bind(base);
+  c.customProgramCacheKey = () => `${baseKey()}|tint-${key}|d${desat}|r${rim}`;
+  c.color.setHex(spec.color);
+  c.emissive.setHex(spec.emissive);
+  c.emissiveIntensity = spec.emissiveIntensity ?? 1;
+  c.roughness = THREE.MathUtils.clamp(c.roughness + (spec.roughnessShift ?? 0), 0, 1);
+  c.metalness = THREE.MathUtils.clamp(c.metalness + (spec.metalnessShift ?? 0), 0, 1);
+  allModelMaterials.push(c);
+  tinted.set(id, c);
+  m = c;
+  return m;
+}
+
 /** Re-run every model material's compile (after pushing a late patch). */
 export function recompileModelMaterials(): void {
   for (const m of allModelMaterials) m.needsUpdate = true;
