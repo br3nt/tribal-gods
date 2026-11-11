@@ -19,7 +19,7 @@ import { CampaignScenario, makeLevel, RAIDER_TRIBE } from './common';
 export const LAYOUT = {
   home: { x: 36, z: 70 },
   bloom: { x: 24, z: 58 },
-  level: { x: 92, z: 60 },
+  level: { x: 88, z: 60 },
   ford: { x: 63, z: 64 },
   landing: { x: 106, z: 74 },
   river: [

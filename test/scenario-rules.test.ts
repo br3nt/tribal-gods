@@ -270,6 +270,28 @@ describe('AI personalities', () => {
   });
 });
 
+describe('unreachable homes', () => {
+  it('a villager whose only free Dwelling is cut off stops re-pathing to it every tick', () => {
+    const w = setupFlat(rulesFor());
+    w.units = [];
+    // A dwelling on an islet: its door is unreachable from the mainland.
+    for (let z = 34; z <= 46; z++) for (let x = 34; x <= 46; x++) w.map.heights[z * 128 + x] = (x < 36 || x > 44 || z < 36 || z > 44) ? -3 : 2;
+    w.map.version++;
+    w.spawnBuilding('player', 'hut', 40, 40);
+    w.spawn('shaman', 'player', 20, 20);
+    const v = w.spawn('brave', 'player', 22, 20);
+    v.idleTime = 10;
+    let calls = 0;
+    const orig = w.sendTo.bind(w);
+    w.sendTo = (...a: Parameters<typeof w.sendTo>) => {
+      if (a[0] === v) calls++;
+      return orig(...a);
+    };
+    run(w, 10);
+    expect(calls).toBeLessThan(20);
+  });
+});
+
 describe('Causeway over deep water', () => {
   it('a diagonal causeway is walkable end to end (sloped shoulders, no corner-cut gaps)', async () => {
     const { castSpell } = await import('../src/sim/spells');

@@ -1003,7 +1003,11 @@ export class World implements SimQueries {
 
   /** Head for a dwelling with a free bed (own home first). */
   private tryMoveIn(u: Unit): boolean {
-    const free = (b: Building) => b.kind === 'hut' && b.progress >= 1 && b.residents < this.dwellingCapacity(b);
+    // A dwelling whose door this unit recently failed to reach is skipped for
+    // a while (see autoSendTo) — otherwise a cut-off hut costs a full A*
+    // search every tick for every idle villager.
+    const free = (b: Building) =>
+      b.kind === 'hut' && b.progress >= 1 && b.residents < this.dwellingCapacity(b) && !this.isUnreachable(u, `h${b.id}`);
     const hut = u.home >= 0
       ? this.buildings.find((b) => b.id === u.home && free(b))
       : this.buildings.find((b) => b.tribe === u.tribe && free(b));
@@ -1011,7 +1015,7 @@ export class World implements SimQueries {
     u.task = 'goHome';
     u.targetBuilding = hut.id;
     const door = this.doorOf(hut);
-    if (this.sendTo(u, door.x, door.z)) return true;
+    if (this.autoSendTo(u, door.x, door.z, `h${hut.id}`)) return true;
     u.task = 'none';
     u.targetBuilding = -1;
     return false;
