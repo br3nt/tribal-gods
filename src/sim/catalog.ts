@@ -304,6 +304,8 @@ export interface MonumentDef {
   mode: 'teach' | 'gift';
   charges?: number;
   cooldown?: number;
+  /** The stone sleeps (nobody can commune) until this many seconds into the scenario. */
+  opensAt?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -318,13 +320,17 @@ export type Objective =
   | { type: 'claimMonument'; index: number }
   | { type: 'buildCount'; kind: BuildingKind; count: number }
   | { type: 'leaderReach'; x: number; z: number; radius: number }
-  | { type: 'holdPoint'; x: number; z: number; radius: number; seconds: number };
+  | { type: 'holdPoint'; x: number; z: number; radius: number; seconds: number }
+  /** The spell holds at least `charges` (default 1) real charges at once. */
+  | { type: 'chargeSpell'; spell: SpellId; charges?: number };
 
 export type FailCondition =
   | { type: 'tribeDestroyed' } // always implied
   | { type: 'leaderDies' } // no reincarnation in this scenario
   | { type: 'timeLimit'; seconds: number }
-  | { type: 'buildingLost'; kind: BuildingKind };
+  | { type: 'buildingLost'; kind: BuildingKind }
+  /** Another tribe communed at monument `index` before you did. */
+  | { type: 'monumentTaken'; index: number };
 
 export interface ObjectiveState {
   objective: Objective;
@@ -342,14 +348,79 @@ export interface Loadout {
   buildings?: BuildingKind[]; // allowed to build
   startUnits?: Partial<Record<UnitKind, number>>;
   startWood?: number;
+  /** Extra max charges on top of the catalog's maxCharges (campaign boons). */
+  extraCharges?: Partial<Record<SpellId, number>>;
+  /** Multiplier on a spell's chargeMana for this tribe (2 = charges half as fast). */
+  chargeCost?: Partial<Record<SpellId, number>>;
+  /** Free casts at the start, exactly as if a gift stone had given them. */
+  gifts?: Partial<Record<SpellId, number>>;
+  /** Complete buildings stood up around the home circle at the start. */
+  startBuildings?: BuildingKind[];
+}
+
+/**
+ * How an AI god behaves (all optional; omitted = the standard rival).
+ * Personality changes decisions only — never the rules it plays by.
+ */
+export interface AiPersonality {
+  /** Army size at which it starts raiding (default 5) / marches in force (default 11). */
+  harassAt?: number;
+  assaultAt?: number;
+  /** Stops training past this many fighters (default 24). */
+  maxArmy?: number;
+  /** No raids or assaults until attacked, `wakeAt` passes, or a `wake` event fires. */
+  passive?: boolean;
+  wakeAt?: number;
+  /** False = a war band: never raises buildings or trains. Default true. */
+  builds?: boolean;
+  /** False = never falls back home when hurt (raiders). Default true. */
+  defends?: boolean;
+  /** Leader visits standing stones. Default true. */
+  seeksStones?: boolean;
+  /** Train only at halls that turn out these kinds, in this order of preference. */
+  prefer?: UnitKind[];
+  /** Always makes war on this tribe (while it lives) instead of the nearest rival. */
+  target?: TribeId;
+}
+
+/** When a scripted scenario event fires. */
+export type ScenarioTrigger =
+  | { type: 'time'; at: number }
+  /** Any unit of `tribe` (default the player) stands within the circle. */
+  | { type: 'zone'; x: number; z: number; radius: number; tribe?: TribeId }
+  /** Objective `index` is done. */
+  | { type: 'objective'; index: number };
+
+export type ScenarioAction =
+  /** Units appear near (x, z); with `march` they set off for it at once. */
+  | { type: 'spawn'; tribe: Tribe; units: Partial<Record<UnitKind, number>>; x: number; z: number; march?: { x: number; z: number } }
+  /** `tribe` is now allied with exactly these tribes (both ways); everyone else is hostile to it. */
+  | { type: 'allies'; tribe: TribeId; allies: TribeId[] }
+  /** A passive AI wakes up. */
+  | { type: 'wake'; tribe: TribeId }
+  | { type: 'teach'; tribe: TribeId; spell: SpellId }
+  | { type: 'gift'; tribe: TribeId; spell: SpellId; charges: number }
+  /** The world itself casts a spell at (x, z) on `tribe`'s behalf — no leader needed. */
+  | { type: 'strike'; spell: SpellId; x: number; z: number; tribe: TribeId }
+  | { type: 'message'; text: string };
+
+export interface ScenarioEvent {
+  when: ScenarioTrigger;
+  /** Fire again every `every` seconds after the first, `times` times in all (default once). */
+  repeat?: { every: number; times: number };
+  actions: ScenarioAction[];
+  /** Shown to the player when it fires (world.messages). */
+  message?: string;
 }
 
 export interface ScenarioRules {
-  tribes: Array<{ id: TribeId; ai: boolean; loadout?: Loadout; allies?: TribeId[] }>;
+  tribes: Array<{ id: TribeId; ai: boolean; loadout?: Loadout; allies?: TribeId[]; personality?: AiPersonality }>;
   objectives: Array<{ objective: Objective; text: string; optional?: boolean }>;
   fail?: FailCondition[];
   /** Shown before play: a title, a few sentences, and tips. */
   briefing: { title: string; body: string; tips: string[] };
+  /** Scripted happenings: raids, betrayals, the sea rising. See sim/scenario-events.ts. */
+  events?: ScenarioEvent[];
 }
 
 // ---------------------------------------------------------------------------

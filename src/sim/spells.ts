@@ -337,11 +337,15 @@ function tickLandbridge(world: World, job: SpellJob, dt: number): void {
     const px = job.fromX + (dx / len) * s;
     const pz = job.fromZ + (dz / len) * s;
     const halfW = Math.max(1, Math.round(spellDef('landbridge').radius / 2));
-    for (let w = -halfW; w <= halfW; w++) {
+    // One shoulder tile each side slopes into the sea: without it the edge
+    // tiles sit on a cliff (unwalkable), leaving a one-tile path that a
+    // diagonal causeway breaks into corner-cuts nobody may take.
+    for (let w = -halfW - 1; w <= halfW + 1; w++) {
       const tx = world.map.wrap(Math.round(px - (dz / len) * w));
       const tz = world.map.wrap(Math.round(pz + (dx / len) * w));
       const i = tz * N + tx;
-      const target = 1.5 + hash2(tx, tz, 31) * 0.6;
+      const shoulder = Math.abs(w) > halfW;
+      const target = shoulder ? -0.6 : 1.5 + hash2(tx, tz, 31) * 0.6;
       if (world.map.heights[i] < target) {
         world.map.heights[i] = Math.min(target, world.map.heights[i] + dt * 9);
       }

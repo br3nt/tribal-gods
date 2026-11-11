@@ -1,9 +1,10 @@
 /**
  * ui/level-library.ts — browse, rate, filter, share.
  *
- * Two shelves: OFFICIAL (the levels that ship with the game, built fresh
- * from their recipes each time) and MY LEVELS (everything saved from the
- * editor or imported from a share code). One search box, a minimum-star
+ * Three shelves: OFFICIAL (the levels that ship with the game, built fresh
+ * from their recipes each time), CAMPAIGN (the chapters — played through the
+ * campaign flow, and only once reached) and MY LEVELS (everything saved
+ * from the editor or imported from a share code). One search box, a minimum-star
  * filter, and a sort order cover the browsing story; stars are clickable
  * on every card and stored locally (level/store.ts explains how the same
  * UI would ride a community backend unchanged).
@@ -15,6 +16,7 @@
 
 import { LevelData, codeToLevel, levelToCode } from '../level/level-format';
 import { OFFICIAL_LEVELS } from '../level/official-levels';
+import { CAMPAIGN } from '../level/campaign';
 import { deleteLevel, getRating, listLevels, saveLevel, setRating } from '../level/store';
 import { css } from './dom';
 import { icon } from './icons';
@@ -44,6 +46,8 @@ interface CardEntry {
   build?: () => Promise<LevelData>;
   official: boolean;
   savedAt: number;
+  /** Campaign chapters: played through the campaign flow; locked until reached. */
+  campaign?: { chapter: number; title: string; tagline: string; locked: boolean };
 }
 
 
@@ -53,12 +57,16 @@ export class LevelLibrary {
   private readonly search: HTMLInputElement;
   private readonly minStars: HTMLSelectElement;
   private readonly sortBy: HTMLSelectElement;
+  private readonly shelf: HTMLSelectElement;
 
   constructor(
     private readonly hooks: {
       onPlay(level: LevelData): void;
       onEdit(id: string | undefined, level: LevelData): void;
       onClose(): void;
+      /** Campaign chapters open through the campaign (briefing, boons, progress). */
+      onPlayScenario?(id: string): void;
+      isScenarioUnlocked?(id: string): boolean;
     },
   ) {
     this.overlay = document.createElement('div');
@@ -81,6 +89,7 @@ export class LevelLibrary {
 
     this.minStars = this.select(['Any rating', '★+', '★★+', '★★★+', '★★★★+', '★★★★★']);
     this.sortBy = this.select(['Newest', 'Name', 'Rating']);
+    this.shelf = this.select(['All shelves', 'Official', 'Campaign', 'My levels']);
 
     const importBtn = document.createElement('button');
     importBtn.className = 'tg-btn';
@@ -95,7 +104,7 @@ export class LevelLibrary {
       hooks.onClose();
     });
 
-    header.append(title, this.search, this.minStars, this.sortBy, importBtn, close);
+    header.append(title, this.search, this.shelf, this.minStars, this.sortBy, importBtn, close);
     inner.appendChild(header);
 
     this.grid = document.createElement('div');
@@ -130,7 +139,19 @@ export class LevelLibrary {
       official: false,
       savedAt: s.savedAt,
     }));
-    return [...official, ...mine];
+    const campaign: CardEntry[] = CAMPAIGN.map((c) => ({
+      id: c.id,
+      level: null,
+      build: c.build,
+      official: true,
+      savedAt: 0,
+      campaign: { chapter: c.chapter, title: c.title, tagline: c.tagline, locked: !(this.hooks.isScenarioUnlocked?.(c.id) ?? false) },
+    }));
+    const shelf = this.shelf?.selectedIndex ?? 0;
+    if (shelf === 1) return official;
+    if (shelf === 2) return campaign;
+    if (shelf === 3) return mine;
+    return [...official, ...campaign, ...mine];
   }
 
   private render(): void {
@@ -140,7 +161,7 @@ export class LevelLibrary {
     let entries = this.entries().filter((e) => {
       if (getRating(e.id) < minStars) return false;
       if (!q) return true;
-      const name = e.level?.name ?? OFFICIAL_NAMES[e.id] ?? e.id;
+      const name = e.campaign?.title ?? e.level?.name ?? OFFICIAL_NAMES[e.id] ?? e.id;
       const author = e.level?.author ?? 'Tribal Gods';
       return (name + ' ' + author).toLowerCase().includes(q);
     });
@@ -149,9 +170,10 @@ export class LevelLibrary {
     entries = entries.sort((a, b) => {
       if (sort === 'rating') return getRating(b.id) - getRating(a.id);
       if (sort === 'name') {
-        return (a.level?.name ?? OFFICIAL_NAMES[a.id] ?? '').localeCompare(b.level?.name ?? OFFICIAL_NAMES[b.id] ?? '');
+        const nm = (e: CardEntry) => e.campaign?.title ?? e.level?.name ?? OFFICIAL_NAMES[e.id] ?? '';
+        return nm(a).localeCompare(nm(b));
       }
-      return (b.official ? 1 : 0) - (a.official ? 1 : 0) || b.savedAt - a.savedAt; // newest, officials pinned first
+      return (b.official ? 1 : 0) - (a.official ? 1 : 0) || (a.campaign?.chapter ?? 0) - (b.campaign?.chapter ?? 0) || b.savedAt - a.savedAt; // newest, officials pinned first
     });
 
     for (const e of entries) this.grid.appendChild(this.card(e));
@@ -166,13 +188,13 @@ export class LevelLibrary {
   private card(e: CardEntry): HTMLDivElement {
     const card = document.createElement('div');
     card.className = 'lib-card tg-panel';
-    const name = e.level?.name ?? OFFICIAL_NAMES[e.id] ?? e.id;
+    const name = e.campaign ? `${e.campaign.chapter}. ${e.campaign.title}` : e.level?.name ?? OFFICIAL_NAMES[e.id] ?? e.id;
     const author = e.level?.author ?? 'Tribal Gods';
-    const desc = e.level?.desc ?? OFFICIAL_DESCS[e.id] ?? '';
+    const desc = e.campaign ? (e.campaign.locked ? 'Locked — reach this chapter in the campaign.' : e.campaign.tagline) : e.level?.desc ?? OFFICIAL_DESCS[e.id] ?? '';
 
     const head = document.createElement('div');
     head.innerHTML =
-      `<div class="name">${escapeHtml(name)}${e.official ? '<span class="off">official</span>' : ''}</div>` +
+      `<div class="name">${escapeHtml(name)}${e.campaign ? '<span class="off">campaign</span>' : e.official ? '<span class="off">official</span>' : ''}</div>` +
       `<div class="by">by ${escapeHtml(author)}</div>`;
     const blurb = document.createElement('div');
     blurb.className = 'desc';
@@ -209,6 +231,17 @@ export class LevelLibrary {
     };
 
     const resolve = async (): Promise<LevelData> => e.level ?? (await e.build!());
+    if (e.campaign) {
+      // Chapters play through the campaign (briefing, boons, progress) — once reached.
+      if (!e.campaign.locked) {
+        act('Play', () => {
+          this.hide();
+          this.hooks.onPlayScenario?.(e.id);
+        }, true);
+      }
+      card.append(head, blurb, stars, actions);
+      return card;
+    }
     act('Play', () => {
       this.hide();
       void resolve().then((l) => this.hooks.onPlay(l));
@@ -237,7 +270,7 @@ export class LevelLibrary {
   }
 
   private async importCode(): Promise<void> {
-    const code = prompt('Paste a level code (TG1.…):');
+    const code = prompt('Paste a level code (TG2.… or TG1.…):');
     if (!code) return;
     try {
       const level = await codeToLevel(code);

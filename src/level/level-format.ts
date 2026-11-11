@@ -1,8 +1,10 @@
 /**
  * level/level-format.ts — what a level IS, and how it travels.
  *
- * A level is a JSON document: metadata, both tribes' home tiles, monument
- * placements, trees, wildmen — and the terrain. The terrain is the bulky
+ * A level is a JSON document: metadata, up to four tribes' home tiles,
+ * monument placements, trees, wildmen, optional scenario rules (objectives,
+ * loadouts, scripted events) and pre-placed buildings/units — and the
+ * terrain. v1 documents are migrated on read (migrateLevel). The terrain is the bulky
  * part: 128×128 floats. Three classic tricks shrink it from 130KB of JSON
  * numbers to a few KB of pasteable text:
  *
@@ -14,33 +16,140 @@
  *   3. BASE64 — binary → text that survives chat apps and forum posts.
  *
  * The share code is the whole level JSON put through compress+base64 with
- * a "TG1." version prefix, Factorio-blueprint style: anyone can paste a
+ * a version prefix ("TG2." today; the first release's "TG1." codes are still
+ * read and migrated), Factorio-blueprint style: anyone can paste a
  * planet to anyone. The same format is what we store in localStorage and
  * what an online level server would store someday — design the document
  * first and every transport gets it for free.
  */
 
 import { CivId, WORLD_SIZE } from '../config';
-import { SpellId } from '../sim/spells';
+import { BUILDINGS, SPELLS, TRIBE_IDS, UNITS } from '../sim/catalog';
+import type { BuildingKind, MonumentDef, ScenarioRules, SpellId, Tribe, TribeId, UnitKind } from '../sim/catalog';
 
+type Pt = { x: number; z: number };
+
+/** A building standing when the scenario opens (complete unless `complete: false`). */
+export interface PlacedBuilding {
+  tribe: TribeId;
+  kind: BuildingKind;
+  x: number;
+  z: number;
+  complete?: boolean;
+  /** Fighters (towers) or worshippers (shrines) already inside. */
+  garrison?: Partial<Record<UnitKind, number>>;
+}
+
+/** Units standing somewhere at the start: guards, a stranded band, wanderers' champions. */
+export interface PlacedUnits {
+  tribe: Tribe;
+  kind: UnitKind;
+  x: number;
+  z: number;
+  count?: number;
+}
+
+/**
+ * v2 — the current document. Everything past `wildmen` is optional, so a
+ * plain editor planet is still just terrain + trees + stones + homes.
+ */
 export interface LevelData {
-  /** Format version — lets a future loader migrate old levels. */
+  /** Format version — old versions are migrated on read (migrateLevel). */
+  v: 2;
+  name: string;
+  author: string;
+  desc: string;
+  /** Base64 of deflated, delta-coded Int16 heights (see header). */
+  terrain: string;
+  /** Flat [x,z, x,z, ...] tile pairs. */
+  trees: number[];
+  monuments: MonumentDef[];
+  /** Home circle per tribe. A tribe in the rules without one settles somewhere sensible. */
+  homes: { player: Pt } & Partial<Record<TribeId, Pt>>;
+  wildmen: number[]; // flat [x,z] pairs
+  /** Suggested civ (cosmetic) per AI tribe; omitted = random. */
+  civs?: Partial<Record<TribeId, CivId>>;
+  /** The scenario: tribes, loadouts, objectives, briefing, scripted events. Omitted = skirmish. */
+  rules?: ScenarioRules;
+  buildings?: PlacedBuilding[];
+  units?: PlacedUnits[];
+}
+
+/** v1 — what the first release wrote (and what TG1. codes carry). */
+export interface LevelDataV1 {
   v: 1;
   name: string;
   author: string;
   desc: string;
-  /** Base64 of deflated Int16 heights (see header). */
   terrain: string;
-  /** Flat [x,z, x,z, ...] tile pairs. */
   trees: number[];
-  monuments: Array<{ x: number; z: number; spell: SpellId }>;
-  homes: { player: { x: number; z: number }; red: { x: number; z: number } };
-  wildmen: number[]; // flat [x,z] pairs
-  /** Suggested enemy civ (cosmetic); omit for random. */
+  monuments: Array<{ x: number; z: number; spell: SpellId; mode?: 'teach' | 'gift'; charges?: number; cooldown?: number }>;
+  homes: { player: Pt; red: Pt };
+  wildmen: number[];
   redCiv?: CivId;
 }
 
-const CODE_PREFIX = 'TG1.';
+export type AnyLevelData = LevelData | LevelDataV1;
+
+/**
+ * Shape check for a level's scenario rules (they arrive in pasted codes):
+ * throws a readable error instead of letting a hand-edited code crash the
+ * loader halfway through. Checks structure and ids, not balance.
+ */
+export function validateRules(rules: unknown): void {
+  const r = rules as ScenarioRules;
+  const fail = (why: string) => {
+    throw new Error(`Level rules are damaged: ${why}`);
+  };
+  if (!r || typeof r !== 'object') fail('not an object');
+  if (!Array.isArray(r.tribes) || r.tribes.length === 0) fail('no tribes');
+  if (!r.tribes.some((t) => t?.id === 'player')) fail('no player tribe');
+  for (const t of r.tribes) {
+    if (!TRIBE_IDS.includes(t?.id)) fail(`unknown tribe ${String(t?.id)}`);
+    for (const s of t.loadout?.spells ?? []) if (!SPELLS.some((d) => d.id === s)) fail(`unknown spell ${s}`);
+    for (const b of t.loadout?.buildings ?? []) if (!BUILDINGS[b]) fail(`unknown building ${b}`);
+    for (const b of t.loadout?.startBuildings ?? []) if (!BUILDINGS[b]) fail(`unknown building ${b}`);
+    for (const u of Object.keys(t.loadout?.startUnits ?? {})) if (!UNITS[u as UnitKind]) fail(`unknown unit ${u}`);
+    for (const k of [...Object.keys(t.loadout?.extraCharges ?? {}), ...Object.keys(t.loadout?.chargeCost ?? {}), ...Object.keys(t.loadout?.gifts ?? {})]) {
+      if (!SPELLS.some((d) => d.id === k)) fail(`unknown spell ${k}`);
+    }
+  }
+  if (!Array.isArray(r.objectives)) fail('no objectives');
+  if (!r.briefing || typeof r.briefing.title !== 'string' || !Array.isArray(r.briefing.tips)) fail('no briefing');
+  for (const e of r.events ?? []) {
+    if (!e?.when || !Array.isArray(e.actions)) fail('a scripted event has no trigger or actions');
+    for (const a of e.actions) {
+      if ('spell' in a && !SPELLS.some((d) => d.id === a.spell)) fail(`unknown spell ${a.spell}`);
+      if (a.type === 'spawn') for (const u of Object.keys(a.units ?? {})) if (!UNITS[u as UnitKind]) fail(`unknown unit ${u}`);
+    }
+  }
+}
+
+/** Bring any known version up to v2. v2 documents pass through untouched (their rules are shape-checked). */
+export function migrateLevel(level: AnyLevelData): LevelData {
+  if (level.v === 2) {
+    if (level.rules !== undefined) validateRules(level.rules);
+    for (const m of level.monuments ?? []) if (!SPELLS.some((d) => d.id === m.spell)) throw new Error(`Level has a stone of unknown spell ${m.spell}`);
+    return level;
+  }
+  if (level.v !== 1) throw new Error('Level is from an unknown version');
+  const out: LevelData = {
+    v: 2,
+    name: level.name,
+    author: level.author,
+    desc: level.desc,
+    terrain: level.terrain,
+    trees: level.trees,
+    monuments: level.monuments.map((m) => ({ ...m, mode: m.mode ?? 'teach' })),
+    homes: { player: { ...level.homes.player }, red: { ...level.homes.red } },
+    wildmen: level.wildmen,
+  };
+  if (level.redCiv) out.civs = { red: level.redCiv };
+  return out;
+}
+
+const CODE_PREFIX = 'TG2.';
+const LEGACY_PREFIXES = ['TG1.'];
 
 // ---------------------------------------------------------------------------
 // Terrain packing
@@ -92,14 +201,22 @@ export async function levelToCode(level: LevelData): Promise<string> {
   return CODE_PREFIX + bytesToBase64(deflated);
 }
 
-/** Throws on anything that isn't a valid code — callers show the error. */
+/** Throws on anything that isn't a valid code — callers show the error. TG1. codes are migrated. */
 export async function codeToLevel(code: string): Promise<LevelData> {
   const trimmed = code.trim();
-  if (!trimmed.startsWith(CODE_PREFIX)) throw new Error('Not a Tribal Gods level code (missing TG1. prefix)');
-  const inflated = await pump(base64ToBytes(trimmed.slice(CODE_PREFIX.length)), new DecompressionStream('deflate-raw'));
-  const level = JSON.parse(new TextDecoder().decode(inflated)) as LevelData;
-  if (level.v !== 1 || !level.terrain || !level.homes) throw new Error('Level code is damaged or from an unknown version');
-  return level;
+  const prefix = [CODE_PREFIX, ...LEGACY_PREFIXES].find((p) => trimmed.startsWith(p));
+  if (!prefix) throw new Error('Not a Tribal Gods level code (missing TG2. prefix)');
+  let level: AnyLevelData;
+  try {
+    const inflated = await pump(base64ToBytes(trimmed.slice(prefix.length)), new DecompressionStream('deflate-raw'));
+    level = JSON.parse(new TextDecoder().decode(inflated)) as AnyLevelData;
+  } catch {
+    throw new Error('Level code is damaged');
+  }
+  if ((level.v !== 1 && level.v !== 2) || !level.terrain || !level.homes?.player) {
+    throw new Error('Level code is damaged or from an unknown version');
+  }
+  return migrateLevel(level);
 }
 
 // ---------------------------------------------------------------------------

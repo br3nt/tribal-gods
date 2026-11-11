@@ -78,6 +78,12 @@ function evaluate(world: World, o: Objective, mem: ObjectiveMemory, dt: number):
       mem.hold = mine && !contested ? mem.hold + dt : 0;
       return { done: mem.hold >= o.seconds, progress: Math.min(1, mem.hold / o.seconds) };
     }
+    case 'chargeSpell': {
+      const want = o.charges ?? 1;
+      const s = world.spellState(ME, o.spell);
+      if (!s.known) return { done: false, progress: 0 };
+      return { done: s.charges >= want, progress: Math.min(1, (s.charges + s.progress) / want) };
+    }
   }
 }
 
@@ -91,6 +97,10 @@ function failReason(world: World, f: FailCondition): string | null {
       return world.elapsed >= f.seconds ? 'Time ran out.' : null;
     case 'buildingLost':
       return world.lostBuildingKinds(ME).has(f.kind) ? `Your ${BUILDINGS[f.kind].name} was lost.` : null;
+    case 'monumentTaken': {
+      const m = world.monuments[f.index];
+      return m?.firstClaimer && m.firstClaimer !== ME ? 'A rival reached the stone first.' : null;
+    }
   }
 }
 
