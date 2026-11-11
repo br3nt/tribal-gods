@@ -75,6 +75,8 @@ export class TreeRenderer {
   private meshes: THREE.InstancedMesh[] = [];
   private stumps: THREE.InstancedMesh;
   private states: TreeState[] = [];
+  /** world.treesVersion the states were last indexed against. */
+  private treesVersion = -1;
   private covers: Cover[] = [];
   private readonly fx: ModelFx;
   private readonly fireAnchors = new Map<number, THREE.Object3D>();
@@ -137,6 +139,7 @@ export class TreeRenderer {
   /** Build visuals for the current world's tree list. Call after every world reset. */
   rebuild(world: World): void {
     this.states = world.trees.map((t, i) => this.stateFor(world, t.x, t.z, t.alive, i));
+    this.treesVersion = world.treesVersion;
     this.scatterCover(world);
   }
 
@@ -176,7 +179,14 @@ export class TreeRenderer {
     const now = performance.now();
     const dt = Math.min(0.1, (now - this.last) / 1000);
     this.last = now;
-    if (this.states.length !== world.trees.length) {
+    if (this.states.length > world.trees.length || (world.treesVersion !== this.treesVersion && this.states.length === world.trees.length)) {
+      // Trees were REMOVED (the editor's eraser): per-tree state is indexed by
+      // position in world.trees, so every later tree shifted down one. Re-index
+      // from scratch (state is a pure function of the tree's position) so no
+      // tree changes species or size.
+      this.states = world.trees.map((t, i) => this.stateFor(world, t.x, t.z, t.alive, i));
+      this.nearKey = '';
+    } else if (this.states.length !== world.trees.length) {
       // Bloom sprouts new trees: keep existing states, add the newcomers.
       for (let i = this.states.length; i < world.trees.length; i++) {
         const t = world.trees[i];
@@ -187,6 +197,7 @@ export class TreeRenderer {
       this.states.length = world.trees.length;
       this.nearKey = '';
     }
+    this.treesVersion = world.treesVersion;
     this.updateClearings(world);
     const counts = this.counts;
     counts.length = this.meshes.length;

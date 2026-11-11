@@ -25,7 +25,8 @@
  */
 
 import * as THREE from 'three';
-import { CivId, CIVS } from '../config';
+import { CivId, CIVS, WORLD_SIZE } from '../config';
+import { wrapDelta } from '../core/util';
 import { LevelData, levelToCode } from '../level/level-format';
 import { saveLevel } from '../level/store';
 import { pickGroundTile } from '../render/ground-picker';
@@ -180,7 +181,8 @@ export class Editor {
       case 'tree':
         if (walkable(w.map, x, z)) {
           w.trees.push({ x: w.map.wrap(x), z: w.map.wrap(z), alive: true, regrow: 0, burning: 0 });
-          this.say('tree planted (rebuilds on save/test)');
+          w.treesVersion++;
+          this.say('tree planted');
         }
         return;
       case 'wildman':
@@ -206,10 +208,12 @@ export class Editor {
       }
       case 'erase': {
         // Nearest placeable within 2 tiles dies: trees, wildmen, monuments, then a rival's home.
-        const near = (ax: number, az: number) => Math.hypot(ax - x, az - z) < 2;
+        // Wrapped distance: the pick and the things on the planet may sit either side of the seam.
+        const near = (ax: number, az: number) => Math.hypot(wrapDelta(ax - x, WORLD_SIZE), wrapDelta(az - z, WORLD_SIZE)) < 2;
         const ti = this.world.trees.findIndex((t) => t.alive && near(t.x, t.z));
         if (ti >= 0) {
           this.world.trees.splice(ti, 1);
+          this.world.treesVersion++; // the tree renderer re-indexes its per-tree state
           return;
         }
         const mi = this.world.monuments.findIndex((m) => near(m.x, m.z));
