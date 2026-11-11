@@ -144,28 +144,25 @@ function think(world: World, id: TribeId, tribe: TribeState): void {
 
   const free = (u: Unit) => (u.task === 'none' || u.state === 'idle') && !u.castSpell;
   const jitter = (r: number) => world.random() * 2 * r - r;
+  // Armies move as groups (world.groupMove): one shared path search per
+  // order, not one per soldier — a woken AI sending eighty fighters used
+  // to stall the frame with eighty A* searches.
   switch (ai.state) {
     case 'defend': {
       garrisonTowers(world, id, tribe);
-      for (const s of army) {
-        if (free(s)) world.sendTo(s, tribe.home.x + jitter(4), tribe.home.z + jitter(4));
-      }
+      world.groupMove(army.filter(free), tribe.home.x + jitter(2), tribe.home.z + jitter(2));
       break;
     }
     case 'harass': {
       garrisonTowers(world, id, tribe);
       if (goal) {
         const squad = army.filter((s) => s.task === 'none' && s.state === 'idle').slice(0, SQUAD_SIZE);
-        for (const s of squad) world.sendTo(s, goal.x + jitter(5), goal.z + jitter(5));
+        world.groupMove(squad, goal.x + jitter(4), goal.z + jitter(4));
       }
       break;
     }
     case 'assault': {
-      if (goal) {
-        for (const s of army) {
-          if (free(s)) world.sendTo(s, goal.x + jitter(4), goal.z + jitter(4));
-        }
-      }
+      if (goal) world.groupMove(army.filter(free), goal.x + jitter(3), goal.z + jitter(3));
       // The leader walks behind the army, not in front of it.
       const leader = world.leaderOf(id);
       if (!bridging && !retreating && leader && leader.task === 'none' && !leader.castSpell && leader.state === 'idle' && army.length) {

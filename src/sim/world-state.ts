@@ -70,7 +70,7 @@ import {
 } from './catalog';
 import { breakChant, tickChant } from './chant';
 import { initObjectives, ObjectiveMemory, tickObjectives } from './objectives';
-import { findNearestWalkable, findPath, flowField, obstaclesOf, tileIndex, walkable } from './pathfinding';
+import { findNearestWalkable, findPath, flowField, obstaclesOf, pathStats, tileIndex, walkable } from './pathfinding';
 import { isMajor, regionAt } from './regions';
 import { Rng } from './rng';
 import { ALL_BUILDINGS, skirmishRules, STARTER_SPELLS } from './rules';
@@ -322,6 +322,25 @@ export class World implements SimQueries {
   unreachable = new Map<string, number>();
   /** A* budget for jobs a unit picks for itself (orders get the full budget). */
   private static readonly AUTO_EXPANSIONS = 1500;
+  /**
+   * PER-TICK SEARCH BUDGET for self-chosen jobs. Path searches are the
+   * sim's one expensive operation, and they come in bursts: a battle ends
+   * and forty soldiers look for a new target in the same tick; a game
+   * loads and every villager looks for work at once. Once this many A*
+   * expansions have been spent in a tick, idle units stop LOOKING for
+   * work until the next tick — they simply stay idle one more tick and
+   * ask again. The idle crowd is the queue; the burst is spread over a
+   * few ticks instead of stalling one frame. Orders (yours, the AI's
+   * group moves) and flight from danger are never deferred.
+   */
+  private static readonly IDLE_SEARCH_BUDGET = 5000;
+  /** pathStats.expansions at the start of this tick. */
+  private tickExpansionsStart = 0;
+
+  /** Is there search budget left this tick for a unit choosing its own job? */
+  private canSearchIdle(): boolean {
+    return pathStats.expansions - this.tickExpansionsStart < World.IDLE_SEARCH_BUDGET;
+  }
 
   /** Tiles occupied by building footprints (pathfinding reads the same set). */
   get obstacles(): Set<number> {
@@ -798,6 +817,7 @@ export class World implements SimQueries {
   /** Advance the whole simulation by one fixed tick. */
   tick(dt: number): void {
     this.elapsed += dt;
+    this.tickExpansionsStart = pathStats.expansions;
     tickChant(this, dt);
 
     for (const u of this.units) {
@@ -919,9 +939,11 @@ export class World implements SimQueries {
       return;
     }
 
+    // Out of search budget this tick: stay idle, ask again next tick (see IDLE_SEARCH_BUDGET).
+    const canSearch = this.canSearchIdle();
     if (u.kind === 'chanter' && u.tribe !== 'wild') {
-      if (u.task === 'none' && this.tryChant(u)) return;
-    } else if (isFighterKind(u.kind) && u.task === 'none') {
+      if (canSearch && u.task === 'none' && this.tryChant(u)) return;
+    } else if (isFighterKind(u.kind) && u.task === 'none' && canSearch) {
       // Soldiers on standby scan for trouble...
       if (this.acquireTarget(u)) return;
       // ...and if the tribe has no villagers left, billet in a dwelling
@@ -936,6 +958,7 @@ export class World implements SimQueries {
       this.sendTo(u, home.x, home.z, 1200);
       return;
     }
+    if (!canSearch) return;
 
     if (u.kind === 'brave' && u.tribe !== 'wild' && u.task === 'none' && u.idleTime > 1.2) {
       if (this.assignWork(u)) return;
