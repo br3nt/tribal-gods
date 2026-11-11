@@ -21,13 +21,16 @@
  */
 
 import * as THREE from 'three';
-import { COLOR_SKY } from './config';
 import { startLoop } from './core/loop';
 import { unlockAudio } from './core/audio';
 import { LevelData } from './level/level-format';
 import { BuildingRenderer } from './render/building-renderer';
 import { CameraRig } from './render/camera-rig';
 import { EffectsRenderer } from './render/effects';
+import { Lighting } from './render/lighting';
+import { initialQuality, sunPreset } from './render/look';
+import { PostChain } from './render/post';
+import { Atmosphere, Sky } from './render/sky';
 import { TreeRenderer } from './render/tree-renderer';
 import { UnitRenderer } from './render/unit-renderer';
 import { World } from './sim/world-state';
@@ -42,8 +45,9 @@ import { Menu } from './ui/menu';
 import { Minimap } from './ui/minimap';
 import { SpellCaster } from './ui/spell-caster';
 import { SpellPanel } from './ui/spell-panel';
-import { curvatureUniforms } from './world/curvature';
+import { applyLimbToCpuCurved, curvatureUniforms } from './world/curvature';
 import { TerrainMesh } from './world/terrain-mesh';
+import { GroundCover } from './world/ground-cover';
 import { Water } from './world/water';
 
 // --- The world (simulation state) ---
@@ -53,28 +57,39 @@ const world = new World();
 const query = new URLSearchParams(location.search);
 world.reset(query.has('seed') ? Number(query.get('seed')) : Math.floor(Math.random() * 1e9));
 
-// --- Renderer & scene ---
-const renderer = new THREE.WebGLRenderer({ antialias: true });
+// --- Renderer & scene (the look: render/look.ts, sky.ts, lighting.ts, post.ts) ---
+let quality = initialQuality();
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
 renderer.setSize(innerWidth, innerHeight);
-// Cap at 2: retina sharpness without quadrupling fragment work on 3x displays.
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setPixelRatio(Math.min(devicePixelRatio, quality.pixelRatio));
+renderer.shadowMap.enabled = quality.shadowMapSize > 0;
+renderer.shadowMap.type = THREE.PCFShadowMap; // soft via shadow.radius (r182 PCF = Vogel-disk filtered)
 document.body.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(COLOR_SKY);
+const sunLook = sunPreset();
+const sky = new Sky(sunLook);
+scene.add(sky.mesh);
+sky.mesh.userData.gpuCurved = true;
+const atmosphere = new Atmosphere(sky.hazeColor, sky.sunDir);
+scene.add(atmosphere.mesh);
+atmosphere.mesh.userData.gpuCurved = true;
+scene.environment = sky.buildEnvironment(renderer);
+scene.environmentIntensity = sunLook.envIntensity;
+scene.fog = new THREE.Fog(sky.hazeColor, 100, 500);
+const lighting = new Lighting(scene, sky.sunDir, sunLook, quality);
 
-// Lights for the FIGURES (Lambert materials). The terrain ignores these —
-// it has its own sun baked into its shader — so these are tuned to match
-// it: same warm key direction, cool ambient fill.
-const sun = new THREE.DirectionalLight(0xfff4e0, 2.2);
-sun.position.set(0.55, 0.75, 0.35);
-scene.add(sun, new THREE.AmbientLight(0x9aa4b8, 1.4));
-
-const terrain = new TerrainMesh(world.map);
+const terrain = new TerrainMesh(world.map, quality);
+terrain.setHaze(sky.hazeColor);
 scene.add(terrain.mesh);
+terrain.mesh.userData.gpuCurved = true;
 
-const water = new Water();
+const groundCover = quality.name === 'low' ? null : new GroundCover(terrain, quality);
+if (groundCover) scene.add(groundCover.mesh);
+
+const water = new Water(terrain);
 scene.add(water.mesh);
+water.mesh.userData.gpuCurved = true;
 
 const unitRenderer = new UnitRenderer(scene);
 const treeRenderer = new TreeRenderer(scene);
@@ -87,7 +102,12 @@ const brush = new SculptBrush(rig.camera, rig.target, world.map, renderer.domEle
 const orders = new OrderControl(rig.camera, rig.target, world, unitRenderer, renderer.domElement);
 const placer = new BuildPlacer(rig.camera, rig.target, world, renderer.domElement, scene);
 const caster = new SpellCaster(rig.camera, rig.target, world, renderer.domElement, scene);
-const effects = new EffectsRenderer(scene, rig);
+const effects = new EffectsRenderer(scene, rig, terrain, lighting, quality);
+const post = new PostChain(renderer, scene, rig.camera, quality);
+post.onQualityChange = (q) => {
+  quality = q;
+  lighting.applyQuality(q);
+};
 new SpellPanel(world);
 const minimap = new Minimap(rig.target);
 
@@ -212,7 +232,7 @@ addEventListener('keydown', (e) => {
   }
 });
 
-addEventListener('resize', () => renderer.setSize(innerWidth, innerHeight));
+addEventListener('resize', () => post.setSize(innerWidth, innerHeight));
 
 // --- The loop ---
 let hud: Hud; // created right after the loop starts (it needs the stats object)
@@ -235,23 +255,28 @@ const stats = startLoop({
     // the camera looks (they share these uniform objects — see curvature.ts).
     curvatureUniforms.uCamTarget.value.copy(rig.target);
 
-    terrain.sync(rig.target); // re-window / re-upload only if something changed
+    terrain.sync(rig.target, world, dt); // slide the grid; re-upload only what changed
     water.update(rig.target, dt);
+    groundCover?.update(rig.target, dt, rig.distance);
+    sky.update(rig.camera, dt, scene.fog as THREE.Fog, rig.distance);
+    atmosphere.update(rig.target, rig.distance);
+    lighting.update(rig.target, rig.distance, dt);
     unitRenderer.sync(world, rig.target, alpha, dt, orders.selected);
     treeRenderer.sync(world, rig.target);
     buildingRenderer.sync(world, rig.target);
+    applyLimbToCpuCurved(scene, rig.target); // until the CPU-curved renderers use curvatureDrop()
     effects.sync(world, rig.target, dt);
     minimap.update(world, rig.target);
     hud.update(world);
 
-    renderer.render(scene, rig.camera);
+    post.render(dt);
   },
 });
 
 hud = new Hud(stats, brush, world, orders);
 
 // Automation handle (tools/shot.mjs, tests, the console). Not a game API.
-(window as unknown as { __tg: unknown }).__tg = { world, rig, appState, menu, startLevel };
+(window as unknown as { __tg: unknown }).__tg = { world, rig, appState, menu, startLevel, terrain, effects, post, scene, lighting };
 if (query.get('play') === '1') {
   menu.hide();
   appState.mode = 'game';
