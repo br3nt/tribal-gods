@@ -14,13 +14,13 @@ how real-time 3D games work.
 ## 1. Vision & pillars
 
 1. **The world is the toy.** Terrain is a living thing you reshape with god
-   powers. Raising a landbridge or detonating a volcano must feel chunky,
+   powers. Raising a causeway or detonating a volcano must feel chunky,
    physical, and a little gleeful.
 2. **A planet, not a map.** The world wraps in every direction and the horizon
    visibly curves away. There is no edge.
-3. **One charismatic hero.** Your tribe's leader (the Shaman in the forest
-   tribe; each tribe has its own title) is a unit you steer directly — small,
-   sassy, and the conduit for every spell.
+3. **One leader who matters.** Your tribe's leader (the Grove-Speaker,
+   God-King or Far-Seer, by civilisation) is a unit you steer directly — the
+   most important figure on screen, and the conduit for every spell.
 4. **Readable code over clever code.** Anyone should be able to open any file
    and follow it. Comments explain *why* and *how the technique works*, not
    just what the line does.
@@ -88,10 +88,10 @@ Every god power is an edit to the heights array over time:
 |------------|----------------|
 | Raise/Lower | Add a smooth radial falloff (cosine kernel) to heights in a radius |
 | Flatten    | Lerp heights in radius toward their average over ~0.5s |
-| Landbridge | Raise heights above sea level along a line between two points |
+| Causeway   | Raise heights above sea level along a line between two points |
 | Volcano    | Animate a cone bulging up over ~4s, crater at the top, ejecta |
 | Earthquake | Apply ridged noise along a random fault line through target |
-| Swamp      | Mark tiles as swamp (terrain *type* edit, not height) |
+| Mire       | Mark tiles as swamp (terrain *type* edit, not height) |
 | Erosion (passive) | Optional: steep land near water slowly slumps |
 
 Deformations run as **timed jobs** in the sim (so a volcano *grows*), and any
@@ -148,7 +148,7 @@ and animation LOD (far-away units animate at lower rate). Start simple
   (planet view), pitch tied to zoom. Edge-of-screen + WASD panning. The target
   point is what the curvature shader bends the world around.
 - **Mouse**: left-click select / cast at cursor; drag = band select; right-click
-  = move/attack command. Hotkeys 1–8 for spells, space to center on Shaman.
+  = move/attack command. Hotkeys 1–8 for spells, space to center on the leader.
 - A **minimap** (top-down render of the wrapped heightmap + unit dots) that
   understands wrapping — clicking it jumps the camera.
 
@@ -161,80 +161,82 @@ is non-negotiable — it's what makes the logic testable and the code legible.
 
 ### 6.1 Followers
 
+The shipped roster, names and numbers live in `src/sim/catalog.ts` (§11).
+
 | Type        | Role |
 |-------------|------|
-| Brave       | Default. Builds, chops wood, populates huts, weak in a fight |
-| Warrior     | Melee bruiser. Trained at Warrior Hut (costs a brave + wood) |
-| Firewarrior | Ranged fireball attacker. Trained at Firewarrior Hut |
-| Preacher    | Converts enemy followers who hear the sermon (post-v1) |
-| Spy         | Disguise + sabotage (post-v1) |
-| **Shaman**  | Player-steered hero; casts all spells; respawns at her circle of stones after a delay if killed |
+| Villager    | Default. Builds, chops wood, populates dwellings, weak in a fight |
+| Warrior     | Melee bruiser. Trained at the War Lodge (costs a villager + wood) |
+| Emberthrower | Ranged attacker that hurls burning pitch. Trained at the Ember Lodge |
+| Chanter     | Unarmed; enemies who hear the chant stop fighting and in time change sides |
+| Warden      | Slow, heavily shielded building-wrecker |
+| **Leader**  | Player-steered hero; casts all spells; returns to the home circle after a delay if killed |
 
 Behavior = small state machines (idle → tasked → moving → working/fighting).
-Idle braves auto-assign: build sites first, then hut occupancy, then wander.
+Idle villagers auto-assign: build sites first, then dwelling occupancy, then wander.
 
 ### 6.2 Pathfinding
 
 A* over the wrapped tile grid. Water and too-steep slopes are impassable;
 mild slope adds cost. Paths smooth with string-pulling. **Terrain edits dirty
-cached paths** — a landbridge instantly opens routes; a blast can strand units.
+cached paths** — a causeway instantly opens routes; a blast can strand units.
 This terrain↔pathfinding coupling is the heart of the game and gets its own
 well-commented module.
 
 ### 6.3 Settlement & economy
 
-- **Wood**: braves chop trees (trees regrow slowly), carried to build sites.
+- **Wood**: villagers chop trees (trees regrow slowly), carried to build sites.
 - **Huts**: built on flat land (auto-flatten by builders within tolerance);
-  house followers; housed population slowly **breeds new braves** (capped) and
+  house followers; housed population slowly **breeds new villagers** (capped) and
   is the **mana engine**.
 - **Mana**: regenerates at a rate driven by housed + total population. One
   shared pool; each spell has a cost and an independent **charge count**
   (spells store limited charges, recharging from mana over time) — gives
   the game its rhythm of "save up the big one".
-- **Guard towers**: garrison one firewarrior/warrior, extend sight, shoot.
+- **Guard towers**: garrison fighters (up to two), extend sight, shoot.
 
 ### 6.4 Spells (v1 set)
 
 | Spell      | Cost | Effect |
 |------------|------|--------|
 | Blast      | low  | Knockback + damage + small crater at point |
-| Convert    | low  | Convert nearby wildmen (neutral wanderers) into braves |
+| Kindle     | low  | Wanderers (unaligned) in the circle join the tribe |
 | Lightning  | med  | Bolt strikes target; chains briefly; sets fires |
-| Swamp      | med  | Patch of tiles becomes swamp; units that enter sink & die; expires |
-| Landbridge | med  | Raise a land strip between cast point and direction |
+| Mire       | med  | Patch of tiles becomes swamp; units that enter sink & die; expires |
+| Causeway   | med  | Raise a land strip between cast point and direction |
 | Flatten    | med  | Level terrain in radius (also the building enabler) |
 | Earthquake | high | Fault line rips through area; cracks, collapses buildings |
 | Volcano    | high | The showstopper. Cone erupts over seconds, lava damage, permanent terrain |
 
-Post-v1 backlog: Tornado, Firestorm, Erode, Hypnotise, Shield, Bloodlust,
-Teleport, Angel of Death, Armageddon. Spell unlocks via **totem worship**
-(stone heads the Shaman prays at) ships with the campaign phase.
+The shipped spell book (v2: Stone Ward, Warsong, Cyclone, Emberfall,
+Undertow, Bloom and the rest) is in `src/sim/catalog.ts`. Spells are
+learned or lent at **standing stones** the leader communes with.
 
 ### 6.5 Combat
 
 Simple and readable: HP, attack damage/range/cooldown, type counters (warriors
-beat braves, firewarriors kite melee, towers beat unsupported attacks). Deaths
+beat villagers, Emberthrowers kite melee, towers beat unsupported attacks). Deaths
 spawn a tiny ghost/ascending-soul effect. No friendly fire from units; spells
 hurt everyone (lava doesn't care whose tribe you are — important for comedy).
 
 ### 6.6 Enemy tribe AI (skirmish)
 
 A utility-scored state machine, not a black box: **Grow** (build huts/army) →
-**Harass** (raid with small squads) → **Assault** (army + Shaman pushes) →
-**Defend** (regroup when hurt). Enemy Shaman casts from the same spell system
+**Harass** (raid with small squads) → **Assault** (army + leader pushes) →
+**Defend** (regroup when hurt). The enemy leader casts from the same spell system
 under per-difficulty cooldown multipliers. AI state is shown in a debug
 overlay so you can watch it think.
 
 ### 6.7 Win/lose
 
-Win: every enemy follower and their Shaman are dead (respawn stones destroyed).
+Win: every enemy follower and their leader are dead (respawn stones destroyed).
 Lose: mirror condition. Game-over fly-around of the planet either way.
 
 ## 7. UI
 
 - **HUD**: mana bar, population count, wood, selected-unit panel.
 - **Spell panel**: ring/row of icons with charge pips + recharge sweep.
-- **Build panel**: hut, guard tower, warrior hut, firewarrior hut + footprint
+- **Build panel**: hut, guard tower, War Lodge, Ember Lodge + footprint
   ghost (green = flat enough, red = no).
 - **Minimap** with wrap-aware scrolling.
 - Diegetic feedback first: sounds, animation, terrain motion over text popups.
@@ -285,24 +287,24 @@ terrain window. Debug brush: raise/lower/flatten with the mouse.
 *✓ You can sculpt a little world, spin around it, and the horizon curves away.
 This is the "it feels like a planet" gate — we don't pass it until it does.*
 
-**Phase 2 — Life.** Procedural brave + Shaman models, procedural walk/idle
-clips, A* pathfinding, selection + move orders, wildmen wandering, trees.
-*✓ March a crowd across a landbridge you just raised.*
+**Phase 2 — Life.** Procedural villager + leader models, procedural walk/idle
+clips, A* pathfinding, selection + move orders, wanderers roaming, trees.
+*✓ March a crowd across a causeway you just raised.*
 
-**Phase 3 — Settlement.** Wood, build orders, construction stages, huts breeding
-braves, mana from population, HUD. *✓ A village that grows on its own.*
+**Phase 3 — Settlement.** Wood, build orders, construction stages, dwellings breeding
+villagers, mana from population, HUD. *✓ A village that grows on its own.*
 
 **Phase 4 — God powers.** The v1 spell set with charges/recharge, terrain
 deformation jobs, units & buildings reacting (drowning, collapse), spell
 panel, sounds. *✓ Volcano under your own village = horrified delight.*
 
-**Phase 5 — War.** Warriors, firewarriors, towers, combat, training buildings,
-enemy tribe with AI Shaman, minimap, win/lose, one tuned skirmish map.
+**Phase 5 — War.** Warriors, Emberthrowers, towers, combat, training buildings,
+enemy tribe with AI leader, minimap, win/lose, one tuned skirmish map.
 *✓ A full skirmish is winnable and losable in 20–40 minutes.*
 
-**Phase 6+ (backlog).** Worship totems + spell unlocks, mini campaign with
-briefings, preachers/spies, boats & balloons, fog of war, Armageddon,
-save/load, performance pass (instancing), juice pass (screenshake, particles).
+**Phase 6+ (backlog).** Standing stones + spell unlocks, a campaign with
+briefings, more unit kinds, ways across water, fog of war, save/load,
+performance pass (instancing), juice pass (screenshake, particles).
 
 ## 10. Definition of "feels like Tribal Gods"
 
