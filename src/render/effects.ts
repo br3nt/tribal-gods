@@ -591,7 +591,7 @@ export class EffectsRenderer {
   }
 
   /** Solid bits thrown out with gravity. */
-  debris(tx: number, tz: number, n: number, speed: number, color = 0x5a4a3a, size = 0.4): void {
+  debris(tx: number, tz: number, n: number, speed: number, color = 0x4a3c30, size = 0.28): void {
     const p = this.at(tx, tz, 0.6);
     const c = lin(color);
     for (let i = 0; i < n; i++) {
@@ -666,14 +666,25 @@ export class EffectsRenderer {
     for (let i = 0; i < n; i++) {
       const a = Math.random() * Math.PI * 2;
       const r = radius * Math.sqrt(Math.random());
-      const p = this.at(tx + (Math.cos(a) * r) / TILE, tz + (Math.sin(a) * r) / TILE, 0.2 + Math.random() * 0.8);
+      const p = this.at(tx + (Math.cos(a) * r) / TILE, tz + (Math.sin(a) * r) / TILE, 0.2 + Math.random() * 0.6);
+      // Tongue: a small hot glow that rises and shrinks...
       this.glow.emit({
         x: p.x, y: p.y, z: p.z,
-        vx: (Math.random() - 0.5) * 0.6, vy: 2.5 + Math.random() * 2, vz: (Math.random() - 0.5) * 0.6,
-        life: 0.5 + Math.random() * 0.5, size: 1.3, sizeEnd: 0.3,
-        r: 8, g: 3.6, b: 0.8, r2: 3, g2: 0.5, b2: 0.05,
-        drag: 0.5, shape: GLOW, fadeIn: 0.1,
+        vx: (Math.random() - 0.5) * 0.5, vy: 2.5 + Math.random() * 2, vz: (Math.random() - 0.5) * 0.5,
+        life: 0.4 + Math.random() * 0.4, size: 0.9, sizeEnd: 0.2,
+        r: 3.6, g: 1.6, b: 0.35, r2: 1.6, g2: 0.25, b2: 0.03,
+        drag: 0.5, shape: GLOW, fadeIn: 0.15,
       });
+      // ...wrapped in an opaque-ish flame body that darkens into smoke.
+      if (i % 2 === 0) {
+        this.matter.emit({
+          x: p.x, y: p.y + 0.3, z: p.z,
+          vx: (Math.random() - 0.5) * 0.4, vy: 2 + Math.random() * 1.5, vz: (Math.random() - 0.5) * 0.4,
+          life: 0.7 + Math.random() * 0.4, size: 0.9, sizeEnd: 1.8,
+          r: 2.6, g: 1.0, b: 0.2, r2: 0.12, g2: 0.1, b2: 0.09,
+          alpha: 0.85, drag: 0.6, shape: SMOKE, fadeIn: 0.05,
+        });
+      }
     }
   }
 
@@ -790,13 +801,13 @@ export class EffectsRenderer {
         vec2 a = mod(p, r) - h;
         vec2 b = mod(p - h, r) - h;
         vec2 g = dot(a, a) < dot(b, b) ? a : b;
-        float hexd = max(abs(g.x) * 0.866 + abs(g.y) * 0.5, abs(g.y));
-        float line = smoothstep(0.40, 0.48, hexd);
+        float hexd = max(abs(g.x), dot(abs(g), vec2(0.5, 0.866)));
+        float line = smoothstep(0.43, 0.5, hexd);
         float fres = pow(max(1.0 - abs(dot(normalize(vN), vView)), 0.0), 2.2);
         float sweep = smoothstep(0.92, 1.0, sin(vLocal.y * 6.0 - uTime * 2.2) * 0.5 + 0.5);
         float base = 1.0 - smoothstep(0.0, 0.08, vLocal.y);
-        float a2 = fres * 0.9 + line * (0.18 + 0.5 * sweep) + base * 0.8 + 0.04;
-        gl_FragColor = vec4(uColor * a2 * 1.8 * uAlpha, 1.0);
+        float a2 = fres * 0.7 + line * (0.12 + 0.6 * sweep) + base * 0.6 + 0.03;
+        gl_FragColor = vec4(uColor * a2 * uAlpha, 1.0);
       `,
       { uColor: { value: c } },
       { side: THREE.DoubleSide },
@@ -844,7 +855,7 @@ export class EffectsRenderer {
   bolt(tx: number, tz: number, color = 0xcfe6ff, ttl = 0.4): void {
     const top = 46;
     // Local space: the mesh sits on the ground at the strike point.
-    const pts = jagged(new THREE.Vector3(0, top, 0), new THREE.Vector3(0, 0, 0), 6, 4.5);
+    const pts = jagged(new THREE.Vector3(0, top, 0), new THREE.Vector3(0, 0, 0), 6, 9);
     const geo = new THREE.BufferGeometry();
     const verts: number[] = [];
     const uvs: number[] = [];
@@ -862,13 +873,13 @@ export class EffectsRenderer {
         }
       }
     };
-    addStrip(pts, 0.55);
+    addStrip(pts, 0.32);
     // Branches fork off the upper two thirds.
     for (let b = 0; b < 3; b++) {
       const i = 2 + Math.floor(Math.random() * (pts.length * 0.6));
       const from = pts[i];
       const dir = new THREE.Vector3((Math.random() - 0.5) * 14, -6 - Math.random() * 8, (Math.random() - 0.5) * 14);
-      addStrip(jagged(from, from.clone().add(dir), 4, 2), 0.25);
+      addStrip(jagged(from, from.clone().add(dir), 4, 4), 0.16);
     }
     geo.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
     geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
@@ -1175,7 +1186,7 @@ const HANDLERS: Record<string, Handler> = {
     chime();
     fx.ring(x, z, 0xffd75e, 9, 1.1, 4);
     fx.ring(x, z, 0xffe9a8, 5, 0.8, 3);
-    fx.column(x, z, 0xffd36a, 1.6, 30, 2.2, 3);
+    fx.column(x, z, 0xffd36a, 1.6, 30, 2.2, 2);
     fx.motes(x, z, 40, C.gold, { radius: 2.5, rise: 5, swirl: 2, life: 2.2 });
   },
   castFlash(fx, x, z) {
@@ -1298,7 +1309,7 @@ const HANDLERS: Record<string, Handler> = {
     boom(0.6);
     fx.shake(0.5);
     fx.dust(x, z, 40, 6, 0x8f7c62, 4);
-    fx.debris(x, z, 30, 9, 0x6b5238, 0.5);
+    fx.debris(x, z, 16, 9, 0x4a3a28, 0.3);
     fx.smoke(x, z, 10, { spread: 3, size: 3, dark: 0.3, rise: 1.5, life: 3.5 });
   },
   fireStart(fx, x, z) {
@@ -1310,23 +1321,23 @@ const HANDLERS: Record<string, Handler> = {
   giftClaimed(fx, x, z) {
     chime();
     fx.ring(x, z, 0xffd36a, 6, 0.9, 4);
-    fx.column(x, z, 0xffd36a, 1.2, 18, 1.4, 3);
+    fx.column(x, z, 0xffd36a, 1.2, 18, 1.4, 2);
     fx.motes(x, z, 40, C.gold, { radius: 1.2, rise: 7, swirl: 3, life: 1.6 });
   },
   objectiveDone(fx, x, z) {
     chime();
-    fx.column(x, z, 0xffe9a8, 2, 40, 2.5, 3);
+    fx.column(x, z, 0xffe9a8, 2, 40, 2.5, 2);
     fx.ring(x, z, 0xffe9a8, 10, 1.2, 3);
     fx.motes(x, z, 50, C.gold, { radius: 3, rise: 6, swirl: 2, life: 2.2 });
   },
   leaderDown(fx, x, z) {
-    fx.column(x, z, 0xeaf2ff, 1.4, 50, 3, 3.5);
+    fx.column(x, z, 0xeaf2ff, 1.4, 50, 3, 1.8);
     fx.motes(x, z, 40, lin(0xeaf2ff), { radius: 1, rise: 9, life: 2.5, size: 0.4 });
     fx.dust(x, z, 10, 1.5, 0xb0a890, 2);
   },
   leaderReturn(fx, x, z) {
     chime();
-    fx.column(x, z, 0xfff0c0, 1.8, 50, 2.2, 4);
+    fx.column(x, z, 0xfff0c0, 1.8, 50, 2.2, 2.2);
     fx.ring(x, z, 0xfff0c0, 6, 0.9, 4);
     fx.motes(x, z, 30, C.gold, { radius: 1.5, rise: 3, swirl: 3, life: 1.6 });
     fx.flash(x, z, 0xfff0c0, 400, 0.8, 3, 30);

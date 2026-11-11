@@ -28,7 +28,7 @@ import { BuildingRenderer } from './render/building-renderer';
 import { CameraRig } from './render/camera-rig';
 import { EffectsRenderer } from './render/effects';
 import { Lighting } from './render/lighting';
-import { FOG_FAR_K, FOG_NEAR_K, initialQuality, sunPreset } from './render/look';
+import { initialQuality, sunPreset } from './render/look';
 import { PostChain } from './render/post';
 import { Atmosphere, Sky } from './render/sky';
 import { TreeRenderer } from './render/tree-renderer';
@@ -258,12 +258,9 @@ const stats = startLoop({
     terrain.sync(rig.target, world, dt); // slide the grid; re-upload only what changed
     water.update(rig.target, dt);
     groundCover?.update(rig.target, dt);
-    sky.update(rig.camera, dt);
+    sky.update(rig.camera, dt, scene.fog as THREE.Fog, rig.distance);
     atmosphere.update(rig.target, rig.distance);
     lighting.update(rig.target, rig.distance, dt);
-    const fog = scene.fog as THREE.Fog;
-    fog.near = rig.distance * FOG_NEAR_K;
-    fog.far = rig.distance * FOG_FAR_K + 120;
     unitRenderer.sync(world, rig.target, alpha, dt, orders.selected);
     treeRenderer.sync(world, rig.target);
     buildingRenderer.sync(world, rig.target);

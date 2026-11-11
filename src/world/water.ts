@@ -126,7 +126,7 @@ export class Water {
 
           // Foam: a soft band at the waterline, plus lines washing in.
           float edge = 1.0 - smoothstep(0.0, 0.22 + 0.18 * n1, depth);
-          float band = 1.0 - smoothstep(0.1, 1.1, depth);
+          float band = 1.0 - smoothstep(0.1, 0.75, depth);
           float wash = sin(depth * 9.0 - uTime * 1.6 + n1 * 5.0) * 0.5 + 0.5;
           float lines = smoothstep(0.78, 0.95, wash) * band * smoothstep(0.35, 0.65, n2);
           float foam = clamp(max(edge * (0.55 + 0.45 * n2), lines * 0.8), 0.0, 1.0);

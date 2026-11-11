@@ -222,6 +222,9 @@ export class TerrainMesh {
 
   /** Burn the ground around fractional tile (x, z). Effects call this. */
   addScorch(x: number, z: number, radius: number, amount = 1): void {
+    // At least a couple of tiles across: a one-texel peak would bilinear-
+    // filter into a hard diamond.
+    radius = Math.max(2.2, radius * 1.3);
     const r = Math.ceil(radius);
     for (let dz = -r; dz <= r; dz++) {
       for (let dx = -r; dx <= r; dx++) {
@@ -230,7 +233,8 @@ export class TerrainMesh {
         const d = Math.hypot(tx - x, tz - z) / Math.max(0.5, radius);
         if (d >= 1) continue;
         const i = this.map.wrap(tz) * N + this.map.wrap(tx);
-        this.scorch[i] = Math.min(1, this.scorch[i] + amount * (1 - d * d));
+        const k = 1 - d * d;
+        this.scorch[i] = Math.min(1, this.scorch[i] + amount * k * k * 1.6);
       }
     }
     this.scorchLive = true;
@@ -396,6 +400,9 @@ function patchFragment(src: string, detail: boolean): string {
     vec3 Nw = normalize(vTgN);
     float slope = 1.0 - Nw.y;
     vec4 td = texture2D(uTileTex, (wp / TG_TILE + 0.5) / TG_N);
+    // Scorch gets a domain-warped lookup so burn marks have ragged, organic edges.
+    vec2 warp = vec2(tgNoise(wp * 0.6, 153.6), tgNoise(wp * 0.6 + 31.0, 153.6)) - 0.5;
+    td.a = texture2D(uTileTex, ((wp + warp * 2.2) / TG_TILE + 0.5) / TG_N).a;
     // Far away, fine grain turns to blotches: calm it with distance.
     float tgFar = smoothstep(35.0, 140.0, length(vViewPosition));
     float grain = 1.0 - 0.65 * tgFar;
@@ -514,8 +521,10 @@ function patchFragment(src: string, detail: boolean): string {
       /* glsl */ `
       #include <emissivemap_fragment>
       // Fresh scorch still glows: embers flicker in the cracks.
-      float ember = smoothstep(0.75, 1.0, td.a) * smoothstep(0.55, 0.8, nMicro);
-      totalEmissiveRadiance += vec3(3.0, 0.9, 0.2) * ember * (0.7 + 0.3 * sin(uTime * 7.0 + nMid * 30.0));
+      // Thin glowing cracks: where two noise fields cross mid-value.
+      float crack = 1.0 - smoothstep(0.0, 0.06, abs(nMicro2 - 0.5)) * 1.0;
+      float ember = smoothstep(0.8, 1.0, td.a) * crack * smoothstep(0.4, 0.7, nMicro);
+      totalEmissiveRadiance += vec3(2.4, 0.7, 0.12) * ember * (0.6 + 0.4 * sin(uTime * 5.0 + nMid * 30.0));
       `,
     )
     .replace(

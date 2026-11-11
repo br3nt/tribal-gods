@@ -211,7 +211,9 @@ export const ATMOSPHERE = {
 
 /** Distance fog (applies to every lit material, including models). */
 export const FOG_NEAR_K = 1.6; // × camera distance
-export const FOG_FAR_K = 5.5;
+export const FOG_NEAR_MIN = 55;
+export const FOG_FAR_K = 5;
+export const FOG_FAR_ADD = 260;
 
 // ---------------------------------------------------------------------------
 // Water

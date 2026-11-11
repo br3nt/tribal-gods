@@ -21,7 +21,7 @@
  */
 
 import * as THREE from 'three';
-import { ATMOSPHERE, SunPreset } from './look';
+import { ATMOSPHERE, FOG_FAR_ADD, FOG_FAR_K, FOG_NEAR_K, FOG_NEAR_MIN, SunPreset } from './look';
 
 const vertexShader = /* glsl */ `
   varying vec3 vDir;
@@ -146,10 +146,16 @@ export class Sky {
   }
 
   /** Keep the dome centred on the camera, inside the far plane. */
-  update(camera: THREE.PerspectiveCamera, dt: number): void {
+  update(camera: THREE.PerspectiveCamera, dt: number, fog?: THREE.Fog, viewDistance = 50): void {
     this.mesh.position.copy(camera.position);
     this.mesh.scale.setScalar(camera.far * 0.9);
     this.material.uniforms.uTime.value += dt;
+    // Distance fog in the haze colour scales with zoom: aerial perspective
+    // up close, a clear view of the whole planet from far out.
+    if (fog) {
+      fog.near = Math.max(FOG_NEAR_MIN, viewDistance * FOG_NEAR_K);
+      fog.far = viewDistance * FOG_FAR_K + FOG_FAR_ADD;
+    }
   }
 }
 

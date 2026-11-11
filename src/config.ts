@@ -31,8 +31,10 @@ export const MAX_HEIGHT = 18;
 
 /**
  * How hard the world bends away from the camera target. Vertices drop by
- * CURVATURE * distance² — so at 100 world units away, land sits
- * 0.0035 * 10000 = 35 units below where it "really" is.
+ * CURVATURE * distance² — so at 60 world units away, land sits
+ * 0.0045 * 3600 ≈ 16 units below where it "really" is. (v2 raised it from
+ * 0.0035 for the bigger camera range; past LIMB_START in render/look.ts the
+ * ground falls away faster still, so the far view ends in a round limb.)
  *
  * Raise it and the planet feels tiny and toy-like; lower it and the world
  * flattens out into an ordinary RTS map. 0 disables the illusion entirely
