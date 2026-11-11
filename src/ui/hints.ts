@@ -59,7 +59,7 @@ export class Hints {
       /* fresh */
     }
     this.seen = new Set(saved);
-    const moved = () => Math.hypot(ctx.view.target.x - this.startCam.x, ctx.view.target.z - this.startCam.z) > 18;
+    const moved = () => Math.hypot(ctx.view.target.x - this.startCam.x, ctx.view.target.z - this.startCam.z) > 10;
     const ownHut = () => ctx.world.buildings.some((b) => b.tribe === 'player' && b.kind === 'hut');
     this.hints = [
       {
