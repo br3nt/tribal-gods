@@ -21,18 +21,23 @@ import { LevelData, levelToCode } from '../level/level-format';
 import { saveLevel } from '../level/store';
 import { pickGroundTile } from '../render/ground-picker';
 import { walkable } from '../sim/pathfinding';
-import { SpellId } from '../sim/spells';
+import { spellDef, SpellId } from '../sim/catalog';
 import { World } from '../sim/world-state';
 import { appState } from './app-state';
+import { css } from './dom';
+import { icon, spellIcon, UiIconName } from './icons';
 import { toolState } from './tools';
 
 const PLACEABLE_SPELLS: SpellId[] = ['lightning', 'swamp', 'landbridge', 'flatten', 'earthquake', 'volcano'];
 
-const BTN = `
-  padding: 5px 9px; cursor: pointer; border-radius: 6px; white-space: nowrap;
-  border: 1px solid rgba(255,255,255,0.18); background: rgba(255,255,255,0.07);
-  color: #e8e4d8; font: 11px ui-monospace, Menlo, monospace;
-`;
+css('editor', `
+.ed-bar { position: fixed; top: var(--edge); left: 50%; transform: translateX(-50%); display: none; flex-wrap: wrap; gap: 0.3rem;
+  max-width: 94vw; z-index: 15; padding: 0.4rem; align-items: center; font: var(--t-sm) var(--font); }
+.ed-bar .tg-btn { min-height: 1.9rem; padding: 0 0.6rem; }
+.ed-bar .sep { width: 1px; align-self: stretch; margin: 0.2rem 0.2rem; background: var(--rim); }
+.ed-bar input { min-height: 1.9rem; padding: 0 0.55rem; border-radius: var(--r2); border: 1px solid var(--rim); background: var(--ink-2); color: var(--text); font: var(--t-sm) var(--font); }
+.ed-status { color: var(--text-3); margin-left: 0.3rem; }
+`);
 
 export class Editor {
   /** The level currently being edited (id when re-saving an existing one). */
@@ -55,20 +60,16 @@ export class Editor {
     },
   ) {
     this.bar = document.createElement('div');
-    this.bar.style.cssText = `
-      position: fixed; top: 12px; left: 50%; transform: translateX(-50%);
-      display: none; flex-wrap: wrap; gap: 5px; max-width: 92vw; z-index: 15;
-      padding: 8px; background: rgba(16,22,30,0.85); border-radius: 10px;
-      border: 1px solid rgba(255,255,255,0.16); align-items: center;
-      font: 11px ui-monospace, Menlo, monospace; color: #e8e4d8;
-    `;
+    this.bar.className = 'ed-bar tg-panel';
     document.body.appendChild(this.bar);
 
-    const tool = (label: string, t: string, title = '') => {
+    const tool = (label: string, t: string, title = '', ic: UiIconName = 'target') => {
       const b = document.createElement('button');
-      b.textContent = label;
+      b.type = 'button';
+      b.innerHTML = `${icon(ic, 14)}<span></span>`;
+      (b.lastChild as HTMLElement).textContent = label;
       b.title = title;
-      b.style.cssText = BTN;
+      b.className = 'tg-btn';
       b.dataset.tool = t;
       b.addEventListener('click', () => {
         if (t === 'monument' && toolState.tool === 'monument') {
@@ -82,20 +83,19 @@ export class Editor {
       return b;
     };
 
-    tool('⛰ raise', 'raise');
-    tool('🕳 lower', 'lower');
-    tool('▦ flatten', 'flatten', 'In the editor this is a brush, not a spell');
-    tool('🌲 tree', 'tree');
-    tool('🚶 wildman', 'wildman');
-    this.monumentBtn = tool('🗿 monument', 'monument', 'Click again to cycle the spell inside');
-    tool('🔵 home P', 'homePlayer', "Move your tribe's start");
-    tool('🔴 home R', 'homeRed', "Move the enemy's start");
-    tool('✖ erase', 'erase', 'Remove trees / wildmen / monuments');
+    tool('Raise', 'raise', '', 'plus');
+    tool('Lower', 'lower', '', 'minus');
+    tool('Flatten', 'flatten', 'In the editor this is a brush, not a spell', 'hammer');
+    tool('Tree', 'tree', '', 'wood');
+    tool('Wanderer', 'wildman', '', 'idle');
+    this.monumentBtn = tool('Stone', 'monument', 'Click again to cycle the spell inside', 'stone');
+    tool('Your home', 'homePlayer', "Move your tribe's start", 'home');
+    tool('Rival home', 'homeRed', "Move the enemy's start", 'home');
+    tool('Erase', 'erase', 'Remove trees / wanderers / stones', 'close');
 
     const sep = () => {
       const s = document.createElement('span');
-      s.textContent = '·';
-      s.style.opacity = '0.4';
+      s.className = 'sep';
       this.bar.appendChild(s);
     };
     sep();
@@ -104,13 +104,13 @@ export class Editor {
     this.authorInput = this.input('author', 90);
     sep();
 
-    this.action('💾 save', () => void this.save());
-    this.action('📋 code', () => void this.exportCode());
-    this.action('▶ test', () => void this.test());
-    this.action('⏏ exit', () => hooks.onExit());
+    this.action('Save', () => void this.save(), 'check');
+    this.action('Copy code', () => void this.exportCode(), 'book');
+    this.action('Test', () => void this.test(), 'play', true);
+    this.action('Exit', () => hooks.onExit(), 'close');
 
     this.status = document.createElement('span');
-    this.status.style.cssText = 'opacity: 0.75; margin-left: 4px;';
+    this.status.className = 'ed-status';
     this.bar.appendChild(this.status);
 
     // The placement click. pointerdown (not click) to match every other
@@ -203,14 +203,14 @@ export class Editor {
   private async save(): Promise<void> {
     const level = await this.world.captureLevel(this.meta());
     this.editingId = saveLevel(level, this.editingId);
-    this.say(`saved "${level.name}" to your library ✓`);
+    this.say(`Saved "${level.name}" to your library`);
   }
 
   private async exportCode(): Promise<void> {
     const code = await levelToCode(await this.world.captureLevel(this.meta()));
     try {
       await navigator.clipboard.writeText(code);
-      this.say(`share code copied (${code.length} chars) ✓`);
+      this.say(`Share code copied (${code.length} characters)`);
     } catch {
       prompt('Copy your level code:', code); // clipboard blocked — show it instead
     }
@@ -229,18 +229,20 @@ export class Editor {
   private refresh(): void {
     for (const b of this.bar.querySelectorAll('button')) {
       if (!b.dataset.tool) continue;
-      const active = toolState.tool === b.dataset.tool;
-      b.style.borderColor = active ? '#ffe9a8' : 'rgba(255,255,255,0.18)';
-      b.style.background = active ? 'rgba(255,233,168,0.15)' : 'rgba(255,255,255,0.07)';
+      b.classList.toggle('on', toolState.tool === b.dataset.tool);
     }
-    this.monumentBtn.textContent = `🗿 ${PLACEABLE_SPELLS[this.monumentSpell]}`;
+    const spell = PLACEABLE_SPELLS[this.monumentSpell];
+    this.monumentBtn.innerHTML = `${spellIcon(spell, 14)}<span></span>`;
+    (this.monumentBtn.lastChild as HTMLElement).textContent = `Stone: ${spellDef(spell).name}`;
   }
 
   /** A verb button (save/code/test/exit) — no tool highlighting. */
-  private action(label: string, fn: () => void): void {
+  private action(label: string, fn: () => void, ic: UiIconName, primary = false): void {
     const b = document.createElement('button');
-    b.textContent = label;
-    b.style.cssText = BTN;
+    b.type = 'button';
+    b.innerHTML = `${icon(ic, 14)}<span></span>`;
+    (b.lastChild as HTMLElement).textContent = label;
+    b.className = primary ? 'tg-btn primary' : 'tg-btn';
     b.addEventListener('click', fn);
     this.bar.appendChild(b);
   }
@@ -248,11 +250,7 @@ export class Editor {
   private input(placeholder: string, width: number): HTMLInputElement {
     const i = document.createElement('input');
     i.placeholder = placeholder;
-    i.style.cssText = `
-      width: ${width}px; padding: 4px 7px; border-radius: 6px;
-      border: 1px solid rgba(255,255,255,0.18); background: rgba(255,255,255,0.08);
-      color: #e8e4d8; font: 11px ui-monospace, Menlo, monospace;
-    `;
+    i.style.width = `${width}px`;
     // Keep typing out of the game's hotkey handlers.
     i.addEventListener('keydown', (e) => e.stopPropagation());
     this.bar.appendChild(i);

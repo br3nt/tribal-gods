@@ -64,6 +64,8 @@ export class SculptBrush {
 
     // --- Size hotkeys (tool switching lives in ui/tools.ts) ---
     addEventListener('keydown', (e) => {
+      // In play, [ ] are game speed; they size the brush only in the editor or with F3 debug on.
+      if (appState.mode !== 'editor' && !appState.debug) return;
       if (e.code === 'BracketLeft') this.radius = clamp(this.radius - 1, BRUSH_RADIUS_MIN, BRUSH_RADIUS_MAX);
       if (e.code === 'BracketRight') this.radius = clamp(this.radius + 1, BRUSH_RADIUS_MIN, BRUSH_RADIUS_MAX);
     });
