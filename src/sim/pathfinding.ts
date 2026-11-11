@@ -31,7 +31,7 @@ import { WORLD_SIZE } from '../config';
 import { MinHeap } from '../core/heap';
 import { wrapDelta } from '../core/util';
 import { Heightmap } from '../world/heightmap';
-import { groundWalkable, regionAt } from './regions';
+import { groundWalkable, regionAt, regionLabels } from './regions';
 
 /** Search effort of the last findPath calls (tests and the debug readout read it). */
 export const pathStats = { expansions: 0, searches: 0 };
@@ -82,6 +82,18 @@ export function walkable(map: Heightmap, x: number, z: number): boolean {
   if (obstaclesOf(map).has(tileIndex(x, z))) return false;
   // Steepness = worst height step to the 4 cardinal neighbors (sim/regions.ts).
   return groundWalkable(map, x, z);
+}
+
+/**
+ * walkable() for the inner loop of a search, by tile index: the cached
+ * region labels already hold groundWalkable() for every tile (sim/regions.ts,
+ * refreshed whenever map.version moves), so a neighbour test is one array
+ * read and one set lookup instead of five wrapped height reads.
+ */
+function openTest(map: Heightmap): (i: number) => boolean {
+  const ground = regionLabels(map);
+  const obstacles = obstaclesOf(map);
+  return (i) => ground[i] !== 0 && !obstacles.has(i);
 }
 
 /**
@@ -165,6 +177,8 @@ export function findPath(
   const goalIdx = goal.z * N + goal.x;
   if (startIdx === goalIdx) return [];
 
+  const open = openTest(map);
+  const heights = map.heights;
   stamp++; // invalidates all scratch state from previous searches at once
   heap.clear();
   gScore[startIdx] = 0;
@@ -191,22 +205,22 @@ export function findPath(
 
     const cx = cur % N;
     const cz = (cur / N) | 0;
-    const ch = map.heightAt(cx, cz);
+    const ch = heights[cur];
 
     for (const { dx, dz, cost } of DIRS) {
-      const nx = map.wrap(cx + dx);
-      const nz = map.wrap(cz + dz);
+      const nx = (cx + dx + N) % N;
+      const nz = (cz + dz + N) % N;
       const ni = nz * N + nx;
-      if (closedStamp[ni] === stamp || !walkable(map, nx, nz)) continue;
+      if (closedStamp[ni] === stamp || !open(ni)) continue;
       // No corner-cutting: a diagonal step needs both adjacent cardinal
       // tiles passable, or units would squeeze through pinched cliffs.
-      if (dx !== 0 && dz !== 0 && (!walkable(map, cx + dx, cz) || !walkable(map, cx, cz + dz))) {
+      if (dx !== 0 && dz !== 0 && (!open(cz * N + nx) || !open(nz * N + cx))) {
         continue;
       }
 
       // Climbing costs extra — paths prefer contouring around hills to
       // marching straight up them, which both looks and plays right.
-      const climb = Math.max(0, map.heightAt(nx, nz) - ch);
+      const climb = Math.max(0, heights[ni] - ch);
       const tentative = gScore[cur] + cost * (1 + climb * 0.2);
 
       if (openStamp[ni] !== stamp || tentative < gScore[ni]) {
@@ -220,4 +234,148 @@ export function findPath(
     }
   }
   return null; // exhausted the budget or the frontier — unreachable
+}
+
+// ---------------------------------------------------------------------------
+// Flow fields: one search for a whole army
+// ---------------------------------------------------------------------------
+//
+// Sixty warriors told to march across the map are sixty A* searches toward
+// the same place — each one re-exploring nearly the same ground, each with
+// its own budget, the stragglers at the back running out of it first. The
+// classic RTS answer is to search ONCE, BACKWARDS: run Dijkstra outward
+// from the goal until it has reached every soldier's tile. Each tile it
+// settles remembers which neighbour it was reached from — the next step
+// TOWARD the goal. Any soldier on a settled tile now has a path for free:
+// follow the arrows. The search costs about as much as one long A*, and
+// is shared by the whole army.
+//
+// Costs mirror findPath() exactly, just read in reverse: the unit walks
+// from a tile `n` INTO the tile `cur` we expanded from, so the climb is
+// height(cur) − height(n).
+
+const flowDist = new Float32Array(N * N);
+const flowNext = new Int32Array(N * N);
+const flowOpen = new Uint32Array(N * N);
+const flowClosed = new Uint32Array(N * N);
+const flowHeap = new MinHeap();
+let flowStamp = 0;
+
+export interface FlowField {
+  /** Goal tile the field flows toward. */
+  goal: { x: number; z: number };
+  /** Path (start excluded, goal included) from tile (x, z), or null if the search never reached it. */
+  pathFrom(x: number, z: number): Array<{ x: number; z: number }> | null;
+  /** Walking cost from (x, z) to the goal (Infinity if unreached). */
+  costFrom(x: number, z: number): number;
+}
+
+/**
+ * Dijkstra outward from (gx, gz) until every tile in `starts` is settled,
+ * the budget runs out, or the reachable ground is exhausted. The returned
+ * field is valid until the next flowField() call (the scratch is shared).
+ */
+export function flowField(
+  map: Heightmap,
+  gx: number,
+  gz: number,
+  starts: Array<{ x: number; z: number }>,
+  maxExpansions = N * N,
+): FlowField | null {
+  const goal = findNearestWalkable(map, map.wrap(Math.round(gx)), map.wrap(Math.round(gz)));
+  if (!goal) return null;
+  const my = ++flowStamp;
+  flowHeap.clear();
+  const goalIdx = goal.z * N + goal.x;
+  flowDist[goalIdx] = 0;
+  flowNext[goalIdx] = -1;
+  flowOpen[goalIdx] = my;
+  flowHeap.push(goalIdx, 0);
+
+  const wanted = new Set<number>();
+  const tiles: Array<{ x: number; z: number }> = [];
+  for (const s of starts) {
+    const r = findNearestWalkable(map, map.wrap(Math.round(s.x)), map.wrap(Math.round(s.z)), 4);
+    if (r) {
+      wanted.add(r.z * N + r.x);
+      tiles.push(r);
+    }
+  }
+  const open = openTest(map);
+  const heights = map.heights;
+
+  // A sense of direction. Plain Dijkstra would flood the whole planet in
+  // every direction before reaching a group 100 steps away. Instead,
+  // aim it like A* at the group: h(n) = octile distance from n to the
+  // group's centre, minus the group's radius. That never overestimates the
+  // distance to the NEAREST member (triangle inequality), and changes by at
+  // most one step's cost per step, so every tile it settles still has its
+  // exact cheapest cost — the arrows stay correct.
+  let cx0 = 0;
+  let cz0 = 0;
+  const first = tiles[0];
+  if (first) {
+    for (const s of tiles) {
+      cx0 += wrapDelta(s.x - first.x, N);
+      cz0 += wrapDelta(s.z - first.z, N);
+    }
+    cx0 = first.x + cx0 / tiles.length;
+    cz0 = first.z + cz0 / tiles.length;
+  }
+  let radius = 0;
+  for (const s of tiles) radius = Math.max(radius, heuristic(s.x, s.z, cx0, cz0));
+  const h = (x: number, z: number) => (first ? Math.max(0, heuristic(x, z, cx0, cz0) - radius - 1) : 0);
+
+  let expansions = 0;
+  while (flowHeap.size > 0 && expansions < maxExpansions && wanted.size > 0) {
+    const cur = flowHeap.pop();
+    if (flowClosed[cur] === my) continue;
+    flowClosed[cur] = my;
+    expansions++;
+    pathStats.expansions++;
+    wanted.delete(cur);
+
+    const cx = cur % N;
+    const cz = (cur / N) | 0;
+    const ch = heights[cur];
+    for (const { dx, dz, cost } of DIRS) {
+      const nx = (cx + dx + N) % N;
+      const nz = (cz + dz + N) % N;
+      const ni = nz * N + nx;
+      if (flowClosed[ni] === my || !open(ni)) continue;
+      if (dx !== 0 && dz !== 0 && (!open(cz * N + nx) || !open(nz * N + cx))) continue;
+      const climb = Math.max(0, ch - heights[ni]);
+      const tentative = flowDist[cur] + cost * (1 + climb * 0.2);
+      if (flowOpen[ni] !== my || tentative < flowDist[ni]) {
+        flowDist[ni] = tentative;
+        flowNext[ni] = cur;
+        flowOpen[ni] = my;
+        flowHeap.push(ni, tentative + h(nx, nz));
+      }
+    }
+  }
+  pathStats.searches++;
+
+  const settled = (i: number) => flowClosed[i] === my && flowStamp === my;
+  const rescue = (x: number, z: number) => findNearestWalkable(map, map.wrap(Math.round(x)), map.wrap(Math.round(z)), 4);
+  return {
+    goal,
+    costFrom(x, z) {
+      const s = rescue(x, z);
+      if (!s) return Infinity;
+      const i = s.z * N + s.x;
+      return settled(i) ? flowDist[i] : Infinity;
+    },
+    pathFrom(x, z) {
+      const s = rescue(x, z);
+      if (!s) return null;
+      let i = s.z * N + s.x;
+      if (!settled(i)) return null;
+      const path: Array<{ x: number; z: number }> = [];
+      // A unit standing off its rescued tile (in a fresh crater) steps onto it first.
+      if (s.x !== map.wrap(Math.round(x)) || s.z !== map.wrap(Math.round(z))) path.push({ x: s.x, z: s.z });
+      for (i = flowNext[i]; i !== -1; i = flowNext[i]) path.push({ x: i % N, z: (i / N) | 0 });
+      return path;
+    },
+  };
 }

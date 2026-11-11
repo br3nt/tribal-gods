@@ -70,7 +70,7 @@ import {
 } from './catalog';
 import { breakChant, tickChant } from './chant';
 import { initObjectives, ObjectiveMemory, tickObjectives } from './objectives';
-import { findNearestWalkable, findPath, obstaclesOf, tileIndex, walkable } from './pathfinding';
+import { findNearestWalkable, findPath, flowField, obstaclesOf, tileIndex, walkable } from './pathfinding';
 import { isMajor, regionAt } from './regions';
 import { Rng } from './rng';
 import { ALL_BUILDINGS, skirmishRules, STARTER_SPELLS } from './rules';
@@ -2133,34 +2133,120 @@ export class World implements SimQueries {
     return true;
   }
 
+  /**
+   * Move a group to (tx, tz). See groupMove(); the player hears 'denied'
+   * if any of the group could not be routed at all.
+   */
   orderMove(ids: number[], tx: number, tz: number): void {
-    let slot = 0;
-    let moved = 0;
-    let refused: Unit | null = null;
+    const units: Unit[] = [];
     for (const id of ids) {
-      const u = this.units.find((q) => q.id === id);
+      const u = this.unitById(id);
       if (!u || u.hidden) continue;
       this.abandonTask(u);
-      let ox = 0;
-      let oz = 0;
-      if (slot > 0) {
-        let ring = 1;
-        let first = 1;
-        while (slot >= first + 6 * ring) {
-          first += 6 * ring;
-          ring++;
-        }
-        const a = ((slot - first) / (6 * ring)) * Math.PI * 2;
-        ox = Math.cos(a) * 1.6 * ring;
-        oz = Math.sin(a) * 1.6 * ring;
-      }
-      // A move across water walks to the nearest shore facing it (a player
-      // clicking the sea on the minimap still sees their people go).
-      if (this.sendTo(u, Math.round(tx + ox), Math.round(tz + oz), 4000, 24)) moved++;
-      else if (!refused) refused = u;
-      slot++;
+      units.push(u);
     }
-    if (moved === 0 && refused && refused.tribe === 'player') this.events.push({ type: 'denied', x: tx, z: tz });
+    const refused = this.groupMove(units, tx, tz, units[0]?.tribe === 'player' ? World.PLAYER_EXPANSIONS : 4000);
+    if (refused.length > 0 && refused[0].tribe === 'player') this.events.push({ type: 'denied', x: tx, z: tz });
+  }
+
+  /** Search budget for a fallback per-unit path on a player's order (bigger than the AI's). */
+  private static readonly PLAYER_EXPANSIONS = 12000;
+
+  /**
+   * GROUP MOVEMENT. One path search for the whole group, then a formation
+   * slot for each member near the mark:
+   *
+   *   1. Group by the region (island) each unit stands on. Usually one.
+   *      For a group whose island isn't the mark's, the goal becomes the
+   *      nearest shore of THEIR island facing the mark (a player clicking
+   *      the sea still sees their people go).
+   *   2. One flow field (pathfinding.ts flowField) from that goal out to
+   *      every member: each unit's route to the mark falls out of it.
+   *   3. Slots: hexagonal rings 1.6 tiles apart around the goal; whoever
+   *      is nearest gets the innermost slot, so the column doesn't cross
+   *      itself on arrival.
+   *   4. Each unit follows the shared route until it reaches the edge of
+   *      the gathering area, then a short "join" path to its own slot.
+   *
+   * Anyone the field didn't reach (walled in by buildings, say) falls back
+   * to their own A* with `fallbackBudget`. Returns the units that could
+   * not be routed at all.
+   */
+  groupMove(units: Unit[], tx: number, tz: number, fallbackBudget = 4000): Unit[] {
+    const refused: Unit[] = [];
+    if (units.length === 0) return refused;
+    const groups = new Map<number, Unit[]>();
+    for (const u of units) {
+      const r = regionAt(this.map, Math.round(u.x), Math.round(u.z)) ?? 0;
+      const list = groups.get(r);
+      if (list) list.push(u);
+      else groups.set(r, [u]);
+    }
+    const gx = this.map.wrap(Math.round(tx));
+    const gz = this.map.wrap(Math.round(tz));
+    for (const [region, members] of groups) {
+      let goal: { x: number; z: number } | null = { x: gx, z: gz };
+      const goalTile = findNearestWalkable(this.map, gx, gz);
+      if (region && (!goalTile || regionAt(this.map, goalTile.x, goalTile.z) !== region)) {
+        goal = findNearestWalkable(this.map, gx, gz, 24, (x, z) => regionAt(this.map, x, z) === region);
+      }
+      if (!goal) {
+        refused.push(...members);
+        continue;
+      }
+      const field = flowField(this.map, goal.x, goal.z, members);
+      const order = members
+        .map((u) => ({ u, cost: field ? field.costFrom(u.x, u.z) : Infinity }))
+        .sort((a, b) => a.cost - b.cost);
+      // Every route first, then the joins: a join is a small A*, and the
+      // field's scratch stays valid regardless (separate arrays).
+      for (let slot = 0; slot < order.length; slot++) {
+        const { u, cost } = order[slot];
+        const { ox, oz, ring } = World.formationSlot(slot);
+        const sx = this.map.wrap(Math.round(goal.x + ox));
+        const sz = this.map.wrap(Math.round(goal.z + oz));
+        const route = field && cost < Infinity ? field.pathFrom(u.x, u.z) : null;
+        if (!route) {
+          if (!this.sendTo(u, sx, sz, fallbackBudget, 24) && !this.sendTo(u, goal.x, goal.z, fallbackBudget, 24)) refused.push(u);
+          continue;
+        }
+        // Leave the shared route where it enters the gathering area.
+        const gather = ring * 1.6 + 2.5;
+        let cut = route.length;
+        for (let i = 0; i < route.length; i++) {
+          if (Math.hypot(wrapDelta(route[i].x - goal.x, WORLD_SIZE), wrapDelta(route[i].z - goal.z, WORLD_SIZE)) <= gather) {
+            cut = i;
+            break;
+          }
+        }
+        const from = cut > 0 ? route[cut - 1] : { x: u.x, z: u.z };
+        const join = slot === 0 ? null : findPath(this.map, from.x, from.z, sx, sz, 400, 3);
+        const path = join ? [...route.slice(0, cut), ...join] : route;
+        if (path.length === 0) {
+          if (!this.sendTo(u, sx, sz, 400, 3)) u.state = 'idle'; // already standing on the mark
+          continue;
+        }
+        u.path = path;
+        u.pathIndex = 0;
+        const end = path[path.length - 1];
+        u.goal = { x: end.x, z: end.z };
+        u.state = 'moving';
+      }
+    }
+    return refused;
+  }
+
+  /** Offset of formation slot `slot`: 0 is the mark itself, then hexagonal rings 1.6 tiles apart. */
+  static formationSlot(slot: number): { ox: number; oz: number; ring: number } {
+    if (slot === 0) return { ox: 0, oz: 0, ring: 0 };
+    let ring = 1;
+    let first = 1;
+    while (slot >= first + 6 * ring) {
+      first += 6 * ring;
+      ring++;
+    }
+    const a = ((slot - first) / (6 * ring)) * Math.PI * 2;
+    return { ox: Math.cos(a) * 1.6 * ring, oz: Math.sin(a) * 1.6 * ring, ring };
   }
 
   /** Send a leader to commune at a monument. Only leaders can worship. */

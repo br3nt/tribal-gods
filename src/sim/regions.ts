@@ -91,6 +91,15 @@ function labels(map: Heightmap): Labels {
   return l;
 }
 
+/**
+ * The whole label grid (index z·N + x; 0 = not walkable ground). Search
+ * loops read this instead of re-testing five heights per neighbour: it is
+ * groundWalkable() for every tile, already computed and cached.
+ */
+export function regionLabels(map: Heightmap): Int32Array {
+  return labels(map).label;
+}
+
 /** Region id of a tile (0 = not walkable ground). */
 export function regionAt(map: Heightmap, x: number, z: number): number {
   return labels(map).label[map.wrap(Math.round(z)) * N + map.wrap(Math.round(x))];
