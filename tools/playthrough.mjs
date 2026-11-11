@@ -746,16 +746,18 @@ await step('save: Esc opens the menu (autosaves); reload; Continue resumes the s
   await page.keyboard.press('Escape');
   await page.keyboard.press('Escape');
   await wait(300);
-  const before = await tg(() => ({ t: window.__tg.world.elapsed, units: window.__tg.world.units.length, b: window.__tg.world.buildings.length }));
+  const before = await tg(() => ({ t: window.__tg.world.elapsed, units: window.__tg.world.units.length, b: window.__tg.world.buildings.length, ids: window.__tg.world.buildings.map((b) => `${b.id}:${b.kind}`) }));
   const saved = await tg(() => !!localStorage.getItem('tg.save.v1'));
   expect(saved, 'nothing saved when the menu opened');
   await page.reload({ waitUntil: 'load' });
   await wait(2500);
   await clickText('Continue');
   await wait(800);
-  const after = await tg(() => ({ t: window.__tg.world.elapsed, units: window.__tg.world.units.length, b: window.__tg.world.buildings.length, mode: window.__tg.appState.mode }));
+  const after = await tg(() => ({ t: window.__tg.world.elapsed, units: window.__tg.world.units.length, b: window.__tg.world.buildings.length, mode: window.__tg.appState.mode, ids: window.__tg.world.buildings.map((b) => `${b.id}:${b.kind}`) }));
   expect(after.mode === 'game', `mode ${after.mode}`);
-  expect(Math.abs(after.t - before.t) < 2 && after.b === before.b, `restored t=${after.t.toFixed(1)}/${before.t.toFixed(1)} buildings ${after.b}/${before.b}`);
+  // The game runs on after Continue (a rival may lay a new site in that moment): every saved building must be back, as itself.
+  const lost = before.ids.filter((id) => !after.ids.includes(id));
+  expect(Math.abs(after.t - before.t) < 2 && lost.length === 0, `restored t=${after.t.toFixed(1)}/${before.t.toFixed(1)}; missing ${lost.join(', ') || 'none'} (buildings ${after.b}/${before.b})`);
   await shot('04-continued');
   return `t=${after.t.toFixed(0)}s, ${after.units} units, ${after.b} buildings`;
 });
