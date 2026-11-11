@@ -112,6 +112,10 @@ export class PostChain {
   }
 
   private build(): void {
+    this.bloom?.dispose(); // passes own render targets the composer doesn't free
+    this.fxaa?.dispose();
+    this.bloom = null;
+    this.fxaa = null;
     this.composer?.dispose();
     this.composer = null;
     const q = this.quality;
@@ -148,9 +152,7 @@ export class PostChain {
     this.quality = q;
     this.slowFor = 0;
     this.warmup = 4;
-    this.bloom = null;
     this.grade = null;
-    this.fxaa = null;
     this.build();
   }
 

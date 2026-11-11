@@ -32,7 +32,8 @@ export function writeSave(game: SavedGame): boolean {
     localStorage.setItem(KEY, JSON.stringify(game));
     return true;
   } catch {
-    return false; // storage full or blocked: Continue just won't appear
+    clearSave(); // storage full or blocked: never leave an older, unrelated game behind Continue
+    return false;
   }
 }
 

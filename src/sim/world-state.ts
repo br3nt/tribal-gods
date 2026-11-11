@@ -134,6 +134,8 @@ export interface GameEvent {
   x2?: number;
   z2?: number;
   magnitude?: number;
+  /** Whose event it is, where that matters (sounds play loud only for the player's own). */
+  tribe?: Tribe;
 }
 
 /** How close a right-click must land to an enemy to mean "attack him". */
@@ -849,7 +851,7 @@ export class World implements SimQueries {
         if (t.shamanRespawn <= 0) {
           t.shamanRespawn = 0;
           this.spawnNearWalkable('shaman', id, t.home.x, t.home.z);
-          this.events.push({ type: 'leaderReturn', x: t.home.x, z: t.home.z });
+          this.events.push({ type: 'leaderReturn', x: t.home.x, z: t.home.z, tribe: id });
           this.events.push({ type: 'convert', x: t.home.x, z: t.home.z });
         }
       }
@@ -885,7 +887,7 @@ export class World implements SimQueries {
         if (t) {
           t.leaderDeaths++;
           t.shamanRespawn = t.reincarnates ? LEADER_RESPAWN_SECONDS : 0;
-          this.events.push({ type: 'leaderDown', x: u.x, z: u.z });
+          this.events.push({ type: 'leaderDown', x: u.x, z: u.z, tribe: u.tribe });
         }
       }
     }
@@ -2082,11 +2084,11 @@ export class World implements SimQueries {
     m.firstClaimer ??= tribe;
     if (m.mode === 'teach') {
       t.known.add(m.spell);
-      this.events.push({ type: 'unlock', x: m.x, z: m.z });
+      this.events.push({ type: 'unlock', x: m.x, z: m.z, tribe });
     } else {
       t.spells[m.spell].gifted += m.charges ?? 2;
       m.sleep = m.cooldown ?? 90;
-      this.events.push({ type: 'giftClaimed', x: m.x, z: m.z, magnitude: m.charges ?? 2 });
+      this.events.push({ type: 'giftClaimed', x: m.x, z: m.z, magnitude: m.charges ?? 2, tribe });
     }
   }
 

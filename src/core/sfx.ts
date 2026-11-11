@@ -123,14 +123,16 @@ export class Soundscape {
   private clock = 0;
 
   /** Play sounds for this frame's events. Call before effects.sync drains them. */
-  hear(events: { type: string; x: number; z: number; magnitude?: number }[], camTileX: number, camTileZ: number, camDistance: number): void {
+  hear(events: { type: string; x: number; z: number; magnitude?: number; tribe?: string }[], camTileX: number, camTileZ: number, camDistance: number): void {
     if (events.length === 0 || !audio.audioReady()) return;
     void camDistance;
     const t = now();
     for (const ev of events) {
       const rule = RULES[ev.type];
       if (!rule) continue;
-      let v = GLOBAL.has(ev.type) ? 1 : attenuation(tileDistance(ev.x, ev.z, camTileX, camTileZ));
+      // Global stings are full volume for the player's own (or untagged) events; a rival's are heard by distance.
+      const mine = ev.tribe === undefined || ev.tribe === 'player';
+      let v = GLOBAL.has(ev.type) && mine ? 1 : attenuation(tileDistance(ev.x, ev.z, camTileX, camTileZ));
       v = Math.min(1, v * (rule.boost ?? 1));
       if (v < 0.03) continue;
       if (rule.max && !this.limiter.allow(ev.type, t, rule.max, rule.windowMs ?? 100)) continue;

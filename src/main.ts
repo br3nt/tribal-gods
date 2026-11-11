@@ -185,6 +185,8 @@ function newWorld(settings?: Parameters<World['reset']>[1]): void {
   centerOnHome();
   ui?.reset();
   lastStart = { settings };
+  testingLevel = null;
+  autosaveClock = 0;
 }
 
 // --- App modes: menu ⇄ game ⇄ editor ⇄ library ----------------------------
@@ -238,6 +240,8 @@ function restart(): void {
 }
 function quitToMenu(): void {
   autosave();
+  testingLevel = null; // a test-play is over; the next game saves again
+  autosaveClock = 0;
   startToken++;
   campaign.leave();
   appState.mode = 'menu';
@@ -288,6 +292,7 @@ menu.onContinue = () => {
   testingLevel = null;
   backBtn.style.display = 'none';
   if (g.kind === 'campaign' && g.campaign) campaign.resume(g.campaign);
+  autosaveClock = 0;
   const at = world.leaderOf('player') ?? world.tribes.player?.home;
   if (at) rig.target.set(at.x * 2, 0, at.z * 2);
   rig.zoom = CAMERA.defaultZoom;
@@ -323,6 +328,7 @@ async function startLevel(level: LevelData, asTest = false, rules?: ScenarioRule
   appState.mode = 'game';
   lastStart = { level };
   testingLevel = asTest ? level : null;
+  autosaveClock = 0;
   backBtn.style.display = asTest ? 'block' : 'none';
   return true;
 }

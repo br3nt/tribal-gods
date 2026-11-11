@@ -327,7 +327,8 @@ export class OrderControl {
     const tile = this.groundTile(px, py);
     // Aim at what is drawn under the cursor: an enemy's body or a roof.
     const w = this.ctx.world;
-    const foe = this.unitAtScreen(px, py, (u) => w.hostile('player', u.tribe));
+    const roof = this.buildingAtScreen(px, py);
+    const foe = this.unitAtScreen(px, py, (u) => w.hostile('player', u.tribe) && !(roof && this.hiddenBehind(u, roof)));
     if (foe) return this.orderAt(foe.x, foe.z);
     if (!tile) {
       const b = this.buildingAtScreen(px, py);

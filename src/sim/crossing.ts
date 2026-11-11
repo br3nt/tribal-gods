@@ -69,7 +69,10 @@ export function findCrossing(map: Heightmap, a: { x: number; z: number }, b: { x
           const nx = (cx + dx + N) % N;
           const nz = (cz + dz + N) % N;
           const ni = nz * N + nx;
-          const w = groundWalkable(map, nx, nz) ? 0 : 1;
+          // A free diagonal step needs both cardinal neighbours open (as A* and the
+          // 4-connected regions require), or a corner pinch would count as land.
+          const open = groundWalkable(map, nx, nz) && (!dx || !dz || (groundWalkable(map, cx + dx, cz) && groundWalkable(map, cx, cz + dz)));
+          const w = open ? 0 : 1;
           if (cost + w >= dist[ni]) continue;
           dist[ni] = cost + w;
           next[ni] = cur; // one step nearer the target
