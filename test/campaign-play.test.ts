@@ -78,7 +78,7 @@ describe('campaign: fail conditions fire when forced', () => {
     expect(w.gameOver).toBeNull();
     w.elapsed = OPENS_AT;
     w.orderWorship([red.id], 0);
-    run(w, 10);
+    run(w, 40); // a tier-3 ritual: 35 seconds on the knees
     expect(w.gameOver).toBe('defeat');
     expect(w.gameOverReason).toMatch(/stone/i);
   });

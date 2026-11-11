@@ -38,8 +38,14 @@ describe('review regressions', () => {
     const hut = w.spawnBuilding('player', 'hut', 40, 40);
     w.tribes.player!.wood = 0;
     for (let i = 0; i < 3; i++) w.moveIn(w.spawn('brave', 'player', 40, 42), hut);
-    run(w, DWELLING_TIERS[1].growSeconds + 40);
-    expect(hut.residents).toBeLessThan(3);
+    run(w, DWELLING_TIERS[1].growSeconds);
+    // Someone steps out to fetch wood (they may come back in later: watch, don't snapshot).
+    let fewest = hut.residents;
+    for (let i = 0; i < 40; i++) {
+      run(w, 1);
+      fewest = Math.min(fewest, hut.residents);
+    }
+    expect(fewest).toBeLessThan(3);
     expectConsistent(w);
   });
 
