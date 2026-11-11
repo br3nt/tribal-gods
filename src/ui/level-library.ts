@@ -303,7 +303,7 @@ const OFFICIAL_NAMES: Record<string, string> = {
 };
 const OFFICIAL_DESCS: Record<string, string> = {
   official_first_light: 'A kind world to learn godhood on. The stones are near; the enemy is far.',
-  official_the_strait: 'An ocean apart. Landbridge is on your shore — claim it first.',
+  official_the_strait: 'An ocean apart. Causeway is on your shore — claim it first.',
   official_crucible: 'One continent, one volcano, two gods. Exactly the standoff it looks like.',
 };
 
