@@ -15,7 +15,7 @@ css('settings-panel', `
 .set-row { display: grid; grid-template-columns: 10rem 1fr; gap: 1rem; align-items: center; }
 .set-row .name { font-weight: 600; color: var(--text); font-size: var(--t-md); }
 .set-row .desc { grid-column: 2; margin-top: -0.6rem; font-size: var(--t-xs); color: var(--text-3); }
-.seg { display: inline-flex; gap: 0.125rem; padding: 0.125rem; border-radius: var(--r2); background: rgba(0,0,0,0.3); border: 1px solid var(--rim); flex-wrap: wrap; }
+.seg { justify-self: start; display: inline-flex; gap: 0.125rem; padding: 0.125rem; border-radius: var(--r2); background: rgba(0,0,0,0.3); border: 1px solid var(--rim); flex-wrap: wrap; }
 .seg .tg-btn { border: 0; background: transparent; min-height: 1.9rem; padding: 0 0.8rem; color: var(--text-2); }
 .seg .tg-btn.on { background: var(--gold-soft); color: var(--gold); }
 .switch { position: relative; width: 2.6rem; height: 1.5rem; border-radius: var(--r-pill); border: 1px solid var(--rim-strong); background: rgba(0,0,0,0.35); cursor: pointer; padding: 0; }

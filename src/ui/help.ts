@@ -28,6 +28,7 @@ css('help', `
 .help-row .keys { flex: none; min-width: 5.5rem; display: flex; gap: 0.2rem; flex-wrap: wrap; }
 .help-row .kbd { height: 1.3rem; min-width: 1.3rem; font-size: 0.6875rem; padding: 0 0.3rem; }
 .help-row svg { flex: none; color: var(--text); }
+.help-group.compact .keys { min-width: 2.2rem; }
 `);
 
 const CONCEPTS: Array<{ icon: UiIconName; title: string; text: string }> = [
@@ -50,7 +51,7 @@ export function helpHtml(): string {
   for (const c of CONCEPTS) html += `<div class="help-card"><span class="ic">${icon(c.icon, 20)}</span><div><b>${c.title}</b><p>${c.text}</p></div></div>`;
   html += `</div></section><section><h3>Controls</h3><div class="help-keys">`;
   for (const g of GROUPS) {
-    html += `<div class="help-group"><h4>${g}</h4>`;
+    html += `<div class="help-group${g === 'Spells' || g === 'Build' ? ' compact' : ''}"><h4>${g}</h4>`;
     for (const d of DESCRIBED_CONTROLS.filter((x) => x.group === g)) html += row(d.keys, d.desc);
     if (g === 'Selection') {
       html += row(['1', '–', '9'], 'Select a control group (twice: jump to it)');

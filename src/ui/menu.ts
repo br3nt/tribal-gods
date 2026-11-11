@@ -41,7 +41,8 @@ css('menu', `
 .menu-logo p { margin: 0.9rem 0 0; color: var(--text-2); font-size: var(--t-lg); max-width: 24rem; line-height: 1.45; }
 .menu-logo .rule { width: 3.5rem; height: 2px; margin-top: 1.1rem; background: linear-gradient(90deg, var(--gold), transparent); }
 .menu-nav { display: flex; flex-direction: column; gap: 0.4rem; width: 17rem; }
-.menu-nav .tg-btn { justify-content: flex-start; min-height: 2.9rem; padding: 0 1rem; font-size: var(--t-md); font-weight: 600; background: rgba(255,255,255,0.05); backdrop-filter: var(--blur); }
+.menu-nav .tg-btn:not(.primary) { background: rgba(255,255,255,0.05); }
+.menu-nav .tg-btn { justify-content: flex-start; min-height: 2.9rem; padding: 0 1rem; font-size: var(--t-md); font-weight: 600; backdrop-filter: var(--blur); }
 .menu-nav .tg-btn svg { color: var(--gold); }
 .menu-nav .tg-btn.primary svg { color: inherit; }
 .menu-nav .tg-btn .soon { margin-left: auto; font-size: var(--t-xs); color: var(--text-3); font-weight: 500; }
@@ -103,6 +104,7 @@ export class Menu {
       if (!this.visible || this.overlay.classList.contains('custom')) return;
       if (e.code === 'Escape') {
         e.preventDefault();
+        e.stopImmediatePropagation(); // the game's own Esc handler must not re-open us
         this.back();
       } else if (e.code === 'F1' && this.screen === 'title') {
         e.preventDefault();
@@ -182,7 +184,7 @@ export class Menu {
   private titleScreen(): HTMLElement {
     this.backTo = 'title';
     const nav = h('nav.menu-nav', { 'aria-label': 'Main menu' },
-      this.navBtn('Campaign', 'objective', this.onCampaign ? () => { this.hide(); this.onCampaign!(); } : null, true, this.onCampaign ? '' : 'coming soon'),
+      this.navBtn('Campaign', 'objective', this.onCampaign ? () => { this.hide(); this.onCampaign!(); } : null, !!this.onCampaign, this.onCampaign ? '' : 'coming soon'),
       this.navBtn('Skirmish', 'attack', () => this.show('skirmish'), !this.onCampaign),
       this.navBtn('Levels', 'book', () => { this.hide(); this.onLevels?.(); }),
       this.navBtn('Editor', 'hammer', () => { this.hide(); this.onEditor?.(); }),

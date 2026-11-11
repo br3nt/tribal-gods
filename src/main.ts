@@ -28,7 +28,7 @@ import { BuildingRenderer } from './render/building-renderer';
 import { CameraRig } from './render/camera-rig';
 import { EffectsRenderer } from './render/effects';
 import { Lighting } from './render/lighting';
-import { initialQuality, sunPreset } from './render/look';
+import { CAMERA, initialQuality, sunPreset } from './render/look';
 import { PostChain } from './render/post';
 import { Atmosphere, Sky } from './render/sky';
 import { TreeRenderer } from './render/tree-renderer';
@@ -123,6 +123,7 @@ addEventListener('pointerdown', unlockAudio, { once: true });
 function centerOnHome(): void {
   const home = world.tribes.player?.home ?? { x: 0, z: 0 };
   rig.target.set(home.x * 2, 0, home.z * 2);
+  rig.zoom = CAMERA.defaultZoom;
 }
 centerOnHome();
 
@@ -132,8 +133,8 @@ let lastStart: { settings?: Parameters<World['reset']>[1]; level?: LevelData } =
 function newWorld(settings?: Parameters<World['reset']>[1]): void {
   world.reset(Math.floor(Math.random() * 1e9), settings);
   treeRenderer.rebuild(world);
-  ui?.reset();
   centerOnHome();
+  ui?.reset();
   lastStart = { settings };
 }
 
@@ -179,6 +180,11 @@ function quitToMenu(): void {
   appState.mode = 'menu';
   appState.paused = false;
   backBtn.style.display = 'none';
+  showTitle();
+}
+/** The title screen frames the whole planet, slowly turning. */
+function showTitle(): void {
+  rig.zoom = 0.78;
   menu.show('title');
 }
 
@@ -186,8 +192,8 @@ function quitToMenu(): void {
 async function startLevel(level: LevelData, asTest = false): Promise<void> {
   await world.loadLevel(level, menu.settings);
   treeRenderer.rebuild(world);
-  ui?.reset();
   centerOnHome();
+  ui?.reset();
   appState.mode = 'game';
   lastStart = { level };
   testingLevel = asTest ? level : null;
@@ -226,7 +232,7 @@ const library = new LevelLibrary({
   onEdit: (id, level) => void editLevel(id, level),
   onClose: () => {
     appState.mode = 'menu';
-    menu.show();
+    showTitle();
   },
 });
 
@@ -238,7 +244,7 @@ const editor = new Editor(rig.camera, rig.target, world, renderer.domElement, {
   onExit: () => {
     editor.close();
     appState.mode = 'menu';
-    menu.show();
+    showTitle();
   },
 });
 
@@ -319,6 +325,7 @@ ui = new GameUi(world, { camera: rig.camera, target: rig.target, map: world.map 
 (window as unknown as { __tg: unknown }).__tg = {
   world, rig, appState, menu, startLevel, terrain, effects, post, scene, lighting, ui, toolState, newWorld,
 };
+if (query.get('play') !== '1') rig.zoom = 0.78;
 if (query.get('play') === '1') {
   menu.hide();
   appState.mode = 'game';
