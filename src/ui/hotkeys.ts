@@ -60,7 +60,7 @@ export const SPELL_ROWS = [
   ['KeyV', 'KeyB', 'KeyN', 'KeyM'],
 ] as const;
 
-/** Debug-only keys (F3 on): - and = arm the sculpt brush. Not bound in play. */
+/** Debug-only keys (F3 on): - and = arm the sculpt brush, Shift+[ / Shift+] size it (ui/brush.ts). Not bound in play. */
 export const DEBUG_CODES = ['Minus', 'Equal'];
 
 /** Keys the camera rig reads directly; nothing else may bind them. */
@@ -169,4 +169,22 @@ export function matchHotkey(e: KeyLike): Hotkey | null {
     if (hk.code === e.code && !!hk.shift === e.shiftKey && !!hk.ctrl === e.ctrlKey) return hk;
   }
   return null;
+}
+
+/**
+ * Which key sizes the brush, and by how much (0 = not a brush key).
+ * In the editor: [ and ]. In play [ ] are game speed, so the debug brush
+ * (F3) sizes with Shift+[ and Shift+] instead — never both at once.
+ */
+export function brushSizeStep(
+  e: { code: string; shiftKey: boolean; ctrlKey: boolean; metaKey: boolean; altKey: boolean },
+  mode: string,
+  debug: boolean,
+): number {
+  if (e.ctrlKey || e.metaKey || e.altKey) return 0;
+  const dir = e.code === 'BracketLeft' ? -1 : e.code === 'BracketRight' ? 1 : 0;
+  if (!dir) return 0;
+  if (mode === 'editor') return e.shiftKey ? 0 : dir;
+  if (mode === 'game' && debug) return e.shiftKey ? dir : 0;
+  return 0;
 }

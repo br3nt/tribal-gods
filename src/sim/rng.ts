@@ -6,7 +6,8 @@
  * mulberry32 — tiny, fast, good enough for dice that aren't cryptography.
  */
 export class Rng {
-  private s: number;
+  /** Generator state (sim/save.ts reads and restores it). */
+  s: number;
 
   constructor(seed = 1) {
     this.s = seed >>> 0 || 0x9e3779b9;

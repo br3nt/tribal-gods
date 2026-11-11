@@ -88,7 +88,7 @@ export const scenario: CampaignScenario = {
       rules: {
         tribes: [
           {
-            id: 'player', ai: false,
+            id: 'player', name: 'the Lantern-folk', ai: false,
             loadout: {
               spells: ['blast', 'convert', 'flatten', 'bloom', 'ward', 'lightning', 'warsong', 'swamp', 'landbridge'],
               startUnits: { brave: 10 },
@@ -96,17 +96,17 @@ export const scenario: CampaignScenario = {
             },
           },
           {
-            id: 'red', ai: true,
+            id: 'red', name: 'the Ashmark', ai: true,
             personality: { harassAt: 4, assaultAt: 9 },
             loadout: { spells: ['blast', 'convert', 'lightning', 'warsong'], startUnits: { brave: 9 } },
           },
           {
-            id: 'gold', ai: true,
+            id: 'gold', name: 'the Saltborn', ai: true,
             personality: { harassAt: 7, assaultAt: 15, prefer: ['warden', 'firewarrior', 'warrior'] },
             loadout: { spells: ['blast', 'convert', 'ward', 'swamp'], startUnits: { brave: 9 } },
           },
           {
-            id: 'violet', ai: true,
+            id: 'violet', name: 'the Unmoored', ai: true,
             personality: { harassAt: 5, assaultAt: 11, prefer: ['chanter', 'warrior'] },
             loadout: { spells: ['blast', 'convert', 'lightning', 'bloom'], startUnits: { brave: 9 } },
           },

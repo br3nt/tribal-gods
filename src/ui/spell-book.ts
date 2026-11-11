@@ -24,7 +24,7 @@
 import { SPELLS, SpellDef, SpellId, SpellState } from '../sim/catalog';
 import { UiContext } from './context';
 import { css, escapeHtml, h, setClass, setText } from './dom';
-import { fmtEta, fmtSeconds, fmtTiles } from './format';
+import { fmtEta, fmtEtaShort, fmtSeconds, fmtTiles } from './format';
 import { labelFor } from './hotkeys';
 import { icon, spellIcon } from './icons';
 import { activeSpell } from './tools';
@@ -194,13 +194,19 @@ export class SpellBook {
         : !s.charging
           ? 'Not charging'
           : `in ${fmtEta(s.eta)}`;
+    // The tribe's own numbers: campaign boons and loadouts change both.
+    const cost = Math.round(s.chargeMana * 10) / 10;
+    const manaLine = cost === def.chargeMana
+      ? `${cost}`
+      : `${cost} <span style="color:var(--${cost < def.chargeMana ? 'good' : 'warn'})">(usually ${def.chargeMana})</span>`;
+    const bonus = s.bonusCharges ? ` <span style="color:var(--good)">(+${s.bonusCharges} from boons)</span>` : '';
     let html =
       `<div class="sub">Tier ${ROMAN[def.tier]} · ${TIER_NAMES[def.tier]}</div>` +
       `<h4>${escapeHtml(def.name)}<span class="kbd">${key}</span></h4>` +
       `<p>${escapeHtml(def.blurb)}</p><dl class="stats">` +
-      `<dt>Charges</dt><dd>${s.known ? `${s.charges} / ${s.max}` : `holds ${s.max}`}${s.gifted ? ` <span style="color:var(--gold)">+${s.gifted} gifted</span>` : ''}</dd>` +
+      `<dt>Charges</dt><dd>${s.known ? `${s.charges} / ${s.max}` : `holds ${s.max}`}${bonus}${s.gifted ? ` <span style="color:var(--gold)">+${s.gifted} gifted</span>` : ''}</dd>` +
       `<dt>Next charge</dt><dd>${charge}</dd>` +
-      `<dt>Mana / charge</dt><dd>${def.chargeMana}</dd>` +
+      `<dt>Mana / charge</dt><dd>${manaLine}</dd>` +
       `<dt>Range</dt><dd>${fmtTiles(def.range)} from your leader</dd>` +
       (def.radius > 0 ? `<dt>${def.aim === 'line' ? 'Width' : 'Radius'}</dt><dd>${fmtTiles(def.radius)}</dd>` : '') +
       `<dt>Duration</dt><dd>${def.duration > 0 ? fmtSeconds(def.duration) : 'Instant'}</dd>` +
@@ -252,7 +258,7 @@ export class SpellBook {
         slot.lastCharges = s.charges;
       }
       const showEta = s.known && !usable && s.charging && Number.isFinite(s.eta);
-      setText(slot.eta, showEta ? fmtEta(s.eta) : '');
+      setText(slot.eta, showEta ? fmtEtaShort(s.eta) : '');
       setClass(slot.el, 'counting', showEta);
       setClass(slot.el, 'locked', locked);
       setClass(slot.el, 'ready', usable && !locked);

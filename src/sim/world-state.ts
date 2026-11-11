@@ -71,6 +71,7 @@ import {
 import { breakChant, tickChant } from './chant';
 import { initObjectives, ObjectiveMemory, tickObjectives } from './objectives';
 import { findNearestWalkable, findPath, obstaclesOf, tileIndex, walkable } from './pathfinding';
+import { isMajor, regionAt } from './regions';
 import { Rng } from './rng';
 import { ALL_BUILDINGS, skirmishRules, STARTER_SPELLS } from './rules';
 import { EventMemory, initEventMemory, tickScenarioEvents } from './scenario-events';
@@ -133,6 +134,8 @@ export interface GameEvent {
   x2?: number;
   z2?: number;
   magnitude?: number;
+  /** Whose event it is, where that matters (sounds play loud only for the player's own). */
+  tribe?: Tribe;
 }
 
 /** How close a right-click must land to an enemy to mean "attack him". */
@@ -222,6 +225,8 @@ export interface Building {
   /** Seconds left burning (0 = not on fire). */
   burning: number;
   wardTime: number;
+  /** 'start' = stood up by a loadout's startBuildings (the level's rules make it, so a captured level must not). */
+  origin?: 'start';
 }
 
 export interface AiState {
@@ -233,6 +238,10 @@ export interface AiState {
   site?: { id: number; progress: number; since: number };
   /** False while a `passive` personality is holding back (see AiPersonality). */
   awake: boolean;
+  /** Seconds until its leader may cast again (difficulty's aiCastGap after each cast). */
+  castCooldown: number;
+  /** The gap it is bridging to reach its target (sim/crossing.ts), re-planned as land rises. */
+  crossing?: { from: { x: number; z: number }; to: { x: number; z: number }; kind: 'water' | 'cliff'; width: number; at: number; wait?: number } | null;
 }
 
 /** Everything one tribe owns that isn't a unit or a building. */
@@ -307,9 +316,10 @@ export class World implements SimQueries {
   eventMemory: EventMemory[] = [];
   readonly rng = new Rng(1);
 
-  private nextId = 1;
+  /** Next id for a unit or building. Public for sim/save.ts only. */
+  nextId = 1;
   /** `${unitId}:${target}` → sim time until which that unit won't retry an unreachable target. */
-  private unreachable = new Map<string, number>();
+  unreachable = new Map<string, number>();
   /** A* budget for jobs a unit picks for itself (orders get the full budget). */
   private static readonly AUTO_EXPANSIONS = 1500;
 
@@ -461,13 +471,16 @@ export class World implements SimQueries {
   }
 
   /** What the loaded level carried beyond the live world (captureLevel writes it back). */
-  private levelExtras: { rules?: ScenarioRules; units?: PlacedUnits[]; buildings?: PlacedBuilding[] } = {};
+  levelExtras: { rules?: ScenarioRules; units?: PlacedUnits[]; buildings?: PlacedBuilding[] } = {};
 
   /** Snapshot the current world as a level document (the editor's Save). */
   async captureLevel(meta: { name: string; author: string; desc: string }): Promise<LevelData> {
+    // Every wanderer standing in the world — the level's list, its placed
+    // groups and any the editor added — is written once, as a wildman spot.
+    // (Placed wild groups are folded in here, so they are not written twice.)
     const wild: number[] = [];
     for (const u of this.units) {
-      if (u.kind === 'wildman') wild.push(Math.round(u.x), Math.round(u.z));
+      if (u.kind === 'wildman' && u.tribe === 'wild') wild.push(Math.round(u.x), Math.round(u.z));
     }
     const trees: number[] = [];
     for (const t of this.trees) {
@@ -480,7 +493,8 @@ export class World implements SimQueries {
       if (id !== 'player') civs[id] = this.tribes[id]!.civ;
     }
     const source = this.levelExtras.buildings ?? [];
-    const buildings: PlacedBuilding[] = this.buildings.map((b) => {
+    // Loadout start buildings come from the rules on every load: not level content.
+    const buildings: PlacedBuilding[] = this.buildings.filter((b) => b.origin !== 'start').map((b) => {
       const out: PlacedBuilding = { tribe: b.tribe, kind: b.kind, x: b.x, z: b.z };
       if (b.progress < 1) out.complete = false;
       const was = source.find((s) => s.tribe === b.tribe && s.kind === b.kind && s.x === b.x && s.z === b.z);
@@ -511,7 +525,8 @@ export class World implements SimQueries {
     };
     if (this.levelExtras.rules) level.rules = this.levelExtras.rules;
     if (buildings.length) level.buildings = buildings;
-    if (this.levelExtras.units?.length) level.units = this.levelExtras.units.map((u) => ({ ...u }));
+    const tribeUnits = (this.levelExtras.units ?? []).filter((u) => u.tribe !== 'wild');
+    if (tribeUnits.length) level.units = tribeUnits.map((u) => ({ ...u }));
     return level;
   }
 
@@ -551,44 +566,7 @@ export class World implements SimQueries {
     placed: PlacedBuilding[] = [],
   ): void {
     this.rules = rules;
-    const civIds = Object.keys(CIVS) as CivId[];
-    const otherCivs = civIds.filter((c) => c !== this.settings.playerCiv);
-    const leaderDies = (rules.fail ?? []).some((f) => f.type === 'leaderDies');
-
-    for (const t of rules.tribes) {
-      const wanted = civs[t.id];
-      const civ =
-        t.id === 'player' ? this.settings.playerCiv
-        : wanted && CIVS[wanted] && wanted !== this.settings.playerCiv ? wanted
-        : this.rng.pick(otherCivs.length ? otherCivs : civIds);
-      const lo = t.loadout ?? {};
-      const known = new Set<SpellId>(lo.spells ?? STARTER_SPELLS);
-      const spells = newSpellBook();
-      for (const [id, n] of Object.entries(lo.extraCharges ?? {}) as Array<[SpellId, number]>) spells[id].bonus += n;
-      for (const [id, k] of Object.entries(lo.chargeCost ?? {}) as Array<[SpellId, number]>) spells[id].cost = Math.max(0.05, k);
-      for (const [id, n] of Object.entries(lo.gifts ?? {}) as Array<[SpellId, number]>) spells[id].gifted += n;
-      const personality = { ...(t.personality ?? {}) };
-      this.tribes[t.id] = {
-        id: t.id,
-        wood: lo.startWood ?? START_WOOD,
-        home: homes[t.id] ?? { x: WORLD_SIZE / 2, z: WORLD_SIZE / 2 },
-        civ,
-        known,
-        unlocked: known,
-        spells,
-        income: 0,
-        manaRate: 0,
-        allowed: new Set(lo.buildings ?? ALL_BUILDINGS),
-        allies: [...(t.allies ?? [])],
-        shamanRespawn: 0,
-        reincarnates: !(leaderDies && t.id === 'player'),
-        leaderDeaths: 0,
-        threatTimer: 0,
-        everBuilt: new Set(),
-        ai: t.ai ? { state: 'grow', evalTimer: 2, target: null, awake: !personality.passive } : null,
-        personality,
-      };
-    }
+    for (const t of rules.tribes) this.makeTribe(t, homes[t.id], civs[t.id]);
 
     // Buildings first, so the people below spawn clear of their walls: the
     // level's pre-placed ones where it says, then loadout extras near home.
@@ -657,7 +635,7 @@ export class World implements SimQueries {
         const a = (k / steps) * Math.PI * 2 + r * 0.7;
         const x = Math.round(t.home.x + Math.cos(a) * r);
         const z = Math.round(t.home.z + Math.sin(a) * r);
-        if (this.siteFree(kind, x, z)) return this.spawnBuilding(tribe, kind, x, z);
+        if (this.siteFree(kind, x, z)) return this.markStart(this.spawnBuilding(tribe, kind, x, z));
       }
     }
     const half = (BUILDINGS[kind].size - 1) / 2;
@@ -680,10 +658,85 @@ export class World implements SimQueries {
         if (!clear(x, z)) continue;
         this.map.flatten(x, z, half + 1.5, 1);
         this.map.version++;
-        return this.spawnBuilding(tribe, kind, x, z);
+        return this.markStart(this.spawnBuilding(tribe, kind, x, z));
       }
     }
     return null;
+  }
+
+  /** One tribe's state from its scenario entry (no units, no buildings). */
+  private makeTribe(t: ScenarioRules['tribes'][number], home: { x: number; z: number } | undefined, wanted: CivId | undefined): TribeState {
+    const civIds = Object.keys(CIVS) as CivId[];
+    const otherCivs = civIds.filter((c) => c !== this.settings.playerCiv);
+    const leaderDies = (this.rules.fail ?? []).some((f) => f.type === 'leaderDies');
+    const civ =
+      t.id === 'player' ? this.settings.playerCiv
+      : wanted && CIVS[wanted] && wanted !== this.settings.playerCiv ? wanted
+      : this.rng.pick(otherCivs.length ? otherCivs : civIds);
+    const lo = t.loadout ?? {};
+    const known = new Set<SpellId>(lo.spells ?? STARTER_SPELLS);
+    const spells = newSpellBook();
+    for (const [id, n] of Object.entries(lo.extraCharges ?? {}) as Array<[SpellId, number]>) spells[id].bonus += n;
+    for (const [id, k] of Object.entries(lo.chargeCost ?? {}) as Array<[SpellId, number]>) spells[id].cost = Math.max(0.05, k);
+    for (const [id, n] of Object.entries(lo.gifts ?? {}) as Array<[SpellId, number]>) spells[id].gifted += n;
+    const personality = { ...(t.personality ?? {}) };
+    const state: TribeState = {
+      id: t.id,
+      wood: lo.startWood ?? START_WOOD,
+      home: home ?? { x: WORLD_SIZE / 2, z: WORLD_SIZE / 2 },
+      civ,
+      known,
+      unlocked: known,
+      spells,
+      income: 0,
+      manaRate: 0,
+      allowed: new Set(lo.buildings ?? ALL_BUILDINGS),
+      allies: [...(t.allies ?? [])],
+      shamanRespawn: 0,
+      reincarnates: !(leaderDies && t.id === 'player'),
+      leaderDeaths: 0,
+      threatTimer: 0,
+      everBuilt: new Set(),
+      ai: t.ai ? { state: 'grow', evalTimer: 2, target: null, awake: !personality.passive, castCooldown: 0, crossing: null } : null,
+      personality,
+    };
+    this.tribes[t.id] = state;
+    return state;
+  }
+
+  /**
+   * The editor's home tool: put a tribe's home circle at (x, z). A tribe the
+   * level doesn't have yet joins it as an AI rival (the level's rules gain
+   * the entry, so Save keeps it).
+   */
+  setHome(tribe: TribeId, x: number, z: number): void {
+    if (!this.tribes[tribe]) {
+      const rules: ScenarioRules = structuredClone(this.levelExtras.rules ?? this.rules);
+      if (!rules.tribes.some((t) => t.id === tribe)) rules.tribes.push({ id: tribe, ai: true });
+      this.rules = rules;
+      this.levelExtras.rules = rules;
+      this.makeTribe(rules.tribes.find((t) => t.id === tribe)!, undefined, undefined);
+    }
+    this.tribes[tribe]!.home = { x: this.map.wrap(Math.round(x)), z: this.map.wrap(Math.round(z)) };
+  }
+
+  /** The editor's erase on a rival's home: the tribe leaves the level (never the player, never the last rival). */
+  removeTribe(tribe: TribeId): boolean {
+    if (tribe === 'player' || !this.tribes[tribe] || this.activeTribes().length <= 2) return false;
+    const rules: ScenarioRules = structuredClone(this.levelExtras.rules ?? this.rules);
+    rules.tribes = rules.tribes.filter((t) => t.id !== tribe);
+    for (const t of rules.tribes) if (t.allies) t.allies = t.allies.filter((a) => a !== tribe);
+    this.rules = rules;
+    this.levelExtras.rules = rules;
+    for (const b of this.buildings.filter((q) => q.tribe === tribe)) this.demolish(b.id);
+    this.units = this.units.filter((u) => u.tribe !== tribe);
+    delete this.tribes[tribe];
+    return true;
+  }
+
+  private markStart(b: Building): Building {
+    b.origin = 'start';
+    return b;
   }
 
   /**
@@ -798,7 +851,7 @@ export class World implements SimQueries {
         if (t.shamanRespawn <= 0) {
           t.shamanRespawn = 0;
           this.spawnNearWalkable('shaman', id, t.home.x, t.home.z);
-          this.events.push({ type: 'leaderReturn', x: t.home.x, z: t.home.z });
+          this.events.push({ type: 'leaderReturn', x: t.home.x, z: t.home.z, tribe: id });
           this.events.push({ type: 'convert', x: t.home.x, z: t.home.z });
         }
       }
@@ -834,7 +887,7 @@ export class World implements SimQueries {
         if (t) {
           t.leaderDeaths++;
           t.shamanRespawn = t.reincarnates ? LEADER_RESPAWN_SECONDS : 0;
-          this.events.push({ type: 'leaderDown', x: u.x, z: u.z });
+          this.events.push({ type: 'leaderDown', x: u.x, z: u.z, tribe: u.tribe });
         }
       }
     }
@@ -1927,7 +1980,7 @@ export class World implements SimQueries {
     const t = this.tribes[tribe];
     if (!t) {
       const def = spellDef(id);
-      return { known: false, charges: 0, max: def.maxCharges, progress: 0, charging: false, gifted: 0, eta: Infinity };
+      return { known: false, charges: 0, max: def.maxCharges, progress: 0, charging: false, gifted: 0, eta: Infinity, chargeMana: def.chargeMana, bonusCharges: 0 };
     }
     return slotState(t.spells, t.known, id, t.income);
   }
@@ -2031,11 +2084,11 @@ export class World implements SimQueries {
     m.firstClaimer ??= tribe;
     if (m.mode === 'teach') {
       t.known.add(m.spell);
-      this.events.push({ type: 'unlock', x: m.x, z: m.z });
+      this.events.push({ type: 'unlock', x: m.x, z: m.z, tribe });
     } else {
       t.spells[m.spell].gifted += m.charges ?? 2;
       m.sleep = m.cooldown ?? 90;
-      this.events.push({ type: 'giftClaimed', x: m.x, z: m.z, magnitude: m.charges ?? 2 });
+      this.events.push({ type: 'giftClaimed', x: m.x, z: m.z, magnitude: m.charges ?? 2, tribe });
     }
   }
 
@@ -2070,8 +2123,8 @@ export class World implements SimQueries {
     return false;
   }
 
-  sendTo(u: Unit, tx: number, tz: number, maxExpansions = 4000): boolean {
-    const path = findPath(this.map, u.x, u.z, tx, tz, maxExpansions);
+  sendTo(u: Unit, tx: number, tz: number, maxExpansions = 4000, shoreRadius = 8): boolean {
+    const path = findPath(this.map, u.x, u.z, tx, tz, maxExpansions, shoreRadius);
     if (!path || path.length === 0) return false;
     u.path = path;
     u.pathIndex = 0;
@@ -2082,6 +2135,8 @@ export class World implements SimQueries {
 
   orderMove(ids: number[], tx: number, tz: number): void {
     let slot = 0;
+    let moved = 0;
+    let refused: Unit | null = null;
     for (const id of ids) {
       const u = this.units.find((q) => q.id === id);
       if (!u || u.hidden) continue;
@@ -2099,9 +2154,13 @@ export class World implements SimQueries {
         ox = Math.cos(a) * 1.6 * ring;
         oz = Math.sin(a) * 1.6 * ring;
       }
-      this.sendTo(u, Math.round(tx + ox), Math.round(tz + oz));
+      // A move across water walks to the nearest shore facing it (a player
+      // clicking the sea on the minimap still sees their people go).
+      if (this.sendTo(u, Math.round(tx + ox), Math.round(tz + oz), 4000, 24)) moved++;
+      else if (!refused) refused = u;
       slot++;
     }
+    if (moved === 0 && refused && refused.tribe === 'player') this.events.push({ type: 'denied', x: tx, z: tz });
   }
 
   /** Send a leader to commune at a monument. Only leaders can worship. */
@@ -2244,7 +2303,12 @@ export class World implements SimQueries {
   }
 
   spawnNearWalkable(kind: UnitKind, tribe: Tribe, x: number, z: number): Unit | null {
-    const spot = findNearestWalkable(this.map, Math.round(x), Math.round(z));
+    // Never onto a stranded scrap (a cliff-ringed ridge-top): the nearest
+    // ground that belongs to a real stretch of land, else any ground at all.
+    const major = (tx: number, tz: number) => isMajor(this.map, regionAt(this.map, tx, tz));
+    const spot =
+      findNearestWalkable(this.map, Math.round(x), Math.round(z), 16, major) ??
+      findNearestWalkable(this.map, Math.round(x), Math.round(z));
     if (!spot) return null;
     return this.spawn(kind, tribe, spot.x + this.random() * 0.6 - 0.3, spot.z + this.random() * 0.6 - 0.3);
   }

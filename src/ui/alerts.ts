@@ -12,6 +12,7 @@
  * spells cast.
  */
 
+import { alertSound } from '../core/audio';
 import { SPELLS } from '../sim/catalog';
 import type { World } from '../sim/world-state';
 import { Alert, AlertMemory, castsBetween, deriveAlerts, Snapshot } from './alert-rules';
@@ -101,7 +102,10 @@ export class AlertFeed {
     this.tally.peakPopulation = Math.max(this.tally.peakPopulation, next.population);
     if (this.prev) {
       this.tally.spellsCast += castsBetween(this.prev, next);
-      for (const a of deriveAlerts(this.prev, next, this.mem)) this.push(a);
+      const fresh = deriveAlerts(this.prev, next, this.mem);
+      for (const a of fresh) this.push(a);
+      // One sound per batch: the most urgent.
+      if (fresh.length) alertSound(fresh.some((a) => a.kind === 'attack' || a.kind === 'leaderDown') ? 'attack' : fresh.some((a) => a.tone === 'good') ? 'good' : 'info');
     }
     this.prev = next;
   }

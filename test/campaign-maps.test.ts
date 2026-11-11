@@ -35,6 +35,8 @@ describe('campaign: every scenario', () => {
       expect(rules.briefing.tips.length).toBeGreaterThanOrEqual(2);
       expect(rules.briefing.tips.length).toBeLessThanOrEqual(3);
       expect(rules.objectives.some((o) => !o.optional)).toBe(true);
+      // Every people is named by the scenario (briefings read names from the data).
+      for (const t of rules.tribes) expect(t.name, `${s.id}: ${t.id}`).toMatch(/^the /);
 
       // Homes: walkable, and tribes that build have room for a village.
       for (const t of rules.tribes) {
@@ -125,7 +127,7 @@ describe('campaign: intended routes', () => {
     expect(w.spellState('player', 'landbridge').gifted).toBe(0);
     expect(reaches(w, home, L4.holm)).toBe(true);
     expect(reaches(w, home, red)).toBe(true);
-    expect(w.monuments[0].sleep).toBeGreaterThan(300); // and the stone sleeps a long time
+    expect(w.monuments[0].sleep).toBeGreaterThan(150); // and the stone sleeps a good while (4 min)
   }, 30_000);
 
   it('5 Caldera: raiders reach the shrine only through the three breaches', async () => {

@@ -10,9 +10,18 @@
  * everything you place looks exactly as it will in play, because it is.
  *
  * Toolbar (top center): sculpt tools, placement tools, level metadata,
- * then the verbs — Save to library, Export share code, Test, Exit. The
- * monument tool shows which spell the next stone will hold; click its
- * button again to cycle through the six lockable spells.
+ * then the verbs — Save to library, Export share code, Test, Exit.
+ *
+ *   Stone   places a standing stone: pick its spell (any of the fourteen)
+ *           and whether it TEACHES the spell or GIFTS two casts.
+ *   Home    moves a tribe's home circle: pick the tribe. Placing the home
+ *           of a tribe the level doesn't have adds it as an AI rival (up
+ *           to four tribes); Erase on a rival's home circle removes it.
+ *
+ * What the editor does NOT edit: scenario rules beyond the tribe list
+ * (loadouts, objectives, scripted events, alliances, personalities). A
+ * level made here plays as "destroy every rival"; campaign chapters keep
+ * the rules they were loaded with.
  */
 
 import * as THREE from 'three';
@@ -21,14 +30,14 @@ import { LevelData, levelToCode } from '../level/level-format';
 import { saveLevel } from '../level/store';
 import { pickGroundTile } from '../render/ground-picker';
 import { walkable } from '../sim/pathfinding';
-import { spellDef, SpellId } from '../sim/catalog';
+import { SPELLS, spellDef, SpellId, TribeId } from '../sim/catalog';
 import { World } from '../sim/world-state';
 import { appState } from './app-state';
 import { css } from './dom';
 import { icon, spellIcon, UiIconName } from './icons';
 import { toolState } from './tools';
 
-const PLACEABLE_SPELLS: SpellId[] = ['lightning', 'swamp', 'landbridge', 'flatten', 'earthquake', 'volcano'];
+const TRIBE_NAMES: Record<TribeId, string> = { player: 'Your tribe', red: 'Red rival', gold: 'Gold rival', violet: 'Violet rival' };
 
 css('editor', `
 .ed-bar { position: fixed; top: var(--edge); left: 50%; transform: translateX(-50%); display: none; flex-wrap: wrap; gap: 0.3rem;
@@ -37,12 +46,15 @@ css('editor', `
 .ed-bar .sep { width: 1px; align-self: stretch; margin: 0.2rem 0.2rem; background: var(--rim); }
 .ed-bar input { min-height: 1.9rem; padding: 0 0.55rem; border-radius: var(--r2); border: 1px solid var(--rim); background: var(--ink-2); color: var(--text); font: var(--t-sm) var(--font); }
 .ed-status { color: var(--text-3); margin-left: 0.3rem; }
+.ed-bar select { min-height: 1.9rem; padding: 0 0.4rem; border-radius: var(--r2); border: 1px solid var(--rim); background: var(--ink-2); color: var(--text); font: var(--t-sm) var(--font); }
 `);
 
 export class Editor {
   /** The level currently being edited (id when re-saving an existing one). */
   private editingId: string | undefined;
-  private monumentSpell = 0; // index into PLACEABLE_SPELLS, cycled by its button
+  private stoneSpell: SpellId = 'lightning';
+  private stoneMode: 'teach' | 'gift' = 'teach';
+  private homeTribe: TribeId = 'player';
   private readonly bar: HTMLDivElement;
   private readonly nameInput: HTMLInputElement;
   private readonly authorInput: HTMLInputElement;
@@ -72,10 +84,6 @@ export class Editor {
       b.className = 'tg-btn';
       b.dataset.tool = t;
       b.addEventListener('click', () => {
-        if (t === 'monument' && toolState.tool === 'monument') {
-          // Already selected: clicking again cycles the spell in the stone.
-          this.monumentSpell = (this.monumentSpell + 1) % PLACEABLE_SPELLS.length;
-        }
         toolState.tool = t as never;
         this.refresh();
       });
@@ -88,10 +96,34 @@ export class Editor {
     tool('Flatten', 'flatten', 'In the editor this is a brush, not a spell', 'hammer');
     tool('Tree', 'tree', '', 'wood');
     tool('Wanderer', 'wildman', '', 'idle');
-    this.monumentBtn = tool('Stone', 'monument', 'Click again to cycle the spell inside', 'stone');
-    tool('Your home', 'homePlayer', "Move your tribe's start", 'home');
-    tool('Rival home', 'homeRed', "Move the enemy's start", 'home');
-    tool('Erase', 'erase', 'Remove trees / wanderers / stones', 'close');
+    this.monumentBtn = tool('Stone', 'monument', 'Place a standing stone (pick its spell and kind)', 'stone');
+    this.select(
+      SPELLS.map((s) => [s.id, s.name]),
+      () => this.stoneSpell,
+      (v) => {
+        this.stoneSpell = v as SpellId;
+        toolState.tool = 'monument';
+        this.refresh();
+      },
+      'Spell held by the next stone',
+    );
+    this.select([['teach', 'teaches'], ['gift', 'gifts 2 casts']], () => this.stoneMode, (v) => {
+      this.stoneMode = v as 'teach' | 'gift';
+      toolState.tool = 'monument';
+      this.refresh();
+    }, 'Teach: the first leader to commune learns it. Gift: whoever communes gets two casts; the stone then sleeps.');
+    tool('Home', 'home', 'Move a tribe’s home circle; a new tribe joins as an AI rival', 'home');
+    this.select(
+      (Object.keys(TRIBE_NAMES) as TribeId[]).map((t) => [t, TRIBE_NAMES[t]]),
+      () => this.homeTribe,
+      (v) => {
+        this.homeTribe = v as TribeId;
+        toolState.tool = 'home';
+        this.refresh();
+      },
+      'Whose home the Home tool moves',
+    );
+    tool('Erase', 'erase', 'Remove trees / wanderers / stones / a rival’s home', 'close');
 
     const sep = () => {
       const s = document.createElement('span');
@@ -156,22 +188,24 @@ export class Editor {
         return;
       case 'monument': {
         if (!walkable(w.map, x, z)) return;
-        const spell = PLACEABLE_SPELLS[this.monumentSpell];
-        w.monuments.push({ x: w.map.wrap(x), z: w.map.wrap(z), spell, mode: 'teach', claimedBy: null, claimer: null, sleep: 0 });
-        this.say(`monument of ${spell} placed`);
+        const spell = this.stoneSpell;
+        const gift = this.stoneMode === 'gift';
+        w.monuments.push({
+          x: w.map.wrap(x), z: w.map.wrap(z), spell, mode: this.stoneMode, claimedBy: null, claimer: null, sleep: 0,
+          ...(gift ? { charges: 2, cooldown: 120 } : {}),
+        });
+        this.say(`Stone placed: ${gift ? 'gifts' : 'teaches'} ${spellDef(spell).name}`);
         return;
       }
-      case 'homePlayer':
-      case 'homeRed': {
+      case 'home': {
         if (!walkable(w.map, x, z)) return;
-        const tribe = toolState.tool === 'homePlayer' ? 'player' : 'red';
-        const t = w.tribes[tribe];
-        if (t) t.home = { x: w.map.wrap(x), z: w.map.wrap(z) };
-        this.say(`${tribe} home moved`);
+        const added = !w.tribes[this.homeTribe];
+        w.setHome(this.homeTribe, x, z);
+        this.say(added ? `${TRIBE_NAMES[this.homeTribe]} joins the level` : `${TRIBE_NAMES[this.homeTribe]}: home moved`);
         return;
       }
       case 'erase': {
-        // Nearest placeable within 2 tiles dies: trees, wildmen, monuments.
+        // Nearest placeable within 2 tiles dies: trees, wildmen, monuments, then a rival's home.
         const near = (ax: number, az: number) => Math.hypot(ax - x, az - z) < 2;
         const ti = this.world.trees.findIndex((t) => t.alive && near(t.x, t.z));
         if (ti >= 0) {
@@ -184,7 +218,12 @@ export class Editor {
           return;
         }
         const ui = this.world.units.findIndex((u) => u.kind === 'wildman' && near(u.x, u.z));
-        if (ui >= 0) this.world.units.splice(ui, 1);
+        if (ui >= 0) {
+          this.world.units.splice(ui, 1);
+          return;
+        }
+        const rival = this.world.activeTribes().find((t) => t !== 'player' && near(this.world.tribes[t]!.home.x, this.world.tribes[t]!.home.z));
+        if (rival) this.say(this.world.removeTribe(rival) ? `${TRIBE_NAMES[rival]} removed` : 'A level needs at least one rival');
         return;
       }
       default:
@@ -231,9 +270,29 @@ export class Editor {
       if (!b.dataset.tool) continue;
       b.classList.toggle('on', toolState.tool === b.dataset.tool);
     }
-    const spell = PLACEABLE_SPELLS[this.monumentSpell];
+    const spell = this.stoneSpell;
     this.monumentBtn.innerHTML = `${spellIcon(spell, 14)}<span></span>`;
-    (this.monumentBtn.lastChild as HTMLElement).textContent = `Stone: ${spellDef(spell).name}`;
+    (this.monumentBtn.lastChild as HTMLElement).textContent = 'Stone';
+    for (const s of this.selects) s.paint();
+  }
+
+  private readonly selects: Array<{ paint(): void }> = [];
+
+  /** A small dropdown on the bar (keys typed into it stay out of the game). */
+  private select(options: Array<[string, string]>, current: () => string, pick: (v: string) => void, title: string): HTMLSelectElement {
+    const sel = document.createElement('select');
+    sel.title = title;
+    for (const [v, label] of options) {
+      const o = document.createElement('option');
+      o.value = v;
+      o.textContent = label;
+      sel.appendChild(o);
+    }
+    sel.addEventListener('change', () => pick(sel.value));
+    sel.addEventListener('keydown', (e) => e.stopPropagation());
+    this.bar.appendChild(sel);
+    this.selects.push({ paint: () => (sel.value = current()) });
+    return sel;
   }
 
   /** A verb button (save/code/test/exit) — no tool highlighting. */

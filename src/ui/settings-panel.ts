@@ -1,12 +1,13 @@
 /**
  * ui/settings-panel.ts — the Settings form (main menu and in-game menu).
  *
- * Graphics quality, interface size, edge panning and hints. Each control
- * writes ui/settings.ts and applies at once where it can; quality needs the
- * renderer rebuilt, so in the middle of a game it offers a reload instead
- * of throwing your game away unasked.
+ * Sound (volume, mute), graphics quality, interface size, edge panning and
+ * hints. Each control writes its setting and applies at once — graphics
+ * too (main.ts rebuilds the post chain live; only the terrain mesh's
+ * detail waits for the next load, and the panel says so when it matters).
  */
 
+import { getVolume, isMuted, setMuted, setVolume, uiClick } from '../core/audio';
 import { css, h } from './dom';
 import { applyUiScale, QualitySetting, saveSettings, setQuality, settings } from './settings';
 
@@ -22,7 +23,10 @@ css('settings-panel', `
 .switch::after { content: ''; position: absolute; top: 0.15rem; left: 0.15rem; width: 1.1rem; height: 1.1rem; border-radius: 50%; background: var(--text-2); transition: transform var(--fast) var(--ease), background var(--fast); }
 .switch.on { background: var(--gold-soft); border-color: var(--gold); }
 .switch.on::after { transform: translateX(1.1rem); background: var(--gold); }
-.set-note { font-size: var(--t-sm); color: var(--warn); display: flex; align-items: center; gap: 0.6rem; }
+.set-note { font-size: var(--t-sm); color: var(--text-3); display: flex; align-items: center; gap: 0.6rem; }
+.vol { display: flex; align-items: center; gap: 0.75rem; }
+.vol input[type=range] { width: 12rem; accent-color: var(--gold); }
+.vol .pct { min-width: 2.6rem; font-variant-numeric: tabular-nums; color: var(--text-2); font-size: var(--t-sm); }
 @media (max-width: 640px) { .set-row { grid-template-columns: 1fr; } .set-row .desc { grid-column: 1; margin-top: -0.6rem; } }
 `);
 
@@ -31,6 +35,8 @@ export interface SettingsHooks {
   inGame(): boolean;
   onEdgePan(on: boolean): void;
   onResetHints(): void;
+  /** Apply a new graphics tier now. Returns true if the terrain detail still needs a reload. */
+  onQuality?(q: QualitySetting): boolean;
 }
 
 function seg<T extends string | number>(options: Array<[T, string]>, current: () => T, pick: (v: T) => void): HTMLDivElement {
@@ -70,19 +76,42 @@ export function settingsPanel(hooks: SettingsHooks): HTMLDivElement {
   const row = (name: string, control: HTMLElement, desc: string) =>
     root.append(h('div.set-row', {}, h('div.name', { text: name }), control, h('div.desc', { text: desc })));
 
+  // Sound: master volume + mute (core/audio.ts remembers both).
+  const pct = h('span.pct');
+  const slider = h('input', { type: 'range', min: '0', max: '100', step: '1', 'aria-label': 'Volume' });
+  slider.value = String(Math.round(getVolume() * 100));
+  const paintVol = () => (pct.textContent = isMuted() ? 'muted' : `${slider.value}%`);
+  slider.addEventListener('input', () => {
+    setVolume(Number(slider.value) / 100);
+    if (isMuted()) setMuted(false);
+    paintVol();
+    paintMute();
+  });
+  slider.addEventListener('change', () => uiClick());
+  slider.addEventListener('keydown', (e) => e.stopPropagation());
+  const mute = toggle(() => !isMuted(), (on) => {
+    setMuted(!on);
+    paintVol();
+  }, 'Sound on');
+  const paintMute = () => {
+    mute.classList.toggle('on', !isMuted());
+    mute.setAttribute('aria-checked', String(!isMuted()));
+  };
+  paintVol();
+  row('Sound', h('div.vol', {}, mute, slider, pct), 'Master volume for effects and the quiet ambient bed. The switch mutes everything.');
+
   const note = h('div.set-note');
   note.hidden = true;
   row('Graphics', seg<QualitySetting>([['auto', 'Auto'], ['low', 'Low'], ['medium', 'Medium'], ['high', 'High']], () => settings.quality, (q) => {
-    const reloadNow = !hooks.inGame();
-    setQuality(q, reloadNow);
-    if (!reloadNow) {
-      note.hidden = false;
+    setQuality(q);
+    const needsReload = hooks.onQuality?.(q) ?? true;
+    note.hidden = !needsReload;
+    if (needsReload) {
       note.replaceChildren(
-        h('span', { text: 'Takes effect after a reload (this game will end).' }),
-        h('button.tg-btn', { type: 'button', text: 'Reload now', onclick: () => location.reload() }),
+        h('span', { text: 'Applied. Terrain detail follows the next time the game loads.' }),
       );
     }
-  }), 'Auto starts high and steps down if frames get slow. Low suits older laptops.');
+  }), 'Applies at once. Auto starts high and steps down if frames get slow. Low suits older laptops.');
   root.appendChild(note);
 
   row('Interface size', seg<string>([['auto', 'Auto'], ['0.9', '90%'], ['1', '100%'], ['1.15', '115%'], ['1.3', '130%']], () => String(settings.uiScale), (v) => {

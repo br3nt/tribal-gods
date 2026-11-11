@@ -2,8 +2,11 @@
  * ui/settings.ts — player preferences, remembered in localStorage.
  *
  *   quality  — graphics tier. The renderer reads it from `?q=` at boot
- *              (render/look.ts), so changing it rewrites the URL and
- *              reloads; 'auto' removes `?q=` and lets the governor adapt.
+ *              (render/look.ts); changing it rewrites the URL (so a reload
+ *              keeps it) and main.ts applies it live — post chain, pixel
+ *              ratio, shadows, ground cover. Only the terrain mesh's
+ *              subdivision waits for the next load. 'auto' removes `?q=`
+ *              and lets the governor adapt.
  *   uiScale  — 'auto' fits the HUD to the window, or a fixed factor.
  *   edgePan  — move the camera when the cursor touches a screen edge.
  *   hints    — first-minutes hint chips on/off (dismissals live in hints.ts).
@@ -62,11 +65,10 @@ export function applyUiScale(): void {
  * Quality comes from `?q=` (render/look.ts reads it once, at boot). Writing
  * the URL without navigating keeps the current game; `reload` applies it.
  */
-export function setQuality(q: QualitySetting, reload: boolean): void {
+export function setQuality(q: QualitySetting): void {
   settings.quality = q;
   saveSettings();
   writeQualityToUrl();
-  if (reload) location.reload();
 }
 
 /**

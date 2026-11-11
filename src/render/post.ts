@@ -112,6 +112,10 @@ export class PostChain {
   }
 
   private build(): void {
+    this.bloom?.dispose(); // passes own render targets the composer doesn't free
+    this.fxaa?.dispose();
+    this.bloom = null;
+    this.fxaa = null;
     this.composer?.dispose();
     this.composer = null;
     const q = this.quality;
@@ -141,6 +145,15 @@ export class PostChain {
       composer.addPass(this.fxaa);
     }
     this.composer = composer;
+  }
+
+  /** Switch tier now (Settings → Graphics): rebuilds the post chain and pixel ratio in place. */
+  setQuality(q: QualityTier): void {
+    this.quality = q;
+    this.slowFor = 0;
+    this.warmup = 4;
+    this.grade = null;
+    this.build();
   }
 
   setSize(w: number, h: number): void {

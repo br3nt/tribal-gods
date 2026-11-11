@@ -71,6 +71,31 @@ const N = WORLD_SIZE;
 const dist = (ax: number, az: number, bx: number, bz: number) =>
   Math.hypot(wrapDelta(ax - bx, N), wrapDelta(az - bz, N));
 
+/**
+ * A crater that dents land without drowning it: ground that was dry keeps
+ * its floor just above the sea. Craters still break a hillside and scatter
+ * people, but a fight on a causeway no longer sinks the causeway.
+ */
+function crater(world: World, x: number, z: number, r: number, depth: number): void {
+  const R = Math.ceil(r);
+  const cx = Math.round(x);
+  const cz = Math.round(z);
+  const floor = WALK_MIN_HEIGHT + 0.4;
+  for (let dz = -R; dz <= R; dz++) {
+    for (let dx = -R; dx <= R; dx++) {
+      const d = Math.hypot(cx + dx - x, cz + dz - z);
+      if (d > r) continue;
+      const f = 0.5 * (1 + Math.cos((Math.PI * d) / r));
+      const i = tileIndex(cx + dx, cz + dz);
+      const h = world.map.heights[i];
+      let nh = h - depth * f;
+      if (h >= WALK_MIN_HEIGHT) nh = Math.max(nh, Math.min(h, floor));
+      world.map.heights[i] = clamp(nh, MIN_HEIGHT, MAX_HEIGHT);
+    }
+  }
+  world.map.version++;
+}
+
 function addAura(world: World, kind: AuraKind, x: number, z: number, radius: number, duration: number, tribe: TribeId): Aura {
   const aura: Aura = { kind, x, z, radius, t: 0, duration, tribe };
   world.auras.push(aura);
@@ -109,7 +134,7 @@ export function castSpell(
   switch (id) {
     case 'blast': {
       // Punch a crater and throw everyone nearby outward.
-      world.map.raise(x, z, 3, -2.4);
+      crater(world, x, z, 3, 2.4);
       for (const u of world.units) {
         if (u.hidden) continue;
         const dx = wrapDelta(u.x - x, N);
@@ -144,7 +169,7 @@ export function castSpell(
 
     case 'lightning': {
       // One bolt: kills what it hits, arcs to two more, sets wood alight.
-      world.map.raise(x, z, 1.4, -0.5);
+      crater(world, x, z, 1.4, 0.5);
       const hit = new Set<number>();
       for (const u of world.units) {
         if (u.hidden || dist(u.x, u.z, x, z) > R + 0.5) continue;
@@ -491,7 +516,7 @@ function tickEmberfall(world: World, job: SpellJob, dt: number): void {
   }
   sx = world.map.wrap(sx);
   sz = world.map.wrap(sz);
-  world.map.raise(sx, sz, 1.2, -0.25);
+  crater(world, sx, sz, 1.2, 0.25);
   world.events.push({ type: 'emberStrike', x: sx, z: sz, x2: job.x, z2: job.z });
   for (const u of world.units) {
     if (!u.hidden && dist(u.x, u.z, sx, sz) < 1.6) world.hurtUnit(u, 9, { spell: true });

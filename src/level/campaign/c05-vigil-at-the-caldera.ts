@@ -97,16 +97,16 @@ export const scenario: CampaignScenario = {
       rules: {
         tribes: [
           {
-            id: 'player', ai: false,
+            id: 'player', name: 'the Lantern-folk', ai: false,
             loadout: {
               spells: ['blast', 'convert', 'ward', 'volcano'],
-              chargeCost: { volcano: 8 },
+              chargeCost: { volcano: 32 },
               buildings: ['hut', 'lumberyard', 'warriorHut', 'tower', 'shrine'],
               startUnits: { brave: 10, warrior: 3 },
               startWood: 16,
             },
           },
-          { id: 'violet', ...RAIDER_TRIBE },
+          { id: 'violet', name: 'the Unmoored', ...RAIDER_TRIBE },
         ],
         objectives: [
           { objective: { type: 'chargeSpell', spell: 'volcano' }, text: 'Charge the Volcano — wake the mountain' },

@@ -71,7 +71,7 @@ export const scenario: CampaignScenario = {
       rules: {
         tribes: [
           {
-            id: 'player', ai: false,
+            id: 'player', name: 'the Lantern-folk', ai: false,
             loadout: {
               spells: ['blast', 'convert', 'bloom', 'flatten', 'lightning'],
               buildings: ['hut', 'lumberyard', 'warriorHut', 'fireHut', 'tower', 'shrine', 'chantHall'],
@@ -80,7 +80,7 @@ export const scenario: CampaignScenario = {
             },
           },
           {
-            id: 'red', ai: true, allies: ['gold'],
+            id: 'red', name: 'the Ashmark', ai: true, allies: ['gold'],
             personality: { target: 'player', harassAt: 5, assaultAt: 10 },
             loadout: {
               spells: ['blast', 'convert', 'lightning'],
@@ -89,7 +89,7 @@ export const scenario: CampaignScenario = {
             },
           },
           {
-            id: 'gold', ai: true, allies: ['red'],
+            id: 'gold', name: 'the Saltborn', ai: true, allies: ['red'],
             personality: { target: 'player', assaultAt: 12, prefer: ['firewarrior', 'warrior'] },
             loadout: {
               spells: ['blast', 'convert', 'ward'],

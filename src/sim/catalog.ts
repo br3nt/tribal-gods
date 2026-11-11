@@ -27,6 +27,13 @@ export type TribeId = (typeof TRIBE_IDS)[number];
 /** `wild` = unaligned wanderers (recruitable). */
 export type Tribe = TribeId | 'wild';
 
+/** What a tribe is called when its scenario doesn't name it. */
+export function tribeName(rules: ScenarioRules, id: TribeId): string {
+  const named = rules.tribes.find((t) => t.id === id)?.name;
+  if (named) return named;
+  return id === 'player' ? 'your tribe' : `the ${id[0].toUpperCase()}${id.slice(1)} tribe`;
+}
+
 export const TRIBE_COLORS: Record<Tribe, number> = {
   player: 0x2f7fe6,
   red: 0xd9483b,
@@ -368,6 +375,8 @@ export interface AiPersonality {
   assaultAt?: number;
   /** Stops training past this many fighters (default 24). */
   maxArmy?: number;
+  /** Stops raising Dwellings past this many (default by difficulty: 6 / 8 / 11). */
+  maxDwellings?: number;
   /** No raids or assaults until attacked, `wakeAt` passes, or a `wake` event fires. */
   passive?: boolean;
   wakeAt?: number;
@@ -414,7 +423,8 @@ export interface ScenarioEvent {
 }
 
 export interface ScenarioRules {
-  tribes: Array<{ id: TribeId; ai: boolean; loadout?: Loadout; allies?: TribeId[]; personality?: AiPersonality }>;
+  /** `name` is what the story calls the people ("the Ashmark"); omitted = "the Red tribe". */
+  tribes: Array<{ id: TribeId; name?: string; ai: boolean; loadout?: Loadout; allies?: TribeId[]; personality?: AiPersonality }>;
   objectives: Array<{ objective: Objective; text: string; optional?: boolean }>;
   fail?: FailCondition[];
   /** Shown before play: a title, a few sentences, and tips. */
@@ -439,6 +449,10 @@ export interface SpellState {
   gifted: number;
   /** Estimated seconds to the next charge at the current mana income (Infinity if not charging). */
   eta: number;
+  /** Mana per charge for THIS tribe (catalog chargeMana × scenario/boon chargeCost). */
+  chargeMana: number;
+  /** Charges above the catalog's maxCharges from the scenario/boons (already in `max`). */
+  bonusCharges: number;
 }
 
 export interface BuildState {

@@ -53,15 +53,15 @@ export const scenario: CampaignScenario = {
       rules: {
         tribes: [
           {
-            id: 'player', ai: false,
+            id: 'player', name: 'the Lantern-folk', ai: false,
             loadout: { spells: ['convert'], buildings: ['hut', 'lumberyard'], startUnits: { brave: 6 }, startWood: 10 },
           },
         ],
         objectives: [
-          { objective: { type: 'buildCount', kind: 'hut', count: 6 }, text: 'Raise 6 Dwellings' },
-          { objective: { type: 'reachPopulation', count: 40 }, text: 'Grow the tribe to 40' },
+          { objective: { type: 'buildCount', kind: 'hut', count: 8 }, text: 'Raise 8 Dwellings' },
+          { objective: { type: 'reachPopulation', count: 50 }, text: 'Grow the tribe to 50' },
           { objective: { type: 'buildCount', kind: 'lumberyard', count: 1 }, text: 'Build a Lumberyard', optional: true },
-          { objective: { type: 'reachPopulation', count: 60 }, text: 'Grow the tribe to 60', optional: true },
+          { objective: { type: 'reachPopulation', count: 70 }, text: 'Grow the tribe to 70', optional: true },
         ],
         briefing: {
           title: 'Landfall',

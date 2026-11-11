@@ -18,6 +18,7 @@
  * buttons under your cursor are never torn down mid-click.
  */
 
+import { orderAck } from '../core/audio';
 import { CIVS } from '../config';
 import { BUILDINGS, DWELLING_TIERS, ECONOMY, spellDef, TribeId, UNITS, UnitKind } from '../sim/catalog';
 import type { Building, Unit } from '../sim/world-state';
@@ -110,7 +111,10 @@ export class SelectionPanel {
         break;
       }
       case 'q':
-        if (bid !== null) w.queueTraining(bid, Number(t.dataset.n));
+        if (bid !== null) {
+          w.queueTraining(bid, Number(t.dataset.n));
+          orderAck('train');
+        }
         break;
       case 'eject':
         if (bid !== null) w.ejectGarrison(bid);

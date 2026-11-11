@@ -72,10 +72,10 @@ export const scenario: CampaignScenario = {
       rules: {
         tribes: [
           {
-            id: 'player', ai: false,
+            id: 'player', name: 'the Lantern-folk', ai: false,
             loadout: { spells: ['blast', 'convert'], buildings: ['hut', 'lumberyard', 'tower'], startUnits: { brave: 7, warrior: 2 }, startWood: 12 },
           },
-          { id: 'violet', ...RAIDER_TRIBE },
+          { id: 'violet', name: 'the Unmoored', ...RAIDER_TRIBE },
         ],
         objectives: [
           { objective: { type: 'claimMonument', index: 0 }, text: 'Learn Bloom at the west-bank stone' },

@@ -46,5 +46,7 @@ export interface UiContext {
   groups: ControlGroups;
   /** Last pointer position in CSS px, and whether it is over the canvas. */
   pointer: { x: number; y: number; onCanvas: boolean };
+  /** The unit or building under the cursor (ui/orders.ts keeps it current). */
+  hover: { unit: number | null; building: number | null };
   actions: UiActions;
 }

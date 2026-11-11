@@ -68,7 +68,9 @@ export function worldLayer(): HTMLDivElement {
   if (!worldLayerEl) {
     worldLayerEl = document.createElement('div');
     worldLayerEl.className = 'world-layer';
-    worldLayerEl.style.cssText = 'position:absolute;inset:0;pointer-events:none;';
+    // z-index 0 makes it a stacking context: nothing inside (bars at z 3,
+    // order marks at z 4) can paint over a HUD panel, which come later in #ui.
+    worldLayerEl.style.cssText = 'position:absolute;inset:0;pointer-events:none;z-index:0;';
     uiRoot().prepend(worldLayerEl);
   }
   return worldLayerEl;

@@ -64,7 +64,7 @@ export const scenario: CampaignScenario = {
       homes: { player: home, red },
       civs: { red: 'north' },
       monuments: [
-        { x: causewayStone.x, z: causewayStone.z, spell: 'landbridge', mode: 'gift', charges: 2, cooldown: 420 },
+        { x: causewayStone.x, z: causewayStone.z, spell: 'landbridge', mode: 'gift', charges: 2, cooldown: 240 },
         { x: holm.x, z: holm.z, spell: 'ward', mode: 'teach' },
       ],
       wildmen: wanderers(t.map, 41, holm.x, holm.z, 8, 6),
@@ -72,7 +72,7 @@ export const scenario: CampaignScenario = {
       rules: {
         tribes: [
           {
-            id: 'player', ai: false,
+            id: 'player', name: 'the Lantern-folk', ai: false,
             loadout: {
               spells: ['blast', 'convert', 'bloom', 'flatten'],
               buildings: ['hut', 'lumberyard', 'warriorHut', 'fireHut', 'tower'],
@@ -81,11 +81,11 @@ export const scenario: CampaignScenario = {
             },
           },
           {
-            id: 'red', ai: true,
-            personality: { harassAt: 6, assaultAt: 12 },
+            id: 'red', name: 'the Ashmark', ai: true,
+            personality: { passive: true, wakeAt: 540, harassAt: 6, assaultAt: 10, maxArmy: 10, maxDwellings: 6 },
             loadout: {
               spells: ['blast', 'convert', 'lightning'],
-              buildings: ['hut', 'lumberyard', 'warriorHut', 'fireHut', 'tower'],
+              buildings: ['hut', 'lumberyard', 'warriorHut', 'fireHut'],
             },
           },
         ],

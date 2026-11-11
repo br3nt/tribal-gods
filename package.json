@@ -1,9 +1,9 @@
 {
   "name": "tribal-gods",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
-  "description": "A Populous: The Beginning-style god game, built from scratch as a learning project. See SPEC.md.",
+  "description": "Tribal Gods — an original browser god game in a classic genre, built from scratch with TypeScript and three.js. See SPEC.md.",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",

@@ -9,7 +9,8 @@
  * Layout (all panels hug the edges; the middle of the screen is the world):
  *
  *   ┌ resources ───────────────┐                       ┌ clock · speed · menu ┐
- *   │                                    hint chip                objectives │
+ *   │                              narrator line                  objectives │
+ *   │                                hint chip                       alerts    │
  *   │                                                              alerts    │
  *   │ minimap        [ selection panel ]          [ build ]  [ spell book ]  │
  *   └──────────────────────────────────────────────────────────────────────────┘
@@ -33,6 +34,7 @@ import { GameOverScreen } from './game-over';
 import { Hints } from './hints';
 import { matchHotkey } from './hotkeys';
 import { Minimap } from './minimap';
+import { Narrator } from './narrator';
 import { ObjectivesPanel } from './objectives-panel';
 import { OrderControl } from './orders';
 import { lookAtTile, View } from './project';
@@ -77,6 +79,8 @@ export class GameUi {
   private readonly aim: SpellAim;
   private readonly placer: BuildPlacer;
   private readonly hints: Hints;
+  readonly narrator = new Narrator();
+  private heardMessages = 0;
   private readonly debug: DebugOverlay;
   private readonly overlay: WorldOverlay;
   private readonly root: HTMLDivElement;
@@ -104,7 +108,10 @@ export class GameUi {
     canvas.addEventListener('pointerleave', () => (pointer.onCanvas = false));
 
     const actions = this.makeActions(world, view);
-    this.ctx = { world, view, scene, canvas, stats, selection: this.selection, groups: new ControlGroups(), pointer, actions };
+    this.ctx = {
+      world, view, scene, canvas, stats, selection: this.selection, groups: new ControlGroups(), pointer, actions,
+      hover: { unit: null, building: null },
+    };
 
     // --- Panels ---
     this.topBar = new TopBar(this.ctx, this.root);
@@ -137,7 +144,10 @@ export class GameUi {
       return true;
     };
     this.overlay = new WorldOverlay(this.ctx);
-    this.hints = new Hints(this.ctx);
+    // One calm column at top-centre: the narrator's line, then the hint chip.
+    const centre = h('div.hud-centre', {}, this.narrator.el);
+    this.root.appendChild(centre);
+    this.hints = new Hints(this.ctx, centre);
     this.debug = new DebugOverlay(stats, world, brushRadius);
     this.gameOver = new GameOverScreen({ onRestart: () => hooks.restart(), onMenu: () => hooks.quitToMenu() });
 
@@ -290,6 +300,8 @@ export class GameUi {
     this.alerts.reset();
     this.objectives.reset();
     this.hints.reset();
+    this.narrator.reset();
+    this.heardMessages = this.ctx.world.messageSeq;
     this.gameOver.hide();
     this.shownGameOver = false;
     this.lastIdle = null;
@@ -317,6 +329,8 @@ export class GameUi {
     this.debug.update(dt, this.selection.units.size);
     this.hints.update(dt);
     this.alerts.update();
+    this.hearScenario();
+    this.narrator.update(dt);
 
     this.slow -= dt;
     if (this.slow <= 0) {
@@ -343,6 +357,16 @@ export class GameUi {
       this.shownGameOver = false;
       this.gameOver.hide();
     }
+  }
+
+  /** Scenario lines (scripted events) the sim said since last frame go to the narrator, in order. */
+  private hearScenario(): void {
+    const w = this.ctx.world;
+    if (w.messageSeq < this.heardMessages) this.heardMessages = 0; // a new world
+    if (w.messageSeq === this.heardMessages) return;
+    const fresh = w.messages.slice(-Math.min(w.messages.length, w.messageSeq - this.heardMessages));
+    for (const m of fresh) this.narrator.say(m.text);
+    this.heardMessages = w.messageSeq;
   }
 
   /** The world overlay runs after the renderers have moved everyone. */

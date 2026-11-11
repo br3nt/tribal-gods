@@ -15,7 +15,7 @@
  */
 
 import { WORLD_SIZE } from '../config';
-import { denied } from '../core/audio';
+import { denied, orderAck } from '../core/audio';
 import { wrapDelta } from '../core/util';
 import { pickGroundTile } from '../render/ground-picker';
 import { BUILDINGS, BuildingKind } from '../sim/catalog';
@@ -58,6 +58,7 @@ export class BuildPlacer {
         denied();
         return;
       }
+      orderAck('build');
       const still = ctx.world.buildState('player', kind);
       if (!e.shiftKey || !still.affordable) resetTool();
     });

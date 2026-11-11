@@ -5,9 +5,10 @@
  * The controller owns no game rules. It reads progress (campaign/progress.ts),
  * builds a scenario's level (level/campaign), applies carried boons to its
  * rules, and asks main.ts to start it through `startScenario`. While a
- * campaign scenario is running, main.ts calls `update()` every frame; that
- * shows scripted scenario lines as a banner and, when world.gameOver
- * latches, records the result and opens the debrief.
+ * campaign scenario is running, main.ts calls `update()` every frame; when
+ * world.gameOver latches it records the result and opens the debrief.
+ * (Scripted scenario lines are spoken by the game HUD's narrator,
+ * ui/narrator.ts, for any level — not just campaign chapters.)
  *
  * The result is recorded the moment world.gameOver latches. With the game
  * UI's overlay (ui/game-over.ts) main.ts constructs this with
@@ -24,7 +25,7 @@ import { CAMPAIGN, campaignScenario } from '../level/campaign';
 import type { LevelData } from '../level/level-format';
 import type { ScenarioRules } from '../sim/catalog';
 import type { World } from '../sim/world-state';
-import { BriefingScreen, CampaignMapScreen, CampaignToast, DebriefScreen, MapNode } from './campaign-screens';
+import { BriefingScreen, CampaignMapScreen, DebriefScreen, MapNode } from './campaign-screens';
 
 export interface CampaignHooks {
   world: World;
@@ -44,8 +45,6 @@ export class CampaignController {
   private readonly map: CampaignMapScreen;
   private readonly briefing: BriefingScreen;
   private readonly debrief: DebriefScreen;
-  private readonly toast = new CampaignToast();
-  private seenMessages = 0;
   private handled = false;
   private recorded = false;
   /** Sim time when the game ended (the sim may keep running under "Keep watching"). */
@@ -122,7 +121,6 @@ export class CampaignController {
 
   showMap(): void {
     this.active = null;
-    this.toast.clear();
     this.hooks.pause();
     const p = this.store.load();
     const current = currentChapter(p);
@@ -187,20 +185,29 @@ export class CampaignController {
     this.lastPlayed = id;
     this.handled = false;
     this.recorded = false;
-    this.seenMessages = 0;
     return true;
   }
 
-  /** Per-frame: scenario lines → banner; game over → debrief. Cheap when idle. */
+  /** A saved chapter was restored into the world (Continue): pick its play back up. */
+  resume(id: string): void {
+    if (!campaignScenario(id)) return;
+    this.hideAll();
+    this.active = id;
+    this.lastPlayed = id;
+    this.handled = false;
+    this.recorded = false;
+  }
+
+  /** Title of a chapter, for the Continue button. */
+  titleOf(id: string): string {
+    const s = campaignScenario(id);
+    return s ? `Ch. ${s.chapter} · ${s.title}` : 'Campaign';
+  }
+
+  /** Per-frame: game over → record + debrief. Cheap when idle. */
   update(): void {
     if (!this.active) return;
     const w = this.hooks.world;
-    if (w.messageSeq > this.seenMessages) {
-      // Every unseen line (two events in one tick both get said), newest last.
-      const fresh = w.messages.slice(-Math.min(w.messages.length, w.messageSeq - this.seenMessages));
-      this.toast.say(fresh.map((m) => m.text).join('\n'));
-      this.seenMessages = w.messageSeq;
-    }
     // The result counts the moment the game ends — whichever button is pressed next.
     if (w.gameOver && !this.recorded) this.record();
     if (w.gameOver && !this.handled && this.autoDebrief && !this.debriefTimer) {
@@ -232,7 +239,6 @@ export class CampaignController {
     this.record();
     const p = this.store.load();
     this.hooks.pause();
-    this.toast.clear();
     const s = campaignScenario(id)!;
     const offer = w.gameOver === 'victory' ? boonOffer(p, id) : [];
     this.debrief.show({
@@ -252,7 +258,6 @@ export class CampaignController {
   /** Leave campaign play (e.g. the player opened the main menu). */
   leave(): void {
     this.active = null;
-    this.toast.clear();
     clearTimeout(this.debriefTimer);
     this.debriefTimer = 0;
     this.hideAll();

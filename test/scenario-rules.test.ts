@@ -33,6 +33,10 @@ describe('loadout extras', () => {
       ]),
     );
     expect(w.spellState('player', 'blast').max).toBe(spellDef('blast').maxCharges + 1);
+    // The UI reads the tribe's effective numbers from the sim, not the catalog.
+    expect(w.spellState('player', 'blast').bonusCharges).toBe(1);
+    expect(w.spellState('player', 'convert').chargeMana).toBe(spellDef('convert').chargeMana * 2);
+    expect(w.spellState('player', 'blast').chargeMana).toBe(spellDef('blast').chargeMana);
     run(w, 200);
     expect(w.spellState('player', 'blast').charges).toBe(spellDef('blast').maxCharges + 1);
     // Fresh world: compare charge speed of convert with and without the cost.
@@ -262,7 +266,8 @@ describe('AI personalities', () => {
       rulesFor([{ id: 'player', ai: false }, { id: 'red', ai: true, personality: { passive: true, builds: false } }]),
     );
     const leader = w.leaderOf('red')!;
-    for (let i = 0; i < 4; i++) w.spawn('brave', 'player', leader.x + 6 + i * 0.5, leader.z);
+    // Clear of red's own villagers (the AI won't blast its own people).
+    for (let i = 0; i < 4; i++) w.spawn('warrior', 'player', leader.x + 9.5 + i * 0.5, leader.z).pacified = 999;
     w.tribes.red!.spells.blast.charges = 4;
     run(w, 10);
     expect(eventsOf(w, 'explosion').length).toBe(0);

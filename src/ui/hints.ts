@@ -11,7 +11,7 @@
 
 import { BUILD_ORDER } from '../sim/catalog';
 import { UiContext } from './context';
-import { css, h, uiRoot } from './dom';
+import { css, h } from './dom';
 import { labelFor } from './hotkeys';
 import { icon, UiIconName } from './icons';
 import { settings } from './settings';
@@ -30,13 +30,13 @@ interface Hint {
 const KEY = 'tg.hints.v1';
 
 css('hints', `
-.hint-chip { position: absolute; top: calc(var(--edge) + 4.4rem); left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 0.6rem;
-  max-width: min(34rem, calc(100vw - 2rem)); padding: 0.5rem 0.5rem 0.5rem 0.75rem; font-size: var(--t-sm); line-height: 1.35; color: var(--text);
+.hint-chip { display: flex; align-items: center; gap: 0.6rem;
+  max-width: 100%; padding: 0.5rem 0.5rem 0.5rem 0.75rem; font-size: var(--t-sm); line-height: 1.35; color: var(--text);
   animation: hint-in 400ms var(--ease); }
 .hint-chip .ic { flex: none; width: 1.9rem; height: 1.9rem; border-radius: 50%; display: grid; place-items: center; background: var(--gold-soft); color: var(--gold); }
 .hint-chip .kbd { margin: 0 0.1rem; }
 .hint-chip .tg-btn { flex: none; }
-@keyframes hint-in { from { opacity: 0; transform: translate(-50%, -0.5rem); } to { opacity: 1; transform: translateX(-50%); } }
+@keyframes hint-in { from { opacity: 0; transform: translateY(-0.5rem); } to { opacity: 1; transform: none; } }
 `);
 
 const k = (a: Parameters<typeof labelFor>[0]) => `<span class="kbd">${labelFor(a)}</span>`;
@@ -51,7 +51,7 @@ export class Hints {
   private learnedFrom = 0;
   private sinceStart = 0;
 
-  constructor(private readonly ctx: UiContext) {
+  constructor(private readonly ctx: UiContext, private readonly column: HTMLElement) {
     let saved: string[] = [];
     try {
       saved = JSON.parse(localStorage.getItem(KEY) ?? '[]') as string[];
@@ -145,6 +145,6 @@ export class Hints {
       this.hide();
     });
     this.el = h('div.hint-chip.tg-panel', { role: 'status' }, h('span.ic', { html: icon(next.icon, 16) }), h('span', { html: next.html() }), close);
-    uiRoot().appendChild(this.el);
+    this.column.appendChild(this.el); // below the narrator line (ui/narrator.ts)
   }
 }
