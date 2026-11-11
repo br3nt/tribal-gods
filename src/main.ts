@@ -21,7 +21,9 @@
  */
 
 import * as THREE from 'three';
+import { WORLD_SIZE } from './config';
 import { startLoop } from './core/loop';
+import { wrapDelta } from './core/util';
 import { uiClick, uiHover, unlockAudio } from './core/audio';
 import { Soundscape } from './core/sfx';
 import { LevelData } from './level/level-format';
@@ -104,6 +106,11 @@ water.mesh.userData.gpuCurved = true;
 const unitRenderer = new UnitRenderer(scene);
 const treeRenderer = new TreeRenderer(scene);
 const buildingRenderer = new BuildingRenderer(scene);
+/** A different world was loaded (new game, level, save, editor canvas): drop per-world render state. */
+function worldChanged(): void {
+  treeRenderer.rebuild(world);
+  terrain.clearScorch(); // burnt ground belongs to the old world
+}
 treeRenderer.rebuild(world);
 
 // --- Camera, input, UI ---
@@ -160,8 +167,13 @@ function ambientAround(tx: number, tz: number): { sea: number; trees: number } {
       if (world.map.heightAt(Math.round(tx + dx), Math.round(tz + dz)) < 0) sea++;
     }
   }
+  // The camera target is unwrapped (you can pan round the planet forever), so
+  // distances to trees go the short way round, or the forest falls silent
+  // after a lap.
   let trees = 0;
-  for (const t of world.trees) if (t.alive && Math.abs(t.x - tx) < 16 && Math.abs(t.z - tz) < 16) trees++;
+  for (const t of world.trees) {
+    if (t.alive && Math.abs(wrapDelta(t.x - tx, WORLD_SIZE)) < 16 && Math.abs(wrapDelta(t.z - tz, WORLD_SIZE)) < 16) trees++;
+  }
   ambientSample = { sea: sea / n, trees: Math.min(1, trees / 40), at: now };
   return ambientSample;
 }
@@ -181,7 +193,7 @@ let lastStart: { settings?: Parameters<World['reset']>[1]; level?: LevelData } =
 function newWorld(settings?: Parameters<World['reset']>[1]): void {
   startToken++;
   world.reset(Math.floor(Math.random() * 1e9), settings);
-  treeRenderer.rebuild(world);
+  worldChanged();
   centerOnHome();
   ui?.reset();
   lastStart = { settings };
@@ -286,7 +298,7 @@ menu.onContinue = () => {
     clearSave();
     return showTitle();
   }
-  treeRenderer.rebuild(world);
+  worldChanged();
   ui?.reset();
   lastStart = g.kind === 'level' && g.level ? { level: g.level } : { settings: world.settings };
   testingLevel = null;
@@ -322,7 +334,7 @@ async function startLevel(level: LevelData, asTest = false, rules?: ScenarioRule
     return false;
   }
   if (token !== startToken) return false;
-  treeRenderer.rebuild(world);
+  worldChanged();
   centerOnHome();
   ui?.reset();
   appState.mode = 'game';
@@ -335,11 +347,13 @@ async function startLevel(level: LevelData, asTest = false, rules?: ScenarioRule
 
 /** Load a level into the editor as clay (sim frozen, placement tools out). */
 async function editLevel(id: string | undefined, level: LevelData): Promise<void> {
+  const token = ++startToken;
   await world.loadLevel(level, menu.settings);
+  if (token !== startToken) return; // the player moved on while it loaded
   // Tribes' units don't belong in the editor — keep only the wildmen
   // (which ARE level content). Homes stay marked by the totems.
   world.units = world.units.filter((u) => u.kind === 'wildman');
-  treeRenderer.rebuild(world);
+  worldChanged();
   ui?.reset();
   centerOnHome();
   lastEdit = { id, level };
@@ -351,7 +365,7 @@ async function editLevel(id: string | undefined, level: LevelData): Promise<void
 function freshEditorCanvas(): void {
   newWorld();
   world.units = world.units.filter((u) => u.kind === 'wildman');
-  treeRenderer.rebuild(world);
+  worldChanged();
   lastEdit = { id: undefined, level: null };
   appState.mode = 'editor';
   editor.open();

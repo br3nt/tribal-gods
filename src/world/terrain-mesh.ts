@@ -241,6 +241,13 @@ export class TerrainMesh {
     this.scorchTimer = 0;
   }
 
+  /** Forget all burnt ground (a new world was loaded). */
+  clearScorch(): void {
+    this.scorch.fill(0);
+    this.scorchLive = false;
+    this.writeTileTexture();
+  }
+
   /** Set the haze colour the far rim melts into (sky.ts owns the palette). */
   setHaze(c: THREE.Color): void {
     (this.uniforms.uHaze.value as THREE.Color).copy(c);
