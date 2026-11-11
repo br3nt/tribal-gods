@@ -248,7 +248,7 @@ export const CAMERA = {
   pitchMin: 0.32,
   pitchMax: 1.12,
   /** Where the game opens: frames a village with readable people. */
-  defaultZoom: 0.34,
+  defaultZoom: 0.27,
   defaultYaw: 0.7,
   /** Wheel sensitivity (zoom units per wheel delta pixel). */
   wheelZoom: 0.0011,
