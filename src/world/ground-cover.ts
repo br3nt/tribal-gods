@@ -177,6 +177,7 @@ export class GroundCover {
           m *= 1.0 - smoothstep(0.15, 0.5, wear);                             // not trodden (plots, yards, home circles)
           vec4 sfx = texture2D(uFxTex, (root / TG_TILE * ${FX_RES.toFixed(1)} + 0.5) / ${FX_N.toFixed(1)});
           m *= 1.0 - smoothstep(0.08, 0.35, max(sfx.r, sfx.g));               // not on lava or basalt
+          m *= 1.0 - smoothstep(0.15, 0.6, sfx.b);                            // not on fresh sea-wet mud
           float patchy = tgNoise(root * 0.12, TG_WORLD_UNITS * 0.12);
           m *= smoothstep(0.3, 0.55, patchy + 0.15 + 0.2 * r2);               // tufty meadows and clearings
           // Only the FAR EDGE of the carpet fades (a thin, ragged band near

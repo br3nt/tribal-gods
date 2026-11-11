@@ -242,7 +242,7 @@ export class Spectacle {
 
     // 3. FIRE FOUNTAINS
     if (T > 1.5) {
-      const rate = fx.detail * (T < D * 0.85 ? 70 : 25);
+      const rate = fx.detail * (T < D * 0.85 ? 42 : 18);
       for (let n = owed(acc, 3, rate, dt); n > 0; n--) {
         const a = Math.random() * Math.PI * 2;
         const h = rand(0, 4) * (0.5 + grow);
@@ -273,7 +273,7 @@ export class Spectacle {
         fx.matter.emit({
           x: cx + rand(-1.2, 1.2), y: cy + 1.5, z: cz + rand(-1.2, 1.2),
           vx: rand(-1.5, 1.5) + 1.2, vy: rand(14, 21), vz: rand(-1.5, 1.5),
-          life: rand(7, 9.5), size: rand(3.5, 5), sizeEnd: rand(17, 24),
+          life: rand(7, 9.5), size: rand(3.5, 5), sizeEnd: rand(22, 32),
           r: lit ? 0.9 : 0.25, g: lit ? 0.35 : 0.12, b: lit ? 0.1 : 0.06, r2: v, g2: v * 0.95, b2: v * 0.92,
           alpha: 1, drag: 0.3, shape: SMOKE, fadeIn: 0.03,
         });

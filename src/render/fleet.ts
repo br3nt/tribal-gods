@@ -84,8 +84,9 @@ export class Fleet {
       const bx = x + px * lat, bz = z + pz * lat;
       let r = 0;
       while (r < 20 && world.map.sampleHeight(bx + sea.ux * r, bz + sea.uz * r) > -0.15) r += 0.5;
-      const ex = bx + sea.ux * (r - 1.6);
-      const ez = bz + sea.uz * (r - 1.6);
+      // bow on the sand, stern in the shallows
+      const ex = bx + sea.ux * (r - 0.7);
+      const ez = bz + sea.uz * (r - 0.7);
       const out = 12 + Math.random() * 3;
       this.add({
         sx: ex + sea.ux * out, sz: ez + sea.uz * out, ex, ez,
@@ -141,8 +142,8 @@ export class Fleet {
         for (let k = 0; k < n; k++) {
           const lat = (k - (n - 1) / 2) * 4.5 + (Math.random() - 0.5) * 2;
           const lag = Math.random() * 6;
-          const near = 14 + lag;
-          const far = 52 + lag * 2;
+          const near = 12 + lag;
+          const far = 40 + lag * 2;
           list.push(this.add({
             sx: spawn.x + px * lat + sea.ux * far, sz: spawn.z + pz * lat + sea.uz * far,
             ex: spawn.x + px * lat + sea.ux * near, ez: spawn.z + pz * lat + sea.uz * near,

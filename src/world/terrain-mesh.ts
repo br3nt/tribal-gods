@@ -549,8 +549,9 @@ function patchFragment(src: string, detail: boolean): string {
     // --- Spell marks (surface-fx.ts): wet earth, basalt, lava crust, fissures ---
     vec4 fx = texture2D(uFxTex, ((wp + warp * 1.1) / TG_TILE * TG_FX_RES + 0.5) / TG_FX_N);
     float fxWet = smoothstep(0.04, 0.5, fx.b);
-    c *= 1.0 - 0.5 * fxWet;
-    rough = mix(rough, 0.2, fxWet);
+    // sea-soaked earth: dark mud with a damp sheen, drying back to its colour
+    c = mix(c, vec3(0.13, 0.1, 0.07) * (0.8 + 0.4 * nFine), fxWet * 0.7);
+    rough = mix(rough, 0.42, fxWet);
     // Basalt: black glassy rock with ropey folds.
     float ropes = sin(dot(wp, vec2(1.7, 0.6)) * 1.3 + nMid * 9.0 + nFine * 3.0) * 0.5 + 0.5;
     float basK = smoothstep(0.06, 0.4, fx.g + (nFine - 0.5) * 0.25);
@@ -607,7 +608,7 @@ function patchFragment(src: string, detail: boolean): string {
       float fis = fx.a;
       float net = max(1.0 - smoothstep(0.0, 0.012 + 0.03 * fis, abs(nMid - 0.5)),
                       (1.0 - smoothstep(0.0, 0.02 + 0.03 * fis, abs(nFine - 0.5))) * 0.6);
-      float fisGlow = smoothstep(0.08, 0.5, fis) * net + smoothstep(0.65, 0.95, fis);
+      float fisGlow = smoothstep(0.08, 0.5, fis) * net + smoothstep(0.65, 0.95, fis) * (0.35 + 0.65 * net);
       totalEmissiveRadiance += vec3(2.2, 0.55, 0.08) * fisGlow * (0.75 + 0.25 * sin(uTime * 6.0 + nMid * 40.0));
       `,
     )
