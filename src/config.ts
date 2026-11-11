@@ -38,7 +38,7 @@ export const MAX_HEIGHT = 18;
  * flattens out into an ordinary RTS map. 0 disables the illusion entirely
  * (try it — the game instantly loses its soul).
  */
-export const CURVATURE = 0.0035;
+export const CURVATURE = 0.0045;
 
 // ---------------------------------------------------------------------------
 // Rendering window
