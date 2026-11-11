@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { activityText, buildingName, fmtClock, fmtEta, fmtRate, fmtSeconds, fmtTiles } from '../src/ui/format';
+import { activityText, buildingName, fmtClock, fmtEta, fmtEtaShort, fmtRate, fmtSeconds, fmtTiles } from '../src/ui/format';
 
 const unit = (over: Record<string, unknown> = {}) => ({
   kind: 'brave', state: 'idle', task: 'none', carrying: false, castSpell: null, garrison: -1,
@@ -16,6 +16,8 @@ describe('formatters', () => {
     expect(fmtEta(4.2)).toBe('5s');
     expect(fmtEta(95)).toBe('1m 35s');
     expect(fmtEta(Infinity)).toBe('—');
+    expect(fmtEtaShort(95)).toBe('1m 35s');
+    expect(fmtEtaShort(874)).toBe('15m');
   });
   it('rate, tiles, seconds', () => {
     expect(fmtRate(1.53)).toBe('+1.5/s');

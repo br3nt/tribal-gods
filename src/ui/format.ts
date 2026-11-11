@@ -27,6 +27,12 @@ export function fmtEta(seconds: number): string {
   return `${m}m ${String(s % 60).padStart(2, '0')}s`;
 }
 
+/** ETA that fits a spell slot: "45s", "2m 05s", then whole minutes from ten ("14m"). */
+export function fmtEtaShort(seconds: number): string {
+  if (Number.isFinite(seconds) && seconds >= 600) return `${Math.ceil(seconds / 60)}m`;
+  return fmtEta(seconds);
+}
+
 /** Mana per second, one decimal: 1.53 → "+1.5/s". */
 export function fmtRate(perSecond: number): string {
   return `+${(Math.round(perSecond * 10) / 10).toFixed(1)}/s`;

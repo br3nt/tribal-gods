@@ -24,7 +24,7 @@
 import { SPELLS, SpellDef, SpellId, SpellState } from '../sim/catalog';
 import { UiContext } from './context';
 import { css, escapeHtml, h, setClass, setText } from './dom';
-import { fmtEta, fmtSeconds, fmtTiles } from './format';
+import { fmtEta, fmtEtaShort, fmtSeconds, fmtTiles } from './format';
 import { labelFor } from './hotkeys';
 import { icon, spellIcon } from './icons';
 import { activeSpell } from './tools';
@@ -258,7 +258,7 @@ export class SpellBook {
         slot.lastCharges = s.charges;
       }
       const showEta = s.known && !usable && s.charging && Number.isFinite(s.eta);
-      setText(slot.eta, showEta ? fmtEta(s.eta) : '');
+      setText(slot.eta, showEta ? fmtEtaShort(s.eta) : '');
       setClass(slot.el, 'counting', showEta);
       setClass(slot.el, 'locked', locked);
       setClass(slot.el, 'ready', usable && !locked);
