@@ -261,8 +261,8 @@ function emberthrower(r: Rng, team: number): Recipe {
   addHead(rig, b, look, {}); // underlying face (hood covers the rest)
   // hood/cowl
   const c = headCentre(b);
-  const hood = dome(b.headR * 1.2, 2.15, 16, 9);
-  place(hood, c.x, c.y + 0.01, c.z - b.headR * 0.12, -0.6, 0, 0);
+  const hood = dome(b.headR * 1.2, 1.95, 16, 9);
+  place(hood, c.x, c.y + 0.01, c.z - b.headR * 0.18, -0.95, 0, 0);
   paint(hood, (p) => (p.z > b.headR * 0.25 ? tint(team, 0.7) : soot));
   rig.add('head', hood);
   const hoodTip = cone(b.headR * 0.4, b.headR * 0.9, 8);
@@ -474,11 +474,12 @@ function leader(r: Rng, team: number, civ: Civ): Recipe {
     addHair(rig, b, look, r);
     // feather cloak: rows of feathers in team colour and earth tones
     addCloak(rig, b, (p) => {
-      const row = Math.floor(-p.y / 0.12);
+      // overlapping rows of feathers: team colour, darkening toward the hem, a pale fringe
+      const row = Math.floor(-p.y / 0.13);
       const scal = Math.sin(Math.atan2(p.x, -p.z) * 14 + row * 1.7);
-      if (row % 3 === 0) return scal > 0 ? team : tint(team, 0.75);
-      if (row % 3 === 1) return scal > 0 ? 0x6e5236 : 0x8a6a44;
-      return scal > 0 ? 0xeadfc4 : 0x2a2420;
+      if (-p.y > 1.42) return 0xeadfc4;
+      const base = tint(team, 1 - Math.min(0.35, -p.y * 0.22));
+      return scal > 0.2 ? base : tint(base, 0.8);
     }, tint(team, 0.6), 1.55, 1.15, 0xeadfc4);
     // antlers
     for (const sx of [1, -1]) {

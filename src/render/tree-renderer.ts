@@ -14,18 +14,19 @@
  *   stump → regrown  → grows back from a sapling with a little overshoot
  *   burning          → flames and smoke from the canopy, charred tint
  *
- * Cosmetic ground cover — rocks, bushes, grass and flower tufts — is
+ * Cosmetic ground cover — rocks and bushes (grass is world/ground-cover.ts) — is
  * scattered deterministically by tile hash on dry land, kept clear of
  * buildings, and follows the terrain as gods reshape it. It has no
  * gameplay meaning at all.
  */
 
 import * as THREE from 'three';
-import { CURVATURE, TILE, WORLD_SIZE } from '../config';
+import { TILE, WORLD_SIZE } from '../config';
+import { curvatureDrop } from '../world/curvature';
 import { hash2 } from '../core/noise';
 import { wrapDelta } from '../core/util';
 import {
-  bushGeometry, flowerGeometry, grassGeometry, rockGeometry, Species, SPECIES, stumpGeometry, treeGeometry, VARIANTS_PER_SPECIES,
+  bushGeometry, rockGeometry, Species, SPECIES, stumpGeometry, treeGeometry, VARIANTS_PER_SPECIES,
 } from '../assets/models/flora';
 import { sharedMaterials } from '../assets/models/materials';
 import { World } from '../sim/world-state';
@@ -99,8 +100,8 @@ export class TreeRenderer {
     const covers: Array<[THREE.BufferGeometry, THREE.Material, boolean]> = [
       [rockGeometry(0), mats.bark, true], [rockGeometry(1), mats.bark, true],
       [bushGeometry(0), mats.foliage, true], [bushGeometry(1), mats.foliage, true], [bushGeometry(2), mats.foliage, true],
-      [grassGeometry(0), mats.foliage, false], [grassGeometry(1), mats.foliage, false], [flowerGeometry(0), mats.foliage, false], [flowerGeometry(2), mats.foliage, false],
     ];
+    // (Grass and flowers are the LOOK stream's GPU ground cover — world/ground-cover.ts.)
     for (const [g, mat, shadow] of covers) {
       const im = new THREE.InstancedMesh(g, mat, 1600);
       im.castShadow = shadow;
@@ -136,7 +137,6 @@ export class TreeRenderer {
         let k = -1;
         if (r < 0.012) k = hash2(x, z, 42) < 0.5 ? 0 : 1;
         else if (r < 0.04) k = 2 + Math.floor(hash2(x, z, 43) * 3);
-        else if (r < 0.13) k = 5 + Math.floor(hash2(x, z, 44) * 4);
         if (k < 0) continue;
         this.covers[k].tiles.push({
           x: x + (hash2(x, z, 45) - 0.5) * 0.8,
@@ -179,7 +179,7 @@ export class TreeRenderer {
       const relZ = wrapDelta(t.z * TILE - camTarget.z, WORLD_UNITS);
       const d2 = relX * relX + relZ * relZ;
       if (d2 > VIEW_RADIUS * VIEW_RADIUS) continue;
-      const y = world.map.heightAt(t.x, t.z) - CURVATURE * d2;
+      const y = world.map.heightAt(t.x, t.z) - curvatureDrop(relX, relZ);
       this.p.set(camTarget.x + relX, y, camTarget.z + relZ);
       const showTree = t.alive || st.fall < 2.2;
       if (!t.alive || st.grow < 4) {
@@ -216,6 +216,7 @@ export class TreeRenderer {
         let a = this.fireAnchors.get(i);
         if (!a) {
           a = new THREE.Object3D();
+          a.userData.gpuCurved = true; // we already applied the full drop
           this.scene.add(a);
           this.fireAnchors.set(i, a);
         }
@@ -266,7 +267,7 @@ export class TreeRenderer {
         if (h < 0.35) continue;
         this.e.set(0, t.yaw, 0);
         this.q.setFromEuler(this.e);
-        this.p.set(camTarget.x + relX, h - CURVATURE * d2 - 0.05, camTarget.z + relZ);
+        this.p.set(camTarget.x + relX, h - curvatureDrop(relX, relZ) - 0.05, camTarget.z + relZ);
         this.m.compose(this.p, this.q, this.s.setScalar(t.s));
         c.mesh.setMatrixAt(n++, this.m);
         if (n >= 1600) break;

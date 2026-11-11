@@ -507,7 +507,7 @@ export function addCloak(rig: Rig, b: Body, outer: (p: THREE.Vector3) => number,
   const steps = 7;
   for (let i = 0; i <= steps; i++) {
     const t = i / steps;
-    prof.push([w * (0.75 + 0.45 * t), -t * len]);
+    prof.push([w * (0.5 + 0.7 * Math.sqrt(t)), -t * len]); // gathered at the shoulders, flaring to the hem
   }
   const shell = lathe(prof.reverse(), 16, 1, 0.5, Math.PI / 2, Math.PI);
   // Arc π/2..3π/2 sweeps +x → −z → −x: the back half, open side forward.

@@ -17,7 +17,8 @@
  */
 
 import * as THREE from 'three';
-import { CIVS, CURVATURE, TILE, WORLD_SIZE } from '../config';
+import { CIVS, TILE, WORLD_SIZE } from '../config';
+import { curvatureDrop } from '../world/curvature';
 import { wrapDelta } from '../core/util';
 import { buildBuildingModel, BuildingModel } from '../assets/models/registry';
 import { buildMonument, buildTotem } from '../assets/models/buildings/index';
@@ -76,6 +77,7 @@ export class BuildingRenderer {
       if (!t) {
         const built = buildTotem(id as Tribe, civ);
         t = { ...built, civ: civ.id };
+        t.root.userData.gpuCurved = true; // full drop applied here (curvatureDrop)
         this.scene.add(t.root);
         this.totems.set(id, t);
       }
@@ -94,6 +96,7 @@ export class BuildingRenderer {
     // Monuments.
     while (this.monuments.length < world.monuments.length) {
       const m = buildMonument();
+      m.root.userData.gpuCurved = true;
       this.scene.add(m.root);
       this.monuments.push(m);
     }
@@ -121,6 +124,7 @@ export class BuildingRenderer {
       if (!e) {
         const model = buildBuildingModel(b.kind, b.tribe as Tribe, civOf(world, b.tribe), tier);
         // turn every model so its door faces the sim's door (south, +Z): already the case
+        model.root.userData.gpuCurved = true;
         this.scene.add(model.root);
         e = { model, kind: b.kind, tribe: b.tribe, tier };
         this.entries.set(b.id, e);
@@ -156,7 +160,7 @@ export class BuildingRenderer {
     const relX = wrapDelta(tileX * TILE - camTarget.x, WORLD_UNITS);
     const relZ = wrapDelta(tileZ * TILE - camTarget.z, WORLD_UNITS);
     const d2 = relX * relX + relZ * relZ;
-    const y = world.map.heightAt(Math.round(tileX), Math.round(tileZ)) - CURVATURE * d2;
+    const y = world.map.heightAt(Math.round(tileX), Math.round(tileZ)) - curvatureDrop(relX, relZ);
     pos.set(camTarget.x + relX, y, camTarget.z + relZ);
     return d2 < VIEW_RADIUS * VIEW_RADIUS;
   }

@@ -17,7 +17,7 @@
  *    them. Either way: no animation, no draw.
  *
  * 4. CURVE — terrain bends down with distance in its vertex shader; figures
- *    are small, so we drop the whole figure by CURVATURE·d² on the CPU
+ *    are small, so we drop the whole figure by curvatureDrop() on the CPU
  *    (sub-pixel error at this size, and no per-vertex shader patch needed).
  *
  * 5. ANIMATE — pick a clip from the unit's state/task (chooseClip), feed
@@ -37,7 +37,8 @@
  */
 
 import * as THREE from 'three';
-import { CIVS, CURVATURE, TILE, WORLD_SIZE } from '../config';
+import { CIVS, TILE, WORLD_SIZE } from '../config';
+import { curvatureDrop } from '../world/curvature';
 import { wrapDelta } from '../core/util';
 import { buildUnitModel, FigureModel } from '../assets/models/registry';
 import { decalMaterial, tickModelMaterials } from '../assets/models/materials';
@@ -173,6 +174,9 @@ export class UnitRenderer {
         const ring = new THREE.Mesh(this.ringGeo, this.ringMat(u.tribe));
         ring.renderOrder = 1;
         ring.visible = false;
+        // We apply the full planet drop (curvatureDrop) ourselves: opt out of main.ts's limb pass.
+        fig.root.userData.gpuCurved = true;
+        ring.userData.gpuCurved = true;
         ring.scale.setScalar(fig.height * 0.36);
         this.scene.add(fig.root, ring);
         e = {
@@ -205,7 +209,7 @@ export class UnitRenderer {
       e.inWater = inWater;
       let y = spot ? world.map.heightAt(Math.round(gb!.x), Math.round(gb!.z)) + spot.y : Math.max(ground, inWater ? -0.9 - 0.1 * Math.sin(this.frame * 0.1 + u.id) : 0);
       // 4. CURVE
-      y -= CURVATURE * d2;
+      y -= curvatureDrop(relX, relZ);
 
       // measured speed (world units/s) for foot sync
       if (dt > 0 && !Number.isNaN(e.px)) {
@@ -344,7 +348,7 @@ export class UnitRenderer {
       g.t += dt;
       const relX = wrapDelta(g.tx * TILE - camTarget.x, WORLD_UNITS);
       const relZ = wrapDelta(g.tz * TILE - camTarget.z, WORLD_UNITS);
-      let y = Math.max(0, world.map.sampleHeight(g.tx, g.tz)) - CURVATURE * (relX * relX + relZ * relZ);
+      let y = Math.max(0, world.map.sampleHeight(g.tx, g.tz)) - curvatureDrop(relX, relZ);
       let done = false;
       if (g.mode === 'die') {
         g.anim.update(dt, { clip: 'die', speed: 0, turnRate: 0 });
@@ -353,7 +357,7 @@ export class UnitRenderer {
         done = g.t > 4;
       } else if (g.mode === 'drown') {
         g.anim.update(dt, { clip: 'drown', speed: 0, turnRate: 0 });
-        y = -0.9 - g.t * 1.1 - CURVATURE * (relX * relX + relZ * relZ);
+        y = -0.9 - g.t * 1.1 - curvatureDrop(relX, relZ);
         done = g.t > 2.5;
       } else {
         // a leader rises in light and fades
@@ -397,7 +401,7 @@ export class UnitRenderer {
   ): { x: number; y: number } | null {
     const relX = wrapDelta(u.x * TILE - camTarget.x, WORLD_UNITS);
     const relZ = wrapDelta(u.z * TILE - camTarget.z, WORLD_UNITS);
-    const y = Math.max(0, world.map.sampleHeight(u.x, u.z)) - CURVATURE * (relX * relX + relZ * relZ);
+    const y = Math.max(0, world.map.sampleHeight(u.x, u.z)) - curvatureDrop(relX, relZ);
     const h = UNITS[u.kind as UnitKind]?.height ?? 2.3;
     const v = new THREE.Vector3(camTarget.x + relX, y + h * 0.45, camTarget.z + relZ); // chest height
     v.project(camera);
