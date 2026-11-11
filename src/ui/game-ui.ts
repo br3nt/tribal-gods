@@ -48,6 +48,7 @@ import { SpellBook } from './spell-book';
 import { TopBar } from './top-bar';
 import { WorldHover } from './world-hover';
 import { WorldOverlay } from './world-overlay';
+import { victoryBeat } from './victory-beat';
 import { activeBuilding, activeSpell, resetTool, toolState } from './tools';
 import { hideTip } from './tooltip';
 
@@ -96,6 +97,8 @@ export class GameUi {
   private lastIdle: number | null = null;
   private lastRecall: { n: number; t: number } | null = null;
   private shownGameOver = false;
+  /** Seconds left before the game-over card shows (null = not counting). */
+  private overBeat: number | null = null;
 
   constructor(
     world: World,
@@ -323,6 +326,7 @@ export class GameUi {
     this.heardMessages = this.ctx.world.messageSeq;
     this.gameOver.hide();
     this.shownGameOver = false;
+    this.overBeat = null;
     this.lastIdle = null;
     this.lastRecall = null;
     this.ctx.groups.clear(); // unit ids restart at 1 in a new world
@@ -369,6 +373,12 @@ export class GameUi {
 
     const w = this.ctx.world;
     if (w.gameOver && !this.shownGameOver) {
+      // A victory lets the world have its moment first: the card waits a
+      // beat, longer while a great spell is still erupting on screen.
+      if (this.overBeat === null) this.overBeat = w.gameOver === 'victory' ? victoryBeat(w) : 0;
+      this.overBeat -= dt;
+      if (this.overBeat > 0) return;
+      this.overBeat = null;
       this.shownGameOver = true;
       resetTool();
       this.gameOver.show(w.gameOver, w.gameOverReason, {
@@ -378,6 +388,7 @@ export class GameUi {
         buildings: w.buildings.filter((b) => b.tribe === 'player' && b.progress >= 1).length,
       });
     }
+    if (!w.gameOver) this.overBeat = null;
     if (!w.gameOver && this.shownGameOver) {
       this.shownGameOver = false;
       this.gameOver.hide();

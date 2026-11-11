@@ -124,7 +124,8 @@ describe('chapter 1, Landfall: a human-paced player wins it beat by beat', () =>
     expect(Math.hypot(volcanoAt!.x - LAYOUT.strand.x, volcanoAt!.z - LAYOUT.strand.z)).toBeLessThan(9);
     expect(w.statsOf('violet').lostTotal - hostDeathsAtCast).toBeGreaterThanOrEqual(10); // most of the host
     expect(at.volcano - at.raiders).toBeLessThan(60 + HOST_HOLD + 120);
-    // The land is changed for good: a mountain where the beach was.
+    // The land is changed for good: a mountain where the beach was (the world runs on past the victory card).
+    run(w, 15);
     expect(w.map.heightAt(Math.round(volcanoAt!.x), Math.round(volcanoAt!.z + 3))).toBeGreaterThan(5);
     expect(w.objectives.find((o) => o.text.startsWith('Bury'))!.done).toBe(true);
   }, 60_000);

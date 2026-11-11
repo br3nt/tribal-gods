@@ -1095,6 +1095,10 @@ export class World implements SimQueries {
     }
 
     tickObjectives(this, dt);
+    // An objective just done fires its story beat in the SAME tick (a gift,
+    // a taught spell, a line): otherwise for one tick the next objective is
+    // live while what it needs isn't there yet, and the hint says so.
+    tickScenarioEvents(this);
     if (this.events.length > MAX_EVENTS) this.events.splice(0, this.events.length - MAX_EVENTS);
   }
 

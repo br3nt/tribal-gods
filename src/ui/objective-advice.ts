@@ -54,6 +54,20 @@ function spellAdvice(world: World, spell: SpellId, where: string): string {
   return `Pick ${def.name}${k(`spell:${spell}`)} and ${where}.`;
 }
 
+/**
+ * Foes expected but none ashore yet: if a stone is open to you, the story
+ * (and this chip) points at it — the lull is for kneeling there; else hold.
+ */
+function quietAdvice(world: World, click: string): string {
+  const kneeling = world.monuments.find((m) => m.communing && m.communer === 'player');
+  if (kneeling) return `None of them ashore yet. Your leader is kneeling at the ${spellDef(kneeling.spell).name} stone — let her finish.`;
+  const open = world.monuments.find((m) => world.monumentAvailable(m) && !(m.mode === 'teach' && m.claimedBy !== null) && !world.tribes.player?.known.has(m.spell));
+  if (open && world.leaderOf('player')) {
+    return `None of them ashore yet. Use the time: select your leader${k('select-leader')} and ${click} the ${spellDef(open.spell).name} stone.`;
+  }
+  return `None of them in sight yet. Keep your fighters near the village and a spell charged.`;
+}
+
 /** The chip's text (HTML) for an objective, or null when there's nothing useful to add. */
 export function objectiveAdvice(world: World, o: Objective, leftClickOrders: boolean): string | null {
   const click = orderVerb(leftClickOrders);
@@ -75,7 +89,17 @@ export function objectiveAdvice(world: World, o: Objective, leftClickOrders: boo
       return `Grow the tribe: Dwellings${k('build:hut')} breed villagers while they have room.`;
     case 'claimMonument': {
       const m = world.monuments[o.index];
-      return `Select your leader${k('select-leader')} and ${click} the ${m ? spellDef(m.spell).name + ' ' : ''}stone. Bring warriors: the ritual breaks if she's hit.`;
+      const name = m ? `${spellDef(m.spell).name} ` : '';
+      const pct = (p: number | undefined) => `${Math.round((p ?? 0) * 100)}%`;
+      if (m?.communing && m.communer === 'player') {
+        return m.contested
+          ? `The ritual is held still (${pct(m.communeProgress)}): foes stand in the ring. Drive them off — strike them, or send your fighters.`
+          : `Your leader is kneeling at the ${name}stone (${pct(m.communeProgress)}). Keep foes off her — one blow breaks the ritual.`;
+      }
+      if (m && (m.communeProgress ?? 0) > 0.02 && m.communer !== 'player') {
+        return `The ritual broke at ${pct(m.communeProgress)} and is fading. Select your leader${k('select-leader')} and ${click} the ${name}stone to kneel again.`;
+      }
+      return `Select your leader${k('select-leader')} and ${click} the ${name}stone. Bring warriors: the ritual breaks if she's hit.`;
     }
     case 'leaderReach':
       return `Select your leader${k('select-leader')} and ${click} the ground where the story points.`;
@@ -87,7 +111,7 @@ export function objectiveAdvice(world: World, o: Objective, leftClickOrders: boo
     case 'holdPoint':
       return `Keep your people standing on the marked ground until the time is up.`;
     case 'killUnits':
-      if (!world.units.some((u) => u.tribe === o.tribe && !u.hidden)) return `None of them in sight yet. Keep your fighters near the village and a spell charged.`;
+      if (!world.units.some((u) => u.tribe === o.tribe && !u.hidden)) return quietAdvice(world, click);
       return `Select your fighters (${labelFor('select-army') || ','}) and ${click} an enemy to attack — or strike them with a spell.`;
     case 'destroyTribe':
     case 'destroyAll':
