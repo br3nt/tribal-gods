@@ -22,7 +22,19 @@
  *     columns of light, the ward's shimmering dome, the cyclone's funnel.
  *   GROUND — scorch marks are painted into the terrain itself
  *     (TerrainMesh.addScorch), so they hug every bump.
- *   LIGHT — flashes borrow a pooled point light (lighting.ts).
+ *   LIGHT — flashes borrow a pooled point light (lighting.ts); the whole
+ *     screen can flash warm or white (screenFlash: a clip-space quad drawn
+ *     with the scene, so bloom and tone mapping treat it like light).
+ *   BOMBS — lava bombs on ballistic arcs (volcano), trailing smoke, bursting
+ *     (or steaming in the sea) where they land.
+ *   SPECTACLE — spells that run for seconds (world.jobs: volcano, causeway,
+ *     level, quake, undertow), the leader's cast gather, the raiders' boats:
+ *     render/spectacle.ts (+ cast-gather.ts, fleet.ts). AMBIENT LIFE (birds,
+ *     fish, butterflies): render/ambient-life.ts. Both are driven from sync().
+ *
+ * Particle COUNTS scale with the quality tier (`detail`, look.ts FX_DETAIL);
+ * pools are fixed-size and drop emissions when full, so a busy moment
+ * never allocates or stalls.
  *
  * Everything lives in UNBENT world space and is curved on the GPU with the
  * shared curvature uniforms, like the terrain.
