@@ -29,6 +29,9 @@
  *    RGBA texture rebuilt on the CPU only when they change. A second, finer
  *    texture holds WEAR (world/wear.ts): trodden earth under building
  *    plots and inside the home circles, where the grass carpet won't grow.
+ *    A third (world/surface-fx.ts) holds what spells paint onto the ground:
+ *    molten lava and the black basalt it cools to, sea-wet earth, glowing
+ *    fissures.
  */
 
 import * as THREE from 'three';
@@ -37,6 +40,7 @@ import { curveShader } from './curvature';
 import { Heightmap } from './heightmap';
 import { bumpGlsl, heightGlsl, noiseGlsl } from './terrain-glsl';
 import { rasterWear, WEAR_N, WEAR_RES, wearVersion } from './wear';
+import { FX_N, FX_RES, SurfaceFx } from './surface-fx';
 import { QualityTier, RIM_END, RIM_START, TERRAIN } from '../render/look';
 
 const N = WORLD_SIZE;
@@ -58,6 +62,8 @@ export class TerrainMesh {
   /** Trodden ground (world/wear.ts), WEAR_RES texels per tile. */
   readonly wearTexture: THREE.DataTexture;
   private readonly wearData = new Uint8Array(WEAR_N * WEAR_N);
+  /** Lava, basalt, wet earth, fissures (world/surface-fx.ts). Effects paint into it. */
+  readonly fx = new SurfaceFx();
   private wearUploaded = -1;
   /** Shared uniforms other world shaders (water) can reference. */
   readonly uniforms: Record<string, THREE.IUniform>;
@@ -130,6 +136,7 @@ export class TerrainMesh {
       uHeightTex: { value: this.heightTexture },
       uTileTex: { value: this.tileTexture },
       uWearTex: { value: this.wearTexture },
+      uFxTex: { value: this.fx.texture },
       uHaze: { value: new THREE.Color(0xb4d4ea) },
       uRim: { value: new THREE.Vector2(RIM_START, RIM_END) },
       uSeabed: col(TERRAIN.seabed),
@@ -231,6 +238,7 @@ export class TerrainMesh {
       }
     }
     if (dirty) this.writeTileTexture();
+    this.fx.update(dt);
     if (wearVersion() !== this.wearUploaded) {
       this.wearUploaded = wearVersion();
       rasterWear(this.wearData);
@@ -259,9 +267,18 @@ export class TerrainMesh {
     this.scorchTimer = 0;
   }
 
+  /**
+   * Called when a different world is loaded (main.ts worldChanged, via
+   * clearScorch): renderers holding per-world state (spell set pieces,
+   * boats, vents) drop it here.
+   */
+  readonly onWorldChange: Array<() => void> = [];
+
   /** Forget all burnt ground (a new world was loaded). */
   clearScorch(): void {
     this.scorch.fill(0);
+    this.fx.clear();
+    for (const f of this.onWorldChange) f();
     this.scorchLive = false;
     this.writeTileTexture();
   }
@@ -405,6 +422,9 @@ function patchFragment(src: string, detail: boolean): string {
     #define TG_TILE ${TILE.toFixed(1)}
     uniform sampler2D uTileTex;
     uniform sampler2D uWearTex;
+    uniform sampler2D uFxTex;
+    #define TG_FX_RES ${FX_RES.toFixed(1)}
+    #define TG_FX_N ${FX_N.toFixed(1)}
     #define TG_WEAR_RES ${WEAR_RES.toFixed(1)}
     #define TG_WEAR_N ${WEAR_N.toFixed(1)}
     uniform vec3 uCamTarget;
@@ -534,6 +554,28 @@ function patchFragment(src: string, detail: boolean): string {
     c = mix(c, uScorch * (0.7 + 0.6 * nMicro), scorchK * 0.92);
     rough = mix(rough, 0.95, scorchK);
 
+    // --- Spell marks (surface-fx.ts): wet earth, basalt, lava crust, fissures ---
+    vec4 fx = texture2D(uFxTex, ((wp + warp * 1.1) / TG_TILE * TG_FX_RES + 0.5) / TG_FX_N);
+    float fxWet = smoothstep(0.04, 0.5, fx.b);
+    // sea-soaked earth: dark mud with a damp sheen, drying back to its colour
+    c = mix(c, vec3(0.13, 0.1, 0.07) * (0.8 + 0.4 * nFine), fxWet * 0.7);
+    rough = mix(rough, 0.42, fxWet);
+    // Basalt: black glassy rock with ropey folds.
+    float ropes = sin(dot(wp, vec2(1.7, 0.6)) * 1.3 + nMid * 9.0 + nFine * 3.0) * 0.5 + 0.5;
+    float basK = smoothstep(0.06, 0.4, fx.g + (nFine - 0.5) * 0.25);
+    // thin cover = grey-brown ash and cinder; thick = black glassy flow rock
+    vec3 cinder = vec3(0.2, 0.17, 0.155) * (0.8 + 0.4 * nFine + 0.15 * ropes);
+    vec3 flowRock = vec3(0.05, 0.045, 0.043) * (0.75 + 0.5 * nFine + 0.35 * ropes);
+    vec3 basalt = mix(cinder, flowRock, smoothstep(0.5, 0.85, fx.g + (nMid - 0.5) * 0.2));
+    c = mix(c, basalt, basK);
+    rough = mix(rough, 0.45, basK);
+    bump = mix(bump, ropes * 0.12 + nFine * 0.1, basK);
+    // Under the glow, molten rock wears a dark crust.
+    float heatK = smoothstep(0.04, 0.3, fx.r);
+    c = mix(c, vec3(0.07, 0.035, 0.02), heatK);
+    // Fissures darken the ground they tear open.
+    c *= 1.0 - 0.45 * smoothstep(0.05, 0.6, fx.a);
+
     diffuseColor.rgb = c;
   `;
 
@@ -561,6 +603,21 @@ function patchFragment(src: string, detail: boolean): string {
       float crack = 1.0 - smoothstep(0.0, 0.06, abs(nMicro2 - 0.5)) * 1.0;
       float ember = smoothstep(0.8, 1.0, td.a) * crack * smoothstep(0.4, 0.7, nMicro);
       totalEmissiveRadiance += vec3(2.4, 0.7, 0.12) * ember * (0.6 + 0.4 * sin(uTime * 5.0 + nMid * 30.0));
+      // LAVA: liquid and blinding when hot; as it cools, a crust closes over
+      // it and only the seams between plates still glow.
+      float lavaH = fx.r;
+      float seam = 1.0 - smoothstep(0.0, 0.025 + 0.09 * lavaH, abs(nFine - 0.5));
+      float molten = smoothstep(0.72, 0.98, lavaH);
+      float flow = 0.75 + 0.25 * sin(uTime * 2.3 + nMid * 25.0 + dot(wp, vec2(0.7, 0.4)));
+      float lavaGlow = smoothstep(0.03, 0.35, lavaH) * mix(seam * 0.9, 1.0, molten) * flow;
+      vec3 lavaCol = mix(vec3(1.5, 0.22, 0.03), vec3(2.8, 0.95, 0.16), molten);
+      totalEmissiveRadiance += lavaCol * lavaGlow;
+      // FISSURES: a crack network where the ground tears, a molten core where it's torn widest.
+      float fis = fx.a;
+      float net = max(1.0 - smoothstep(0.0, 0.012 + 0.03 * fis, abs(nMid - 0.5)),
+                      (1.0 - smoothstep(0.0, 0.02 + 0.03 * fis, abs(nFine - 0.5))) * 0.6);
+      float fisGlow = smoothstep(0.08, 0.5, fis) * net + smoothstep(0.65, 0.95, fis) * (0.35 + 0.65 * net);
+      totalEmissiveRadiance += vec3(2.2, 0.55, 0.08) * fisGlow * (0.75 + 0.25 * sin(uTime * 6.0 + nMid * 40.0));
       `,
     )
     .replace(

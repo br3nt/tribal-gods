@@ -22,7 +22,19 @@
  *     columns of light, the ward's shimmering dome, the cyclone's funnel.
  *   GROUND — scorch marks are painted into the terrain itself
  *     (TerrainMesh.addScorch), so they hug every bump.
- *   LIGHT — flashes borrow a pooled point light (lighting.ts).
+ *   LIGHT — flashes borrow a pooled point light (lighting.ts); the whole
+ *     screen can flash warm or white (screenFlash: a clip-space quad drawn
+ *     with the scene, so bloom and tone mapping treat it like light).
+ *   BOMBS — lava bombs on ballistic arcs (volcano), trailing smoke, bursting
+ *     (or steaming in the sea) where they land.
+ *   SPECTACLE — spells that run for seconds (world.jobs: volcano, causeway,
+ *     level, quake, undertow), the leader's cast gather, the raiders' boats:
+ *     render/spectacle.ts (+ cast-gather.ts, fleet.ts). AMBIENT LIFE (birds,
+ *     fish, butterflies): render/ambient-life.ts. Both are driven from sync().
+ *
+ * Particle COUNTS scale with the quality tier (`detail`, look.ts FX_DETAIL);
+ * pools are fixed-size and drop emissions when full, so a busy moment
+ * never allocates or stalls.
  *
  * Everything lives in UNBENT world space and is curved on the GPU with the
  * shared curvature uniforms, like the terrain.
@@ -37,25 +49,29 @@ import { wrapDelta } from '../core/util';
 import type { Aura, AuraKind } from '../sim/spells';
 import { World } from '../sim/world-state';
 import { curvatureDrop, curvatureGlsl, curvatureUniforms } from '../world/curvature';
+import { grassShock } from '../world/ground-cover';
+import { FxChannel, SurfaceFx } from '../world/surface-fx';
 import { heightGlsl } from '../world/terrain-glsl';
 import { TerrainMesh } from '../world/terrain-mesh';
+import { AmbientLife } from './ambient-life';
 import { CameraRig } from './camera-rig';
 import { Lighting } from './lighting';
-import { QualityTier, SPELL_LOOK, SPELL_LOOK_DEFAULT } from './look';
+import { FX_DETAIL, QualityTier, SPELL_LOOK, SPELL_LOOK_DEFAULT } from './look';
+import { Spectacle } from './spectacle';
 
 const WORLD_UNITS = WORLD_SIZE * TILE;
 
 // Sprite shapes (integer part of the shape attribute; fraction = per-particle seed).
-const GLOW = 0;
-const SMOKE = 1;
-const CHUNK = 2;
-const PETAL = 3;
+export const GLOW = 0;
+export const SMOKE = 1;
+export const CHUNK = 2;
+export const PETAL = 3;
 
 // ---------------------------------------------------------------------------
 // Particle pools
 // ---------------------------------------------------------------------------
 
-interface Emit {
+export interface Emit {
   x: number; y: number; z: number;
   vx?: number; vy?: number; vz?: number;
   life: number;
@@ -130,7 +146,7 @@ const particleFrag = /* glsl */ `
   }
 `;
 
-class ParticlePool {
+export class ParticlePool {
   readonly points: THREE.Points;
   private count = 0;
   // Simulation state (struct of arrays).
@@ -177,6 +193,11 @@ class ParticlePool {
     this.points = new THREE.Points(geo, mat);
     this.points.frustumCulled = false;
     this.points.renderOrder = additive ? 6 : 5;
+  }
+
+  /** Live particles / capacity (0..1): recipes thin themselves out near the top. */
+  get load(): number {
+    return this.count / this.capacity;
   }
 
   emit(e: Emit): void {
@@ -270,12 +291,14 @@ class ParticlePool {
 // terrain height, sampled from the heightmap texture per vertex).
 // ---------------------------------------------------------------------------
 
-function fxMaterial(
+export function fxMaterial(
   heightTex: THREE.IUniform,
   fragBody: string,
   uniforms: Record<string, THREE.IUniform>,
   opts: { drape?: boolean; additive?: boolean; side?: THREE.Side; depthTest?: boolean } = {},
 ): THREE.ShaderMaterial {
+  // Draped meshes also hand the fragment shader the raw terrain height
+  // under them (vGround; < 0 = sea), so a decal can tell land from water.
   return new THREE.ShaderMaterial({
     uniforms: { ...curvatureUniforms, uHeightTex: heightTex, uLift: { value: 0.25 }, uTime: { value: 0 }, uAlpha: { value: 1 }, ...uniforms },
     vertexShader: /* glsl */ `
@@ -286,11 +309,13 @@ function fxMaterial(
       varying vec3 vLocal;
       varying vec3 vN;
       varying vec3 vView;
+      varying float vGround;
       void main() {
         vUv = uv;
         vLocal = position;
         vec4 w = modelMatrix * vec4(position, 1.0);
-        ${opts.drape ? 'w.y = max(tgHeightAtWorld(w.xz), 0.0) + uLift + position.y;' : ''}
+        vGround = 1.0;
+        ${opts.drape ? 'vGround = tgHeightAtWorld(w.xz);\n        w.y = max(vGround, 0.0) + uLift + position.y;' : ''}
         vN = normalize(mat3(modelMatrix) * normal);
         vec3 b = applyCurvature(w.xyz);
         vView = normalize(cameraPosition - b);
@@ -304,6 +329,7 @@ function fxMaterial(
       varying vec3 vLocal;
       varying vec3 vN;
       varying vec3 vView;
+      varying float vGround;
       ${Object.keys(uniforms)
         .map((k) => {
           const v = uniforms[k].value;
@@ -327,7 +353,7 @@ function fxMaterial(
 
 // ---------------------------------------------------------------------------
 
-interface MeshFx {
+export interface MeshFx {
   obj: THREE.Object3D;
   mats: THREE.ShaderMaterial[];
   age: number;
@@ -339,12 +365,24 @@ interface MeshFx {
   drive(f: MeshFx, dt: number): void;
 }
 
+/** A lava bomb: thrown out of a crater on a ballistic arc (tile coords + height; tiles/s, world units/s). */
+interface Bomb {
+  tx: number; tz: number; y: number;
+  vx: number; vz: number; vy: number;
+  size: number;
+  age: number;
+}
+
 interface Projectile {
   fx: number; fz: number; tx: number; tz: number;
   fromY: number; toY: number;
   age: number; ttl: number;
   arc: number;
   kind: 'ember' | 'stone';
+  /** Where the head was last frame (unbent world units). */
+  lastX?: number;
+  lastY?: number;
+  lastZ?: number;
 }
 
 interface AuraVisual {
@@ -354,13 +392,34 @@ interface AuraVisual {
   seen: boolean;
 }
 
-type Handler = (fx: EffectsRenderer, x: number, z: number, mag: number, ev: { x2?: number; z2?: number }) => void;
+type Handler = (fx: EffectsRenderer, x: number, z: number, mag: number, ev: { x2?: number; z2?: number; tribe?: string }) => void;
 
 const lin = (hex: number) => new THREE.Color(hex);
 
 export class EffectsRenderer {
-  private readonly glow: ParticlePool;
-  private readonly matter: ParticlePool;
+  /** Additive light (fire, sparks, motes) and alpha-blended matter (smoke, dust, debris). */
+  readonly glow: ParticlePool;
+  readonly matter: ParticlePool;
+  /** Particle emission scale for the quality tier (look.ts FX_DETAIL): recipes multiply counts by it. */
+  readonly detail: number;
+  /** The quality tier's name (ambient life is off at `low`). */
+  readonly tier: QualityTier['name'];
+  /** Spell set pieces driven by world.jobs (render/spectacle.ts). */
+  private readonly spectacle: Spectacle;
+  /** Birds, fish, butterflies (render/ambient-life.ts). */
+  private readonly life: AmbientLife | null;
+  private bombs: Bomb[] = [];
+  /** Full-screen warm/white flash (a clip-space quad drawn with the scene). */
+  private readonly screenQuad: THREE.Mesh;
+  private readonly screenUniforms = { uColor: { value: new THREE.Color() }, uAmount: { value: 0 } };
+  private screenFade = 0;
+  /** Blast shock ring rolling through the grass (ground-cover.ts reads it). */
+  private shockAge = -1;
+  private shockTx = 0;
+  private shockTz = 0;
+  private shockRadius = 0;
+  /** Spots still burning after a strike (lightning's small fire). */
+  private burns: { tx: number; tz: number; t: number; ttl: number; acc: number }[] = [];
   private meshFx: MeshFx[] = [];
   private projectiles: Projectile[] = [];
   private readonly auraVisuals = new Map<Aura, AuraVisual>();
@@ -399,6 +458,33 @@ export class EffectsRenderer {
     this.matter = new ParticlePool(budget, false);
     this.glow.points.userData.gpuCurved = this.matter.points.userData.gpuCurved = true;
     scene.add(this.glow.points, this.matter.points);
+    this.tier = quality?.name ?? 'high';
+    this.detail = FX_DETAIL[this.tier];
+
+    // The screen flash: a quad already in clip space (no camera maths),
+    // additive, drawn last with the scene so bloom and tone mapping see it.
+    const sq = new THREE.ShaderMaterial({
+      uniforms: this.screenUniforms,
+      vertexShader: 'varying vec2 vP; void main() { vP = position.xy; gl_Position = vec4(position.xy, 0.0, 1.0); }',
+      fragmentShader: /* glsl */ `
+        uniform vec3 uColor; uniform float uAmount; varying vec2 vP;
+        void main() {
+          float v = 1.0 - 0.35 * dot(vP, vP);
+          gl_FragColor = vec4(uColor * uAmount * v, 1.0);
+          #include <tonemapping_fragment>
+          #include <colorspace_fragment>
+        }`,
+      transparent: true, depthTest: false, depthWrite: false, blending: THREE.AdditiveBlending,
+    });
+    this.screenQuad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), sq);
+    this.screenQuad.frustumCulled = false;
+    this.screenQuad.renderOrder = 100;
+    this.screenQuad.visible = false;
+    this.screenQuad.userData.gpuCurved = true; // never CPU-curved (applyLimbToCpuCurved)
+    scene.add(this.screenQuad);
+    this.spectacle = new Spectacle(this, scene, terrain);
+    this.life = this.tier === 'low' ? null : new AmbientLife(this, scene);
+    terrain?.onWorldChange.push(() => this.reset());
 
     // Funnel: a lathe that flares from a tight base to a wide top.
     const pts: THREE.Vector2[] = [];
@@ -407,6 +493,107 @@ export class EffectsRenderer {
       pts.push(new THREE.Vector2(0.18 + Math.pow(t, 1.8) * 1.0, t));
     }
     this.funnelGeo = new THREE.LatheGeometry(pts, 48);
+  }
+
+  /** Where the camera looks (world units), as of this frame's sync. */
+  get camTargetNow(): THREE.Vector3 {
+    return this.camTarget;
+  }
+
+  /** The world being drawn (set each sync). */
+  get worldNow(): World | null {
+    return this.world;
+  }
+
+  /** The terrain's surface paint (lava, basalt, wet, fissures), if any. */
+  get surface(): SurfaceFx | null {
+    return this.terrain?.fx ?? null;
+  }
+
+  /** Scale a particle count by the quality tier (at least `min`). */
+  n(count: number, min = 1): number {
+    return Math.max(min, Math.round(count * this.detail));
+  }
+
+  /**
+   * A different world was loaded: drop everything that belongs to the old
+   * one (running set pieces, vents, boats, bombs, fires, shocks, flashes).
+   * Without this a volcano running at load time would end() into a vent
+   * smoking over the new map.
+   */
+  reset(): void {
+    this.spectacle.reset();
+    this.bombs = [];
+    this.burns = [];
+    this.projectiles = [];
+    this.shockAge = -1;
+    grassShock.value.w = 0;
+    this.screenUniforms.uAmount.value = 0;
+    this.screenQuad.visible = false;
+  }
+
+  /** Light up the whole screen for a moment (additive; `amount` ~0.1 subtle … 1 blinding). */
+  screenFlash(color: number, amount: number, fade = 0.5): void {
+    const u = this.screenUniforms;
+    if (amount < u.uAmount.value) return;
+    u.uColor.value.setHex(color);
+    u.uAmount.value = amount;
+    this.screenFade = fade;
+    this.screenQuad.visible = true;
+  }
+
+  private stepScreen(dt: number): void {
+    const u = this.screenUniforms.uAmount;
+    if (u.value <= 0) return;
+    u.value = Math.max(0, u.value - (dt / Math.max(0.05, this.screenFade)) * Math.max(u.value, 0.15));
+    this.screenQuad.visible = u.value > 0.002;
+  }
+
+  /** Roll a shock ring through the grass from tile (tx, tz) out to `radius` world units. */
+  grassShock(tx: number, tz: number, radius: number): void {
+    this.shockAge = 0;
+    this.shockTx = tx;
+    this.shockTz = tz;
+    this.shockRadius = radius;
+  }
+
+  private stepShock(dt: number): void {
+    const s = grassShock.value;
+    if (this.shockAge < 0) return;
+    this.shockAge += dt;
+    const T = 1.1;
+    const t = this.shockAge / T;
+    if (t >= 1) {
+      this.shockAge = -1;
+      s.w = 0;
+      return;
+    }
+    const p = this.at(this.shockTx, this.shockTz, 0);
+    s.set(p.x, p.z, this.shockRadius * (1 - Math.pow(1 - Math.min(1, t * 1.6), 2)), (1 - t) * (1 - t));
+  }
+
+  /** Keep a small fire going at tile (tx, tz) for `ttl` seconds. */
+  burn(tx: number, tz: number, ttl: number): void {
+    this.burns.push({ tx, tz, t: 0, ttl, acc: 0 });
+  }
+
+  private stepBurns(dt: number): void {
+    if (!this.burns.length) return;
+    for (const b of this.burns) {
+      b.t += dt;
+      b.acc += dt;
+      if (b.acc < 0.07) continue;
+      b.acc = 0;
+      const k = 1 - b.t / b.ttl;
+      this.flames(b.tx, b.tz, 0.9, Math.max(1, Math.round(3 * k)));
+      if (Math.random() < 0.35) this.smoke(b.tx, b.tz, 1, { lift: 1.2, dark: 0.08, rise: 2.4, size: 1.4, life: 2.6 });
+    }
+    this.burns = this.burns.filter((b) => b.t < b.ttl);
+  }
+
+  /** The terrain's heightmap texture uniform (for draped FX materials). */
+  get heightUniform(): THREE.IUniform {
+    return this.heightTex;
   }
 
   private get heightTex(): THREE.IUniform {
@@ -434,7 +621,13 @@ export class EffectsRenderer {
 
     this.syncAuras(world, dt);
     this.ambient(world, dt);
+    this.spectacle.sync(world, dt);
+    this.life?.sync(world, this.camTarget, dt);
     this.stepProjectiles(dt);
+    this.stepBombs(dt);
+    this.stepBurns(dt);
+    this.stepScreen(dt);
+    this.stepShock(dt);
 
     for (const f of this.meshFx) {
       f.age += dt;
@@ -693,7 +886,7 @@ export class EffectsRenderer {
   // Mesh recipes
   // -------------------------------------------------------------------------
 
-  private addFx(obj: THREE.Object3D, mats: THREE.ShaderMaterial[], tx: number, tz: number, lift: number, ttl: number, drive: (f: MeshFx, dt: number) => void): MeshFx {
+  addFx(obj: THREE.Object3D, mats: THREE.ShaderMaterial[], tx: number, tz: number, lift: number, ttl: number, drive: (f: MeshFx, dt: number) => void): MeshFx {
     obj.traverse((o) => (o.frustumCulled = false));
     obj.userData.gpuCurved = true;
     this.scene.add(obj);
@@ -708,12 +901,12 @@ export class EffectsRenderer {
     for (const m of f.mats) m.dispose();
     f.obj.traverse((o) => {
       const g = (o as THREE.Mesh).geometry;
-      if (g && ![this.ringGeo, this.discGeo, this.domeGeo, this.columnGeo, this.funnelGeo].includes(g)) g.dispose();
+      if (g && !g.userData.keep && ![this.ringGeo, this.discGeo, this.domeGeo, this.columnGeo, this.funnelGeo].includes(g)) g.dispose();
     });
   }
 
   /** Expanding shockwave ring draped on the ground. */
-  ring(tx: number, tz: number, color: number, radius: number, ttl = 0.7, hdr = 3, width = 0.18): void {
+  ring(tx: number, tz: number, color: number, radius: number, ttl = 0.7, hdr = 3, width = 0.18, inward = false): void {
     const c = lin(color).multiplyScalar(hdr);
     const mat = fxMaterial(
       this.heightTex,
@@ -730,10 +923,11 @@ export class EffectsRenderer {
     mesh.renderOrder = 7;
     this.addFx(mesh, [mat], tx, tz, 0, ttl, (f) => {
       const t = f.age / f.ttl;
-      const s = radius * (1 - Math.pow(1 - t, 2.4));
+      // outward: bursts fast and slows; inward: a surge closing on the centre
+      const s = inward ? radius * (1 - t * t * 0.85) : radius * (1 - Math.pow(1 - t, 2.4));
       f.obj.position.y = 0; // drape shader supplies height
       f.obj.scale.set(Math.max(0.01, s), 1, Math.max(0.01, s));
-      mat.uniforms.uAlpha.value = (1 - t) * (1 - t);
+      mat.uniforms.uAlpha.value = inward ? Math.sin(t * Math.PI) : (1 - t) * (1 - t);
     });
   }
 
@@ -852,17 +1046,26 @@ export class EffectsRenderer {
     });
   }
 
-  /** Jagged lightning bolt from the sky to (tx, tz), with branches. */
-  bolt(tx: number, tz: number, color = 0xcfe6ff, ttl = 0.4): void {
-    const top = 46;
-    // Local space: the mesh sits on the ground at the strike point.
-    const pts = jagged(new THREE.Vector3(0, top, 0), new THREE.Vector3(0, 0, 0), 6, 9);
+  /**
+   * Jagged lightning bolt from the sky to (tx, tz), with branches. Options:
+   * `top` (height above the strike point), `lift` (strike point above the
+   * ground — a flicker inside a cloud), `width`, `branches`, `from` (a
+   * local offset for the bolt's upper end; an arc between two people).
+   */
+  bolt(tx: number, tz: number, color = 0xcfe6ff, ttl = 0.4, o: { top?: number; lift?: number; width?: number; branches?: number; hdr?: number; from?: THREE.Vector3; steady?: boolean } = {}): MeshFx {
+    const top = o.top ?? 46;
+    const from = o.from ?? new THREE.Vector3(0, top, 0);
+    const len = from.length();
+    // Local space: the mesh sits at the strike point.
+    const pts = jagged(from, new THREE.Vector3(0, 0, 0), len > 20 ? 6 : 4, Math.min(9, len * 0.2));
     const geo = new THREE.BufferGeometry();
     const verts: number[] = [];
     const uvs: number[] = [];
+    const vertical = !o.from || Math.abs(from.y) > Math.hypot(from.x, from.z);
+    const axes = vertical ? [new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 0, 1)] : [new THREE.Vector3(0, 1, 0), new THREE.Vector3(-from.z, 0, from.x).normalize()];
     const addStrip = (path: THREE.Vector3[], width: number) => {
       // Two crossed ribbons so the bolt reads from any angle.
-      for (const axis of [new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 0, 1)]) {
+      for (const axis of axes) {
         for (let i = 0; i < path.length - 1; i++) {
           const a = path[i], b = path[i + 1];
           const w0 = width * (1 - (i / path.length) * 0.4);
@@ -874,18 +1077,27 @@ export class EffectsRenderer {
         }
       }
     };
-    addStrip(pts, 0.32);
+    const width = o.width ?? 0.32;
+    addStrip(pts, width);
     // Branches fork off the upper two thirds.
-    for (let b = 0; b < 3; b++) {
-      const i = 2 + Math.floor(Math.random() * (pts.length * 0.6));
-      const from = pts[i];
-      const dir = new THREE.Vector3((Math.random() - 0.5) * 14, -6 - Math.random() * 8, (Math.random() - 0.5) * 14);
-      addStrip(jagged(from, from.clone().add(dir), 4, 4), 0.16);
+    const nb = o.branches ?? 3;
+    for (let b = 0; b < nb; b++) {
+      const i = 1 + Math.floor(Math.random() * (pts.length * 0.6));
+      const p0 = pts[i];
+      const s = len / 46;
+      const dir = new THREE.Vector3((Math.random() - 0.5) * 16 * s, (-6 - Math.random() * 10) * s, (Math.random() - 0.5) * 16 * s);
+      const branch = jagged(p0, p0.clone().add(dir), 4, 4 * s);
+      addStrip(branch, width * 0.5);
+      // twigs off the bigger branches
+      if (Math.random() < 0.5) {
+        const q = branch[Math.floor(branch.length * 0.5)];
+        addStrip(jagged(q, q.clone().add(dir.clone().multiplyScalar(0.45).add(new THREE.Vector3((Math.random() - 0.5) * 6 * s, 0, (Math.random() - 0.5) * 6 * s))), 3, 2 * s), width * 0.3);
+      }
     }
     geo.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
     geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
     geo.setAttribute('normal', new THREE.Float32BufferAttribute(new Array(verts.length).fill(0).map((_, k) => (k % 3 === 1 ? 1 : 0)), 3));
-    const c = lin(color).multiplyScalar(9);
+    const c = lin(color).multiplyScalar(o.hdr ?? 9);
     const mat = fxMaterial(
       this.heightTex,
       /* glsl */ `
@@ -898,10 +1110,11 @@ export class EffectsRenderer {
     );
     const mesh = new THREE.Mesh(geo, mat);
     mesh.renderOrder = 9;
-    this.addFx(mesh, [mat], tx, tz, 0, ttl, (f) => {
-      // Flicker: strike, dim, restrike, fade.
+    const steady = o.steady ?? false;
+    return this.addFx(mesh, [mat], tx, tz, o.lift ?? 0, ttl, (f) => {
+      // Flicker: strike, dim, restrike, fade (an afterimage just fades).
       const t = f.age / f.ttl;
-      const flick = t < 0.15 ? 1 : t < 0.3 ? 0.25 : t < 0.45 ? 1 : 1 - t;
+      const flick = steady ? (1 - t) * (1 - t) : t < 0.15 ? 1 : t < 0.3 ? 0.25 : t < 0.45 ? 1 : 1 - t;
       mat.uniforms.uAlpha.value = flick;
     });
   }
@@ -924,6 +1137,75 @@ export class EffectsRenderer {
     }
   }
 
+  /**
+   * Throw a lava bomb from tile (tx, tz) at height y (world units):
+   * horizontal velocity (vx, vz) in tiles/s, vy in world units/s.
+   */
+  bomb(tx: number, tz: number, y: number, vx: number, vz: number, vy: number, size = 1): void {
+    if (this.bombs.length > 60) return;
+    this.bombs.push({ tx, tz, y, vx, vz, vy, size, age: 0 });
+  }
+
+  private stepBombs(dt: number): void {
+    if (!this.bombs.length) return;
+    const keep: Bomb[] = [];
+    for (const b of this.bombs) {
+      b.age += dt;
+      b.tx += b.vx * dt;
+      b.tz += b.vz * dt;
+      b.vy -= 22 * dt;
+      b.y += b.vy * dt;
+      const p = this.at(b.tx, b.tz, 0);
+      const ground = p.y;
+      const x = p.x, z = p.z;
+      // glowing head and a trail of sparks and smoke
+      this.glow.emit({ x, y: b.y, z, life: 0.07, size: 1.5 * b.size, r: 9, g: 4, b: 1.1, shape: GLOW, fadeIn: 0.01 });
+      this.glow.emit({
+        x: x + (Math.random() - 0.5) * 0.3, y: b.y, z: z + (Math.random() - 0.5) * 0.3,
+        vy: 0.4, life: 0.5 + Math.random() * 0.3, size: 0.8 * b.size, sizeEnd: 0.1,
+        r: 6, g: 2.2, b: 0.4, r2: 1.2, g2: 0.15, b2: 0.02, shape: GLOW, fadeIn: 0.01,
+      });
+      if (Math.random() < 0.6 * this.detail + 0.2) {
+        this.matter.emit({
+          x, y: b.y + 0.3, z, vy: 0.6, life: 1.6, size: 0.8 * b.size, sizeEnd: 2.8 * b.size,
+          r: 0.12, g: 0.1, b: 0.09, alpha: 0.55, shape: SMOKE, fadeIn: 0.1, drag: 1,
+        });
+      }
+      if (b.y <= ground + 0.2 && b.vy < 0) {
+        const sea = (this.world?.map.sampleHeight(b.tx, b.tz) ?? 1) < 0;
+        if (sea) {
+          this.steam(b.tx, b.tz, this.n(6, 2), 1.2);
+          this.spray(b.tx, b.tz, this.n(10, 3), 5);
+        } else {
+          this.fireCore(b.tx, b.tz, 0.32 * b.size, 0.4);
+          this.sparks(b.tx, b.tz, this.n(10, 3), 5, C.lava, 0.4, 0.3);
+          this.debris(b.tx, b.tz, this.n(5, 2), 5, 0x2a1a12, 0.25);
+          this.surface?.paint(FxChannel.Heat, b.tx, b.tz, 0.4 * b.size, 0.6);
+          this.scorch(b.tx, b.tz, 0.8 * b.size, 0.5);
+        }
+        continue;
+      }
+      if (b.age < 6) keep.push(b);
+    }
+    this.bombs = keep;
+  }
+
+  /** Steam off water: pale, fast-rising puffs. */
+  steam(tx: number, tz: number, n: number, spread = 1, rise = 3.5): void {
+    for (let i = 0; i < n; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const r = Math.random() * spread * TILE;
+      const p = this.at(tx, tz, 0.2);
+      const v = 0.75 + Math.random() * 0.2;
+      this.matter.emit({
+        x: p.x + Math.cos(a) * r, y: p.y, z: p.z + Math.sin(a) * r,
+        vx: Math.cos(a) * 0.4 + 0.5, vy: rise * (0.6 + Math.random() * 0.7), vz: Math.sin(a) * 0.4,
+        life: 2 + Math.random() * 1.5, size: 1.1, sizeEnd: 4.2,
+        r: v, g: v, b: v * 1.03, alpha: 0.42, drag: 0.7, shape: SMOKE, fadeIn: 0.12,
+      });
+    }
+  }
+
   private stepProjectiles(dt: number): void {
     const keep: Projectile[] = [];
     for (const p of this.projectiles) {
@@ -936,22 +1218,30 @@ export class EffectsRenderer {
       const yBase = p.kind === 'stone' ? p.fromY + (p.toY - p.fromY) * t * t : p.fromY + (p.toY - p.fromY) * t;
       const pos = this.at(cx, cz, 0);
       const y = (p.kind === 'stone' ? this.ground(p.tx, p.tz) : pos.y) + yBase + Math.sin(t * Math.PI) * p.arc;
-      // Head + trail.
+      // Head + trail. A falling stone covers metres per frame: string its
+      // trail along the whole stretch it crossed so it reads as one streak.
       const hot = p.kind === 'stone' ? 1.6 : 0.9;
-      this.glow.emit({ x: pos.x, y, z: pos.z, life: 0.08, size: 1.1 * hot, r: 10, g: 5, b: 1.5, shape: GLOW, fadeIn: 0.01 });
-      for (let k = 0; k < (p.kind === 'stone' ? 3 : 1); k++) {
+      const px = pos.x, pz = pos.z;
+      this.glow.emit({ x: px, y, z: pz, life: 0.08, size: 1.1 * hot, r: 10, g: 5, b: 1.5, shape: GLOW, fadeIn: 0.01 });
+      const steps = p.kind === 'stone' ? 6 : 1;
+      const lx = p.lastX ?? px, ly = p.lastY ?? y, lz = p.lastZ ?? pz;
+      for (let k = 0; k < steps; k++) {
+        const f = steps > 1 ? k / steps : 0;
         this.glow.emit({
-          x: pos.x + (Math.random() - 0.5) * 0.3, y, z: pos.z + (Math.random() - 0.5) * 0.3,
-          vy: 0.5, life: 0.35 + Math.random() * 0.25, size: 0.7 * hot, sizeEnd: 0.1,
+          x: px + (lx - px) * f + (Math.random() - 0.5) * 0.3, y: y + (ly - y) * f, z: pz + (lz - pz) * f + (Math.random() - 0.5) * 0.3,
+          vy: 0.5, life: 0.3 + Math.random() * 0.25, size: 0.75 * hot, sizeEnd: 0.1,
           r: 7, g: 2.6, b: 0.5, r2: 1.5, g2: 0.2, b2: 0.02, shape: GLOW, fadeIn: 0.01,
         });
+        if (p.kind === 'stone' && k % 2 === 0) {
+          this.matter.emit({
+            x: px + (lx - px) * f, y: y + (ly - y) * f + 0.4, z: pz + (lz - pz) * f, vy: 0.8, life: 1.4, size: 0.9, sizeEnd: 2.8,
+            r: 0.15, g: 0.13, b: 0.12, alpha: 0.55, shape: SMOKE, fadeIn: 0.1, drag: 1,
+          });
+        }
       }
-      if (p.kind === 'stone') {
-        this.matter.emit({
-          x: pos.x, y: y + 0.5, z: pos.z, vy: 0.8, life: 1.2, size: 0.9, sizeEnd: 2.6,
-          r: 0.15, g: 0.13, b: 0.12, alpha: 0.6, shape: SMOKE, fadeIn: 0.1, drag: 1,
-        });
-      }
+      p.lastX = px;
+      p.lastY = y;
+      p.lastZ = pz;
       if (t >= 1) {
         if (p.kind === 'ember') {
           this.fireCore(p.tx, p.tz, 0.25, 0.8);
@@ -964,6 +1254,83 @@ export class EffectsRenderer {
       keep.push(p);
     }
     this.projectiles = keep;
+  }
+
+  /** Boats come ashore (the `landing` event): see render/fleet.ts. */
+  spectacleLanding(x: number, z: number, count: number, tribe?: string): void {
+    this.spectacle.landing(x, z, count, tribe);
+  }
+
+  /** Big clods thrown high out of a crater, each trailing dust. */
+  ejecta(tx: number, tz: number, n: number, speed: number): void {
+    const p = this.at(tx, tz, 0.8);
+    for (let i = 0; i < n; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const s = speed * (0.5 + Math.random() * 0.6);
+      const k = 0.6 + Math.random() * 0.4;
+      this.matter.emit({
+        x: p.x, y: p.y, z: p.z, vx: Math.cos(a) * s * 0.55, vy: s * (0.9 + Math.random() * 0.6), vz: Math.sin(a) * s * 0.55,
+        life: 1.4 + Math.random() * 0.6, size: 0.55 + Math.random() * 0.4, r: 0.3 * k, g: 0.23 * k, b: 0.16 * k,
+        gravity: 20, drag: 0.15, shape: CHUNK, fadeIn: 0.01,
+      });
+      // the dust trail: a few puffs strung out behind on the same path, born later
+      for (let j = 1; j <= 3; j++) {
+        const dt = j * 0.09;
+        this.matter.emit({
+          x: p.x + Math.cos(a) * s * 0.55 * dt, y: p.y + s * dt, z: p.z + Math.sin(a) * s * 0.55 * dt,
+          vx: Math.cos(a) * s * 0.2, vy: s * 0.3, vz: Math.sin(a) * s * 0.2,
+          life: 1 + Math.random() * 0.6, size: 0.6, sizeEnd: 2.4, r: 0.45, g: 0.39, b: 0.31, alpha: 0.45, drag: 2, shape: SMOKE, fadeIn: 0.1,
+        });
+      }
+    }
+  }
+
+  /** Gouts of mud (Mire). */
+  mud(tx: number, tz: number, n: number, radius: number): void {
+    for (let i = 0; i < n; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const r = radius * Math.sqrt(Math.random());
+      const p = this.at(tx + (Math.cos(a) * r) / TILE, tz + (Math.sin(a) * r) / TILE, 0.2);
+      const k = 0.7 + Math.random() * 0.4;
+      this.matter.emit({
+        x: p.x, y: p.y, z: p.z, vx: (Math.random() - 0.5) * 2, vy: 3 + Math.random() * 4, vz: (Math.random() - 0.5) * 2,
+        life: 0.8 + Math.random() * 0.4, size: 0.35 + Math.random() * 0.3, r: 0.2 * k, g: 0.22 * k, b: 0.1 * k,
+        gravity: 18, shape: CHUNK, fadeIn: 0.01,
+      });
+    }
+  }
+
+  /** A dark cloud deck over (tx, tz) at `height`: swirling (`swirl` rad/s), its underside tinted `under`. */
+  cloudCap(tx: number, tz: number, height: number, radius: number, n: number, swirl: number, under: [number, number, number]): void {
+    const c = this.at(tx, tz, height);
+    const cx = c.x, cy = c.y, cz = c.z;
+    for (let i = 0; i < n; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const r = Math.sqrt(Math.random()) * radius;
+      const v = 0.06 + Math.random() * 0.05;
+      this.matter.emit({
+        x: cx + Math.cos(a) * r, y: cy + (Math.random() - 0.5) * 2, z: cz + Math.sin(a) * r,
+        vx: 0, vy: 0.2, vz: 0, life: 3 + Math.random() * 1.5, size: 5, sizeEnd: 9,
+        r: under[0], g: under[1], b: under[2], r2: v, g2: v, b2: v * 1.1, alpha: 0.7, drag: 0.5, shape: SMOKE, fadeIn: 0.25,
+        swirl, ax: cx, az: cz,
+      });
+    }
+  }
+
+  /** What's left of a lightning cloud: a dark puff high over the strike that breaks up. */
+  cloudBurst(tx: number, tz: number): void {
+    const c = this.at(tx, tz, 17);
+    const cx = c.x, cy = c.y, cz = c.z;
+    for (let i = 0; i < this.n(18, 6); i++) {
+      const a = Math.random() * Math.PI * 2;
+      const r = Math.random() * 6;
+      const v = 0.08 + Math.random() * 0.05;
+      this.matter.emit({
+        x: cx + Math.cos(a) * r, y: cy + (Math.random() - 0.5) * 2, z: cz + Math.sin(a) * r,
+        vx: Math.cos(a) * 2, vy: 0.3, vz: Math.sin(a) * 2, life: 2 + Math.random(), size: 6, sizeEnd: 10,
+        r: v, g: v, b: v * 1.25, alpha: 0.75, drag: 0.6, shape: SMOKE, fadeIn: 0.02,
+      });
+    }
   }
 
   /** A full explosion, scaled. */
@@ -1062,6 +1429,7 @@ export class EffectsRenderer {
       const pulse = Math.sin(performance.now() / 260);
       if (pulse > 0.995) this.ring(a.x, a.z, 0xff8a3a, rT * TILE, 0.8, 2.5);
     } else if (k === 'cyclone') {
+      if (Math.random() < dt * 8 * this.detail + dt * 2) this.cloudCap(a.x, a.z, 21, 9, 1, 1.6, [0.2, 0.2, 0.22]);
       if (every(0.03)) {
         const c = this.at(a.x, a.z, 0).clone();
         for (let i = 0; i < 3; i++) {
@@ -1083,7 +1451,11 @@ export class EffectsRenderer {
         }
       }
     } else if (k === 'emberfall') {
-      if (every(0.1)) this.motes(a.x, a.z, 2, lin(0xff6a2a), { radius: rT * TILE, rise: 1, life: 1.5, hdr: 3, lift: 6 });
+      if (every(0.1)) {
+        this.motes(a.x, a.z, 2, lin(0xff6a2a), { radius: rT * TILE, rise: 1, life: 1.5, hdr: 3, lift: 6 });
+        // a low, smouldering cloud the stones fall out of, lit red from below
+        this.cloudCap(a.x, a.z, 24, rT * TILE * 0.8, this.n(3, 1), 0.5, [0.5, 0.12, 0.05]);
+      }
     } else if (k === 'sink') {
       if (every(0.1)) {
         this.dust(a.x + (Math.random() - 0.5) * rT, a.z + (Math.random() - 0.5) * rT, 2, rT, 0x9a8a70, 1.2);
@@ -1112,13 +1484,16 @@ export class EffectsRenderer {
     }
     // Swamp bubbles on a few random visible swamp tiles.
     this.swampAcc += dt;
-    if (this.swampAcc > 0.15 && world.swamp.size) {
+    if (this.swampAcc > 0.1 && world.swamp.size) {
       this.swampAcc = 0;
       const keys = [...world.swamp.keys()];
-      for (let i = 0; i < 2; i++) {
+      for (let i = 0; i < 4; i++) {
         const idx = keys[Math.floor(Math.random() * keys.length)];
         const tx = idx % WORLD_SIZE, tz = Math.floor(idx / WORLD_SIZE);
-        if (this.near(tx, tz, 80)) this.swampBubble(tx + Math.random() - 0.5, tz + Math.random() - 0.5);
+        if (!this.near(tx, tz, 80)) continue;
+        const fx = tx + Math.random() - 0.5, fz = tz + Math.random() - 0.5;
+        if (i < 3) this.swampBubble(fx, fz);
+        else this.swampMist(fx, fz);
       }
     }
   }
@@ -1126,6 +1501,17 @@ export class EffectsRenderer {
   private swampBubble(tx: number, tz: number): void {
     const p = this.at(tx, tz, 0.1);
     this.matter.emit({ x: p.x, y: p.y, z: p.z, vy: 0.5, life: 1.4, size: 0.5, sizeEnd: 1.6, r: 0.25, g: 0.3, b: 0.16, alpha: 0.5, shape: SMOKE, fadeIn: 0.3 });
+    // a bubble of marsh gas swells and pops with a faint green glint
+    this.glow.emit({ x: p.x, y: p.y + 0.1, z: p.z, vy: 0.2, life: 0.9, size: 0.35, sizeEnd: 0.6, r: 0.5, g: 1.2, b: 0.3, alpha: 0.7, shape: GLOW, fadeIn: 0.8 });
+  }
+
+  /** Low, sickly mist hanging over the mire. */
+  private swampMist(tx: number, tz: number): void {
+    const p = this.at(tx, tz, 0.4);
+    this.matter.emit({
+      x: p.x, y: p.y, z: p.z, vx: 0.4, vy: 0.15, life: 4, size: 2.2, sizeEnd: 4.5,
+      r: 0.42, g: 0.5, b: 0.28, alpha: 0.32, drag: 0.5, shape: SMOKE, fadeIn: 0.35,
+    });
   }
 
   /** Is tile (x, z) within `dist` world units of the camera target? */
@@ -1161,6 +1547,7 @@ function jagged(a: THREE.Vector3, b: THREE.Vector3, depth: number, amp: number):
 // ---------------------------------------------------------------------------
 
 const C = {
+  lava: lin(0xff7a20),
   gold: lin(0xffd36a),
   cyan: lin(0x88eaff),
   white: lin(0xfff4dc),
@@ -1171,18 +1558,44 @@ const C = {
 
 const HANDLERS: Record<string, Handler> = {
   explosion(fx, x, z) {
-    fx.shake(0.7);
-    fx.impact(x, z, 1);
+    // Blast (and a building blown apart): fireball, ejecta trailing dust, a
+    // shock ring that rolls out low and flattens the grass as it passes.
+    fx.shake(0.8);
+    fx.impact(x, z, 1.15);
+    fx.ejecta(x, z, fx.n(14, 5), 11);
+    fx.dust(x, z, fx.n(26, 8), 1.5, 0x8a7a64, 11);
+    fx.ring(x, z, 0xfff0d0, 16, 0.9, 1.6, 0.06);
+    fx.grassShock(x, z, 22);
+    fx.screenFlash(0xffc890, 0.12, 0.25);
   },
-  lightning(fx, x, z) {
-    fx.shake(0.35);
-    fx.bolt(x, z);
+  lightning(fx, x, z, mag, ev) {
+    if (mag < 1 && ev.x2 !== undefined && ev.z2 !== undefined) {
+      // an arc jumping from the strike to the next victim
+      const from = new THREE.Vector3(
+        wrapDelta(ev.x2 - x, WORLD_SIZE) * TILE, fx.ground(ev.x2, ev.z2) - fx.ground(x, z) + 0.6,
+        wrapDelta(ev.z2 - z, WORLD_SIZE) * TILE,
+      );
+      fx.bolt(x, z, 0xd8ecff, 0.35, { from, lift: 1.1, width: 0.14, branches: 1, hdr: 8 });
+      fx.sparks(x, z, 14, 6, lin(0xbfe0ff), 1.2, 0.3);
+      fx.scorch(x, z, 0.8, 0.6);
+      return;
+    }
+    // THE bolt: blinding, forked, with an afterimage burned into the eye,
+    // scorched ground and a small fire left burning.
+    fx.shake(0.6);
+    fx.bolt(x, z, 0xe6f2ff, 0.5, { top: 19, width: 0.42, branches: 5, hdr: 11 });
+    fx.bolt(x, z, 0xb08cff, 1.1, { top: 19, width: 0.8, branches: 0, hdr: 1.6, steady: true });
     fx.flash(x, z, 0xcfe0ff, 3000, 0.35, 8, 70);
-    fx.sparks(x, z, 26, 8, lin(0xbfe0ff));
-    fx.fireCore(x, z, 0.35, 0.5);
-    fx.ring(x, z, 0xbfe0ff, 5, 0.5, 4);
-    fx.smoke(x, z, 5, { size: 1.4, dark: 0.15 });
-    fx.scorch(x, z, 1.4, 0.9);
+    fx.screenFlash(0xeaf0ff, 0.55, 0.22);
+    fx.sparks(x, z, fx.n(40, 12), 9, lin(0xbfe0ff));
+    fx.fireCore(x, z, 0.45, 0.5);
+    fx.ring(x, z, 0xbfe0ff, 7, 0.5, 4);
+    fx.ring(x, z, 0xfff0d0, 3, 0.25, 6, 0.3);
+    fx.debris(x, z, fx.n(10, 4), 7, 0x3a2e24, 0.28);
+    fx.smoke(x, z, 6, { size: 1.6, dark: 0.12 });
+    fx.scorch(x, z, 1.8, 1.1);
+    fx.burn(x, z, 6);
+    fx.cloudBurst(x, z);
   },
   convert(fx, x, z) {
     fx.ring(x, z, 0x88eaff, 5, 0.8, 3);
@@ -1235,16 +1648,24 @@ const HANDLERS: Record<string, Handler> = {
     fx.sparks(x, z, 4, 6, lin(0xff7a2a), 2);
   },
   volcanoStart(fx, x, z) {
-    fx.shake(1.2);
+    // The mountain wakes: the ground bursts, the screen goes hot, the sky shakes.
+    fx.shake(2.2);
+    fx.screenFlash(0xff7a30, 0.45, 0.9);
     fx.impact(x, z, 1.6);
-    fx.ring(x, z, 0xff6a2a, 16, 1.6, 3, 0.1);
-    fx.dust(x, z, 30, 8, 0x8a7a64, 6);
+    fx.ring(x, z, 0xff6a2a, 22, 1.8, 3, 0.08);
+    fx.ring(x, z, 0xffd0a0, 12, 0.8, 4, 0.12);
+    fx.dust(x, z, fx.n(50, 14), 16, 0x8a7a64, 7);
+    fx.ejecta(x, z, fx.n(16, 6), 13);
+    fx.flash(x, z, 0xff6020, 1800, 1.2, 5, 55);
+    fx.grassShock(x, z, 30);
   },
   quakeStart(fx, x, z) {
-    fx.shake(0.8);
-    fx.dust(x, z, 40, 10, 0xa08a6a, 4);
+    fx.shake(1.2);
+    fx.screenFlash(0xffb070, 0.12, 0.4);
+    fx.dust(x, z, fx.n(50, 14), 10, 0xa08a6a, 4);
     fx.debris(x, z, 20, 7, 0x6a5a48);
-    fx.ring(x, z, 0xc8b090, 18, 1.4, 1.2, 0.08);
+    fx.ring(x, z, 0xc8b090, 24, 1.6, 1.4, 0.06);
+    fx.grassShock(x, z, 30);
   },
   rumbleSmall(fx, x, z) {
     fx.dust(x, z, 6, 3, 0xa08a6a, 2);
@@ -1253,8 +1674,12 @@ const HANDLERS: Record<string, Handler> = {
     fx.shake(mag);
   },
   swamp(fx, x, z) {
-    fx.dust(x, z, 14, 4, 0x56603a, 1.5);
-    fx.ring(x, z, 0x7a9a4a, 7, 0.9, 1.2, 0.12);
+    // the ground goes soft: a sickly ring, mud gouts, a slow bubble-burst
+    fx.dust(x, z, 24, 5, 0x56603a, 1.5);
+    fx.ring(x, z, 0x9aba5a, 9, 1.2, 1.6, 0.12);
+    fx.ring(x, z, 0x6a8a3a, 5, 1.6, 1.2, 0.2, true);
+    fx.mud(x, z, fx.n(30, 10), 8);
+    fx.motes(x, z, fx.n(24, 8), lin(0xb8e070), { radius: 7, rise: 1.2, life: 2, hdr: 2 });
   },
   denied(fx, x, z) {
     fx.ring(x, z, 0xff4a3a, 1.6, 0.4, 2);
@@ -1262,6 +1687,27 @@ const HANDLERS: Record<string, Handler> = {
   fireball(fx, x, z, _m, ev) {
     if (ev.x2 !== undefined && ev.z2 !== undefined) fx.launch(x, z, ev.x2, ev.z2, 'ember');
     else fx.fireCore(x, z, 0.4);
+  },
+
+  // --- the opening (fb-opening) ---
+  landing(fx, x, z, mag, ev) {
+    fx.spectacleLanding(x, z, mag, ev.tribe);
+  },
+  rescued(fx, x, z) {
+    // home at last: a warm burst round the one who made it
+    fx.ring(x, z, 0xffd38a, 6, 1, 3);
+    fx.ring(x, z, 0xfff0c8, 3, 0.6, 4, 0.25);
+    fx.column(x, z, 0xffd38a, 1.1, 14, 1.2, 2);
+    fx.motes(x, z, fx.n(36, 12), C.gold, { radius: 1.4, rise: 4.5, swirl: 3, life: 1.6 });
+    fx.petals(x, z, fx.n(12, 4), 3);
+    fx.flash(x, z, 0xffc070, 500, 0.8, 3, 30);
+  },
+  siteLevel(fx, x, z, mag) {
+    // builders cut the plot flat: a puff of dust and clods round the footprint
+    const r = Math.max(3, mag) * TILE * 0.55;
+    fx.dust(x, z, fx.n(22, 8), r, 0xbfa883, 2.5);
+    fx.debris(x, z, fx.n(10, 4), 5, 0x5a4532, 0.3);
+    fx.ring(x, z, 0xd8c09a, r * 1.2, 0.7, 1.4, 0.1);
   },
 
   // --- v2 events ---

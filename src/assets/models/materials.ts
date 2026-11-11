@@ -207,6 +207,9 @@ export interface TintSpec {
   desaturate?: number;
   /** Fresnel rim light (linear radiance at grazing angles), for a sheen. */
   rim?: number;
+  /** Paint over the vertex colours (before `color` multiplies): toward `paint` by `paintAmount` 0..1. */
+  paint?: number;
+  paintAmount?: number;
 }
 
 const glslVec3 = (hex: number) => {
@@ -228,6 +231,7 @@ export function tintedMaterial(base: THREE.Material, key: string, spec: TintSpec
   const c = base.clone() as THREE.MeshStandardMaterial;
   const desat = spec.desaturate ?? 0;
   const rim = spec.rim ?? 0;
+  const paintK = spec.paint !== undefined ? spec.paintAmount ?? 1 : 0;
   c.onBeforeCompile = (shader, renderer) => {
     base.onBeforeCompile(shader, renderer);
     if (desat > 0) {
@@ -235,6 +239,13 @@ export function tintedMaterial(base: THREE.Material, key: string, spec: TintSpec
         '#include <color_fragment>',
         `#include <color_fragment>
          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722))), ${desat.toFixed(3)});`,
+      );
+    }
+    if (paintK > 0) {
+      shader.fragmentShader = shader.fragmentShader.replace(
+        '#include <color_fragment>',
+        `#include <color_fragment>
+         diffuseColor.rgb = mix(diffuseColor.rgb, ${glslVec3(spec.paint!)} * (0.8 + 0.4 * dot(diffuseColor.rgb, vec3(0.3, 0.6, 0.1))), ${paintK.toFixed(3)});`,
       );
     }
     if (rim > 0) {
@@ -246,7 +257,7 @@ export function tintedMaterial(base: THREE.Material, key: string, spec: TintSpec
     }
   };
   const baseKey = base.customProgramCacheKey.bind(base);
-  c.customProgramCacheKey = () => `${baseKey()}|tint-${key}|d${desat}|r${rim}`;
+  c.customProgramCacheKey = () => `${baseKey()}|tint-${key}|d${desat}|r${rim}|p${paintK}`;
   c.color.setHex(spec.color);
   c.emissive.setHex(spec.emissive);
   c.emissiveIntensity = spec.emissiveIntensity ?? 1;

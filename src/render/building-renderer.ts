@@ -29,6 +29,12 @@
  * ritual is easy to spot). The snap of an interrupted ritual and the burst
  * of a completed one are one-shot effects (effects.ts).
  *
+ * A war band that has no buildings and never had one (raiders on a beach)
+ * gets no home circle: unit-visual-state.ts hasHomeCircle() decides.
+ *
+ * QUAKES. Buildings standing on a running quake's fault shudder (the model
+ * jitters on its foundation) before the sim brings them down.
+ *
  * HIGHLIGHT. render/highlight.ts says what's under the cursor; buildings
  * and monuments wear the shared highlight material variant while it's them.
  *
@@ -54,6 +60,8 @@ import { Monument, Unit, World } from '../sim/world-state';
 import { isHighlighted } from './highlight';
 import { SPELL_LOOK, SPELL_LOOK_DEFAULT } from './look';
 import { ModelFx } from './model-particles';
+import { hasHomeCircle } from './unit-visual-state';
+import { spellDef } from '../sim/catalog';
 
 const WORLD_UNITS = WORLD_SIZE * TILE;
 const VIEW_RADIUS = 160;
@@ -155,6 +163,13 @@ export class BuildingRenderer {
       setWear(`b:${b.id}`, { x: b.x, z: b.z, r: b.size / 2 + 0.35, round: false, k: 1 });
       const visible = this.anchor(e.model.root.position, b.x, b.z, e.base, camTarget);
       e.model.root.visible = visible;
+      const quake = visible ? this.quakeShake(world, b) : 0;
+      if (quake > 0) {
+        e.model.root.position.x += (Math.random() - 0.5) * quake;
+        e.model.root.position.z += (Math.random() - 0.5) * quake;
+        e.model.root.position.y += (Math.random() - 0.5) * quake * 0.4;
+        e.model.root.rotation.z = (Math.random() - 0.5) * quake * 0.05;
+      } else if (e.model.root.rotation.z !== 0) e.model.root.rotation.z = 0;
       e.model.update({ progress: b.progress, hpFrac: b.maxHp > 0 ? b.hp / b.maxHp : 1, burning: b.burning > 0, dt });
       const hl = isHighlighted('building', b.id);
       if (hl !== e.lit) {
@@ -185,7 +200,12 @@ export class BuildingRenderer {
   private syncHomes(world: World, camTarget: THREE.Vector3, dt: number): void {
     const active = this.active;
     active.clear();
-    for (const id of world.activeTribes()) active.add(id);
+    for (const id of world.activeTribes()) {
+      const t = world.tribes[id]!;
+      let built = 0;
+      for (const b of world.buildings) if (b.tribe === id) built++;
+      if (hasHomeCircle(t as typeof t & { homeless?: boolean }, built)) active.add(id);
+    }
     for (const id of active) {
       const civ = civOf(world, id);
       let h = this.homes.get(id);
@@ -355,6 +375,22 @@ export class BuildingRenderer {
     this.fx.fire.forget(st.model.root);
     this.fx.smoke.forget(st.model.root);
     st.model.dispose();
+  }
+
+  /** How hard a running quake shakes building `b` (world units of jitter; 0 = not on a fault). */
+  private quakeShake(world: World, b: { x: number; z: number; size: number }): number {
+    let k = 0;
+    for (const j of world.jobs) {
+      if (j.spell !== 'earthquake') continue;
+      const len = Math.round(spellDef('earthquake').radius * 1.45);
+      const bx = wrapDelta(b.x - j.x, WORLD_SIZE);
+      const bz = wrapDelta(b.z - j.z, WORLD_SIZE);
+      const c = Math.cos(j.angle), s = Math.sin(j.angle);
+      const along = Math.abs(bx * c + bz * s);
+      const across = Math.abs(-bx * s + bz * c);
+      if (along < len + 1 && across < 4 + b.size / 2) k = Math.max(k, 0.35 * (1 - across / (6 + b.size)));
+    }
+    return k;
   }
 
   /** Stand the model on the drawn ground under its footprint (see header). */

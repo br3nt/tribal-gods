@@ -14,9 +14,15 @@
  *   chanter, task chant  chant (it only keeps the task while it has listeners)
  *   shrine garrison / worship task   pray
  *   wardTime > 0         stone sheen     warsongTime > 0   red-gold tint (and movers run)
+ *   joins set            STRANDED kin: drawn in the colours of the tribe they will
+ *                        join (figureTribe), beckoning while they wait
+ *   guardOf set, stone asleep (ctx.dormant)   a guardian kneels, still as the stone
+ *
+ * And for the building renderer: hasHomeCircle() — a war band that has
+ * never raised a building (raiders) gets no home stone circle.
  */
 
-import { UNITS } from '../sim/catalog';
+import { Tribe, UNITS } from '../sim/catalog';
 import type { GameEvent, Unit } from '../sim/world-state';
 import type { ClipName } from './figure-animator';
 
@@ -24,7 +30,27 @@ export type VisualUnit = Pick<
   Unit,
   | 'id' | 'kind' | 'tribe' | 'x' | 'z' | 'state' | 'task' | 'carrying' | 'castSpell' | 'hidden' | 'attackCooldown'
   | 'wardTime' | 'warsongTime' | 'lifted' | 'pacified' | 'chantBy'
->;
+> & Partial<Pick<Unit, 'joins' | 'guardOf'>>;
+
+/** Whose colours a figure wears: stranded kin already dress as the tribe they'll join. */
+export function figureTribe(u: Pick<Unit, 'tribe'> & Partial<Pick<Unit, 'joins'>>): Tribe {
+  return u.tribe === 'wild' && u.joins ? u.joins : u.tribe;
+}
+
+/**
+ * Does this tribe get a home stone circle? An explicit `homeless` flag
+ * (if the sim ever sets one) decides; otherwise a war band (personality
+ * builds: false) that has no buildings and never completed one has no home
+ * to mark — raiders on a beach. Settling tribes keep theirs from the start.
+ */
+export function hasHomeCircle(
+  t: { homeless?: boolean; personality?: { builds?: boolean }; everBuilt?: ReadonlySet<string> },
+  buildingsNow: number,
+): boolean {
+  if (t.homeless !== undefined) return !t.homeless;
+  if (t.personality?.builds !== false) return true;
+  return buildingsNow > 0 || (t.everBuilt?.size ?? 0) > 0;
+}
 
 export type StatusTint = 'none' | 'ward' | 'warsong' | 'both';
 
@@ -46,6 +72,8 @@ export interface ClipContext {
   cheering: boolean;
   /** world.gameOver. */
   winner: 'victory' | 'defeat' | null;
+  /** A guardian whose stone sleeps (monument.guardsAwake false): it kneels dormant. */
+  dormant?: boolean;
 }
 
 export interface ClipChoice {
@@ -74,6 +102,7 @@ export function pickClip(u: VisualUnit, c: ClipContext): ClipChoice {
   else if (c.garrisonKind === 'tower') clip = 'idle';
   else if (c.inWater) clip = 'drown';
   else if (u.lifted > 0) clip = 'tumble';
+  else if (c.dormant && u.state !== 'fighting' && u.state !== 'moving') clip = 'dormant';
   else if (u.pacified > 0 && u.state !== 'moving') clip = 'slack';
   else if (u.state === 'fighting' || (task === 'attack' && u.state !== 'moving')) {
     if (kind === 'chanter') clip = 'chant';
@@ -97,7 +126,8 @@ export function pickClip(u: VisualUnit, c: ClipContext): ClipChoice {
     if (u.carrying) clip = 'carry';
     else clip = c.speed > c.runSpeed || u.warsongTime > 0 ? 'run' : 'walk';
   } else {
-    if (task === 'worship') clip = 'pray';
+    if (u.joins && u.tribe === 'wild') clip = 'beckon';
+    else if (task === 'worship') clip = 'pray';
     else if (kind === 'chanter' && task === 'chant') clip = 'chant';
     else if (c.cheering || victoryCheer(c.winner, u.tribe)) clip = 'cheer';
   }
@@ -108,7 +138,7 @@ export function pickClip(u: VisualUnit, c: ClipContext): ClipChoice {
 }
 
 /** How far good news carries (tiles). */
-const CHEER_RADIUS = { trained: 6, objectiveDone: 12 } as const;
+const CHEER_RADIUS = { trained: 6, objectiveDone: 12, rescued: 7 } as const;
 
 /**
  * Units that should cheer at these events: idle, visible villagers of the
@@ -131,6 +161,9 @@ export function cheerersFor(
     } else if (ev.type === 'objectiveDone') {
       tribe = 'player';
       r = CHEER_RADIUS.objectiveDone;
+    } else if (ev.type === 'rescued') {
+      tribe = ev.tribe;
+      r = CHEER_RADIUS.rescued;
     }
     if (!tribe) continue;
     for (const u of units) {

@@ -33,6 +33,14 @@ import { GRASS_CELLS_PER_LAP, GRASS_JITTER, GRASS_SPACING } from './grass-placem
 import { heightGlsl, noiseGlsl } from './terrain-glsl';
 import { WEAR_N, WEAR_RES } from './wear';
 import { TerrainMesh } from './terrain-mesh';
+import { FX_N, FX_RES } from './surface-fx';
+
+/**
+ * The one blast shock ring the grass knows about: (x, z) centre in world
+ * units (the camera-near image), z = front radius, w = strength 0..1. The
+ * effects renderer drives it; strength 0 = no shock.
+ */
+export const grassShock = { value: new THREE.Vector4(0, 0, 0, 0) };
 
 /** One clump: a few tapered, bent blades fanned around the root. */
 function clumpGeometry(blades: number, segs: number): THREE.BufferGeometry {
@@ -105,6 +113,8 @@ export class GroundCover {
       uHeightTex: terrain.uniforms.uHeightTex,
       uTileTex: terrain.uniforms.uTileTex,
       uWearTex: terrain.uniforms.uWearTex,
+      uFxTex: terrain.uniforms.uFxTex,
+      uShock: grassShock,
       uRadius: { value: radius },
       uSpacing: { value: this.spacing },
       uOrigin: this.uOrigin,
@@ -134,6 +144,8 @@ export class GroundCover {
           attribute float aT;
           uniform sampler2D uTileTex;
           uniform sampler2D uWearTex;
+          uniform sampler2D uFxTex;
+          uniform vec4 uShock;
           uniform float uTime, uRadius, uSpacing, uHeightScale, uFade;
           uniform vec3 uLush, uLush2, uDry, uTip;
           uniform vec4 uBands;
@@ -163,6 +175,9 @@ export class GroundCover {
           m *= 1.0 - smoothstep(0.1, 0.4, td.a);                              // not scorched
           float wear = texture2D(uWearTex, (root / TG_TILE * ${WEAR_RES.toFixed(1)} + 0.5) / ${WEAR_N.toFixed(1)}).r;
           m *= 1.0 - smoothstep(0.15, 0.5, wear);                             // not trodden (plots, yards, home circles)
+          vec4 sfx = texture2D(uFxTex, (root / TG_TILE * ${FX_RES.toFixed(1)} + 0.5) / ${FX_N.toFixed(1)});
+          m *= 1.0 - smoothstep(0.08, 0.35, max(sfx.r, sfx.g));               // not on lava or basalt
+          m *= 1.0 - smoothstep(0.15, 0.6, sfx.b);                            // not on fresh sea-wet mud
           float patchy = tgNoise(root * 0.12, TG_WORLD_UNITS * 0.12);
           m *= smoothstep(0.3, 0.55, patchy + 0.15 + 0.2 * r2);               // tufty meadows and clearings
           // Only the FAR EDGE of the carpet fades (a thin, ragged band near
@@ -185,13 +200,20 @@ export class GroundCover {
           float gust = sin(dot(root, vec2(0.08, 0.05)) - uTime * 1.3) * 0.5 + 0.5;
           float flutter = sin(uTime * 4.0 + r1 * 30.0) * 0.12;
           vec2 sway = vec2(0.8, 0.5) * (gust * 0.35 + flutter) * aT * aT;
+          // A blast's shock ring flattens the grass as it rolls through (uShock:
+          // centre xz in world units, front radius, strength 0..1).
+          vec2 sd = root - uShock.xy;
+          float sl = length(sd);
+          float front = uShock.w * (1.0 - smoothstep(0.0, 5.0, abs(sl - uShock.z))) * step(sl, uShock.z + 5.0);
+          float behind = uShock.w * 0.45 * step(sl, uShock.z) * (1.0 - smoothstep(0.0, 9.0, uShock.z - sl));
+          sway += (sd / max(sl, 0.01)) * (front * 2.4 + behind) * aT;
 
           float ang = r3 * 6.2831;
           mat2 rot = mat2(cos(ang), -sin(ang), sin(ang), cos(ang));
           vec2 xz = rot * position.xz * (1.0 + 0.6 * r1) + sway;
           // size == 0 collapses the clump to a point: masked-out grass costs
           // a few vertex invocations and no pixels.
-          vec3 transformed = vec3(root.x, h, root.y) + vec3(xz.x, position.y, xz.y) * size;
+          vec3 transformed = vec3(root.x, h, root.y) + vec3(xz.x, position.y * (1.0 - 0.75 * clamp(front + behind, 0.0, 1.0)), xz.y) * size;
           // These are WORLD coordinates (the mesh itself stays at the origin).`,
         );
       shader.fragmentShader = shader.fragmentShader

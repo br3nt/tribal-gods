@@ -36,11 +36,11 @@ import type { FigureStyle } from '../assets/models/people/recipes';
 
 export type ClipName =
   | 'idle' | 'walk' | 'run' | 'carry' | 'chop' | 'build' | 'attack' | 'throw' | 'cast'
-  | 'chant' | 'pray' | 'cheer' | 'die' | 'drown' | 'slack' | 'tumble';
+  | 'chant' | 'pray' | 'cheer' | 'die' | 'drown' | 'slack' | 'tumble' | 'beckon' | 'dormant';
 
 export const CLIP_NAMES: ClipName[] = [
   'idle', 'walk', 'run', 'carry', 'chop', 'build', 'attack', 'throw', 'cast', 'chant', 'pray', 'cheer', 'die', 'drown',
-  'slack', 'tumble',
+  'slack', 'tumble', 'beckon', 'dormant',
 ];
 
 /** Pose: 3 Euler angles per bone, then the hip offset (xyz, model units). */
@@ -473,6 +473,50 @@ const CLIPS: Record<ClipName, (t: number, p: Pose, c: ClipCtx) => void> = {
     if (c.style.holdR === 'staff' || c.style.holdR === 'spear' || c.style.holdR === 'maul') aimR(p, 1.05);
   },
 
+  beckon(t, p, c) {
+    // stranded: up on the toes, one arm sweeping big overhead waves, the
+    // other beckoning "come, come" at the hip
+    const ph = t * TAU;
+    const wave = Math.sin(ph * 2);
+    const bounce = Math.max(0, Math.sin(ph * 2));
+    stance(p, 0.08 + 0.06 * bounce, 0.1);
+    p[HX + 1] += 0.04 * bounce;
+    setR(p, BI.spine, -0.08, 0.15, 0.06 * wave);
+    setR(p, BI.chest, -0.06, 0.1, 0.04 * wave);
+    setR(p, BI.head, -0.3, 0.12, 0.06 * wave);
+    setR(p, BI.armR, -2.75, 0, -0.35 - 0.45 * wave);
+    setR(p, BI.foreR, -0.25 - 0.25 * Math.max(0, wave));
+    setR(p, BI.handR, 0.2 * wave);
+    setR(p, BI.armL, -0.9, 0, 0.25);
+    setR(p, BI.foreL, -1.1 - 0.5 * (0.5 + 0.5 * Math.sin(ph * 4)));
+    setR(p, BI.handL, -0.4);
+    if (c.style.holdR !== 'none') aimR(p, -Math.PI / 2 - 0.5);
+  },
+
+  dormant(t, p, c) {
+    // a guardian asleep: kneeling on one knee, weapon grounded, head bowed,
+    // breathing so slowly it might be stone
+    const breath = Math.sin(t * TAU) * 0.012;
+    const leg = c.leg;
+    p[HX + 1] = -leg * 0.42;
+    setR(p, BI.thighL, -1.45, 0.08, 0.08);
+    setR(p, BI.shinL, 1.45);
+    setR(p, BI.footL, 0.0);
+    setR(p, BI.thighR, -0.1, -0.08, -0.08);
+    setR(p, BI.shinR, 1.85);
+    setR(p, BI.footR, 0.95);
+    setR(p, BI.spine, 0.32 + breath, 0, 0);
+    setR(p, BI.chest, 0.12 + breath, 0, 0);
+    setR(p, BI.neck, 0.3);
+    setR(p, BI.head, 0.42, 0, 0);
+    setR(p, BI.armR, -0.55, 0, -0.12);
+    setR(p, BI.foreR, -0.9);
+    setR(p, BI.armL, -0.35, 0, 0.18);
+    setR(p, BI.foreL, -1.2);
+    setR(p, BI.handL, 0.2);
+    if (c.style.holdR !== 'none') aimR(p, -0.25);
+  },
+
   tumble(t, p, _c) {
     // whirled off the ground: limbs flung wide and flailing
     const ph = t * TAU;
@@ -551,7 +595,7 @@ const ONE_SHOT: Partial<Record<ClipName, number>> = { die: 1.25 };
 /** Seconds per cycle for looped, non-locomotion clips. */
 const PERIOD: Partial<Record<ClipName, number>> = {
   idle: 4.2, chop: 1.15, build: 1.0, attack: 1.1, throw: 1.6, cast: 1.2, chant: 1.5, pray: 2.8, cheer: 1.3, drown: 1.4,
-  slack: 3.6, tumble: 0.8,
+  slack: 3.6, tumble: 0.8, beckon: 1.4, dormant: 6,
 };
 
 export interface AnimInput {
