@@ -50,6 +50,9 @@ import { TerrainMesh } from './world/terrain-mesh';
 import { GroundCover } from './world/ground-cover';
 import { Water } from './world/water';
 
+// Art review booth (?gallery=1): takes over the page and never returns. See render/gallery.ts.
+if (new URLSearchParams(location.search).get('gallery') === '1') await import('./render/gallery').then((m) => m.startGallery());
+
 // --- The world (simulation state) ---
 const world = new World();
 // Dev/automation hooks: ?seed=N fixes the planet, ?play=1 skips the menu,
