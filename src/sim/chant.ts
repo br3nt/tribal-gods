@@ -29,7 +29,17 @@ export function tickChant(world: World, dt: number): void {
       (q) => q.kind === 'chanter' && !q.hidden && q.tribe !== 'wild' && world.hostile(c.tribe, q.tribe) &&
         world.distTo(c, q.x, q.z) <= CHANT.pacifyRadius,
     );
-    if (countered) continue;
+    if (countered) {
+      // Drowned out: give up after a moment rather than stand there forever.
+      c.workTimer += dt;
+      if (c.workTimer > 3) {
+        c.workTimer = 0;
+        c.task = 'none';
+        c.state = 'idle';
+      }
+      continue;
+    }
+    c.workTimer = 0;
 
     const listeners = world.units
       .filter((q) => !q.hidden && q.kind !== 'chanter' && q.tribe !== 'wild' && world.hostile(c.tribe, q.tribe))

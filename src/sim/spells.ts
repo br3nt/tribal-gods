@@ -336,7 +336,8 @@ function tickLandbridge(world: World, job: SpellJob, dt: number): void {
   for (let s = 0; s <= Math.min(frontier, len); s += 0.6) {
     const px = job.fromX + (dx / len) * s;
     const pz = job.fromZ + (dz / len) * s;
-    for (let w = -1; w <= 1; w++) {
+    const halfW = Math.max(1, Math.round(spellDef('landbridge').radius / 2));
+    for (let w = -halfW; w <= halfW; w++) {
       const tx = world.map.wrap(Math.round(px - (dz / len) * w));
       const tz = world.map.wrap(Math.round(pz + (dx / len) * w));
       const i = tz * N + tx;
@@ -353,7 +354,8 @@ function tickEarthquake(world: World, job: SpellJob, dt: number): void {
   const cos = Math.cos(job.angle);
   const sin = Math.sin(job.angle);
   const k = 7 * (4 / job.duration);
-  for (let s = -13; s <= 13; s++) {
+  const len = Math.round(spellDef('earthquake').radius * 1.45);
+  for (let s = -len; s <= len; s++) {
     for (let w = -2; w <= 2; w++) {
       const tx = world.map.wrap(Math.round(job.x + cos * s - sin * w));
       const tz = world.map.wrap(Math.round(job.z + sin * s + cos * w));
@@ -369,7 +371,7 @@ function tickEarthquake(world: World, job: SpellJob, dt: number): void {
     const bz = wrapDelta(b.z - job.z, N);
     const along = Math.abs(bx * cos + bz * sin);
     const across = Math.abs(-bx * sin + bz * cos);
-    if (along < 14 && across < 3 + b.size / 2) world.hurtBuildingFrac(b, dt * 0.5);
+    if (along < len + 1 && across < 3 + b.size / 2) world.hurtBuildingFrac(b, dt * 0.5);
   }
   if (Math.floor(job.t / 0.4) !== Math.floor((job.t - dt) / 0.4)) {
     world.events.push({ type: 'shake', x: job.x, z: job.z, magnitude: 0.5 });

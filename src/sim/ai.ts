@@ -23,6 +23,7 @@
 import { DIFFICULTIES, MIN_BRAVES, WORLD_SIZE } from '../config';
 import { wrapDelta } from '../core/util';
 import { BuildingKind, BUILDINGS, ECONOMY, SpellId, SPELLS, spellDef, TribeId, UNITS } from './catalog';
+import { findPath } from './pathfinding';
 import type { Building, TribeState, Unit, World } from './world-state';
 
 const HARASS_ARMY = 5;
@@ -134,16 +135,22 @@ function think(world: World, id: TribeId, tribe: TribeState): void {
 /** Next step of the plan that isn't done yet; places it if it can. */
 function buildTown(world: World, id: TribeId, tribe: TribeState): void {
   const mine = world.buildings.filter((b) => b.tribe === id);
-  if (mine.some((b) => b.progress < 1)) return; // one project at a time keeps villagers efficient
+  const site = mine.find((b) => b.progress < 1);
+  if (site) {
+    // One project at a time keeps villagers efficient — but a site nobody
+    // has touched in a minute is abandoned (cut off, or cursed ground).
+    const ai = tribe.ai!;
+    if (ai.site?.id !== site.id || site.progress > ai.site.progress) ai.site = { id: site.id, progress: site.progress, since: world.elapsed };
+    else if (world.elapsed - ai.site.since > 60) world.demolish(site.id);
+    return;
+  }
   for (const [kind, n] of PLAN) {
     if (mine.filter((b) => b.kind === kind).length >= n) continue;
+    // Not allowed here, or its prerequisite isn't up yet: the plan lists
+    // prerequisites first, so skip ahead and come back to it.
     if (!tribe.allowed.has(kind)) continue;
     const st = world.buildState(id, kind);
-    if (!st.unlocked) {
-      // Prerequisite missing: skip if it can never come, else build toward it.
-      if (BUILDINGS[kind].requires.some((r) => !tribe.allowed.has(r))) continue;
-      continue;
-    }
+    if (!st.unlocked) continue;
     if (!st.affordable) return; // save up for it
     placeNearHome(world, id, tribe, kind);
     return;
@@ -159,7 +166,11 @@ function placeNearHome(world: World, id: TribeId, tribe: TribeState, kind: Build
     const r = (big ? 7 : 5) + world.random() * (10 + attempt / 6);
     const x = Math.round(tribe.home.x + Math.cos(a) * r);
     const z = Math.round(tribe.home.z + Math.sin(a) * r);
-    if (world.canPlaceBuilding(id, kind, x, z)) return world.placeBuilding(id, kind, x, z);
+    if (!world.canPlaceBuilding(id, kind, x, z)) continue;
+    // Villagers must be able to walk there from home.
+    const half = (BUILDINGS[kind].size - 1) / 2;
+    if (!findPath(world.map, tribe.home.x, tribe.home.z, x, z + half + 1, 2500)) continue;
+    return world.placeBuilding(id, kind, x, z);
   }
   return false;
 }
@@ -201,6 +212,11 @@ function staffShrines(world: World, id: TribeId): void {
     if (s.tribe !== id || s.kind !== 'shrine' || s.progress < 1) continue;
     const want = Math.min(ECONOMY.shrineWorshippers, Math.floor((braves.length - 6) / 3));
     const enRoute = world.countUnits((u) => u.task === 'garrison' && u.targetBuilding === s.id);
+    if (s.garrison.length > Math.max(0, want)) {
+      // Hands are short (a raid, a plague of lightning): back to work.
+      world.ejectGarrison(s.id);
+      continue;
+    }
     if (s.garrison.length + enRoute >= want) continue;
     const pick = braves.find((u) => !u.hidden && u.task === 'none' && !u.carrying);
     if (pick) world.orderGarrison([pick.id], s.id);

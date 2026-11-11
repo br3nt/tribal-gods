@@ -44,7 +44,8 @@ function evaluate(world: World, o: Objective, mem: ObjectiveMemory, dt: number):
     case 'destroyAll': {
       const rivals = rivalsOf(world, ME);
       const dead = rivals.filter((t) => !world.tribeAlive(t)).length;
-      return { done: dead === rivals.length, progress: rivals.length ? dead / rivals.length : 1 };
+      // No rivals at all = nothing to destroy, not an instant win.
+      return { done: rivals.length > 0 && dead === rivals.length, progress: rivals.length ? dead / rivals.length : 0 };
     }
     case 'survive':
       return { done: world.elapsed >= o.seconds, progress: Math.min(1, world.elapsed / o.seconds) };

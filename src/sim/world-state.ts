@@ -223,6 +223,8 @@ export interface AiState {
   evalTimer: number;
   /** Rival this AI is currently at war with (nearest living hostile). */
   target: TribeId | null;
+  /** The construction site it is waiting on, and when it last made progress. */
+  site?: { id: number; progress: number; since: number };
 }
 
 /** Everything one tribe owns that isn't a unit or a building. */
@@ -290,6 +292,10 @@ export class World implements SimQueries {
   readonly rng = new Rng(1);
 
   private nextId = 1;
+  /** `${unitId}:${target}` → sim time until which that unit won't retry an unreachable target. */
+  private unreachable = new Map<string, number>();
+  /** A* budget for jobs a unit picks for itself (orders get the full budget). */
+  private static readonly AUTO_EXPANSIONS = 1500;
 
   /** Tiles occupied by building footprints (pathfinding reads the same set). */
   get obstacles(): Set<number> {
@@ -374,6 +380,8 @@ export class World implements SimQueries {
     this.gameOverReason = null;
     this.elapsed = 0;
     this.tribes = {};
+    this.nextId = 1;
+    this.unreachable.clear();
     this.obstacles.clear();
   }
 
@@ -653,6 +661,14 @@ export class World implements SimQueries {
       }
     }
 
+    // Buildings whose ground slid under the sea drown.
+    for (const b of [...this.buildings]) {
+      if (this.map.heightAt(b.x, b.z) < 0) this.hurtBuildingFrac(b, dt * 0.25);
+    }
+    if (Math.floor(this.elapsed / 10) !== Math.floor((this.elapsed - dt) / 10)) {
+      for (const [k, until] of this.unreachable) if (until <= this.elapsed) this.unreachable.delete(k);
+    }
+
     tickObjectives(this, dt);
     if (this.events.length > MAX_EVENTS) this.events.splice(0, this.events.length - MAX_EVENTS);
   }
@@ -746,7 +762,7 @@ export class World implements SimQueries {
     let best: Unit | null = null;
     let bestD: number = UNITS.chanter.sight;
     for (const q of this.units) {
-      if (q.hidden || q.kind === 'chanter' || !this.hostile(u.tribe, q.tribe)) continue;
+      if (q.hidden || q.kind === 'chanter' || !this.hostile(u.tribe, q.tribe) || this.isUnreachable(u, `u${q.id}`)) continue;
       const d = this.distTo(u, q.x, q.z);
       if (d < bestD) {
         bestD = d;
@@ -762,7 +778,7 @@ export class World implements SimQueries {
       this.events.push({ type: 'chantStart', x: u.x, z: u.z, magnitude: CHANT.pacifyRadius });
       return true;
     }
-    return approach && this.sendTo(u, best.x, best.z);
+    return approach && this.autoSendTo(u, best.x, best.z, `u${best.id}`);
   }
 
   /** The village brain — works for ANY economic tribe. */
@@ -784,23 +800,23 @@ export class World implements SimQueries {
         (b) => b.tribe === u.tribe && b.kind === 'hut' && b.progress >= 1 && b.residents === 0 &&
           !this.units.some((q) => q.task === 'goHome' && q.targetBuilding === b.id),
       );
-      if (empty) {
+      if (empty && !this.isUnreachable(u, `b${empty.id}`)) {
         u.task = 'goHome';
         u.targetBuilding = empty.id;
         const door = this.doorOf(empty);
-        if (this.sendTo(u, door.x, door.z)) return true;
+        if (this.autoSendTo(u, door.x, door.z, `b${empty.id}`)) return true;
         u.task = 'none';
         u.targetBuilding = -1;
       }
     }
 
     for (const b of this.buildings) {
-      if (b.progress >= 1 || b.tribe !== u.tribe) continue;
+      if (b.progress >= 1 || b.tribe !== u.tribe || this.isUnreachable(u, `b${b.id}`)) continue;
       if (this.countUnits((q) => q.task === 'build' && q.targetBuilding === b.id) >= MAX_BUILDERS) continue;
       u.task = 'build';
       u.targetBuilding = b.id;
       const r = half(b);
-      if (this.sendTo(u, b.x + Math.round(this.random() * 2 * r - r), b.z + r + 1)) return true;
+      if (this.autoSendTo(u, b.x + Math.round(this.random() * 2 * r - r), b.z + r + 1, `b${b.id}`)) return true;
       u.task = 'none';
       u.targetBuilding = -1;
     }
@@ -810,7 +826,7 @@ export class World implements SimQueries {
       if (treeIdx >= 0) {
         u.task = 'chop';
         u.targetTree = treeIdx;
-        if (this.sendTo(u, this.trees[treeIdx].x, this.trees[treeIdx].z)) return true;
+        if (this.autoSendTo(u, this.trees[treeIdx].x, this.trees[treeIdx].z, `t${treeIdx}`)) return true;
         u.task = 'none';
         u.targetTree = -1;
       }
@@ -1187,7 +1203,7 @@ export class World implements SimQueries {
     let best: Unit | null = null;
     let bestD: number = sight;
     for (const q of this.units) {
-      if (q.hidden || !this.hostile(u.tribe, q.tribe)) continue;
+      if (q.hidden || !this.hostile(u.tribe, q.tribe) || this.isUnreachable(u, `u${q.id}`)) continue;
       const d = this.distTo(u, q.x, q.z);
       if (d < bestD) {
         bestD = d;
@@ -1198,16 +1214,16 @@ export class World implements SimQueries {
       u.task = 'attack';
       u.targetUnit = best.id;
       if (this.distTo(u, best.x, best.z) <= UNITS[u.kind].range) u.state = 'fighting';
-      else if (!this.sendTo(u, best.x, best.z)) this.abandonTask(u);
+      else if (!this.autoSendTo(u, best.x, best.z, `u${best.id}`)) this.abandonTask(u);
       return u.task === 'attack';
     }
     for (const b of this.buildings) {
-      if (!this.hostile(u.tribe, b.tribe)) continue;
+      if (!this.hostile(u.tribe, b.tribe) || this.isUnreachable(u, `b${b.id}`)) continue;
       if (this.distTo(u, b.x, b.z) < sight + half(b)) {
         u.task = 'attackBuilding';
         u.targetBuilding = b.id;
         if (this.distTo(u, b.x, b.z) <= this.buildingReach(u, b)) u.state = 'fighting';
-        else if (!this.sendTo(u, b.x, b.z + half(b) + 1)) this.abandonTask(u);
+        else if (!this.autoSendTo(u, b.x, b.z + half(b) + 1, `b${b.id}`)) this.abandonTask(u);
         return u.task === 'attackBuilding';
       }
     }
@@ -1236,7 +1252,7 @@ export class World implements SimQueries {
 
   /** A listener gives in to a chant and joins the chanter's tribe. */
   defect(u: Unit, chanter: Unit): void {
-    if (u.home >= 0 && u.hidden) {
+    if (u.home >= 0 && u.hidden && u.garrison < 0) {
       const b = this.getBuilding(u.home);
       if (b) b.residents--;
     }
@@ -1380,7 +1396,9 @@ export class World implements SimQueries {
     if (!demolished) this.events.push({ type: 'explosion', x: b.x, z: b.z });
     this.events.push({ type: 'collapse', x: b.x, z: b.z, magnitude: b.size });
     for (const u of this.units) {
-      if (u.hidden && (u.home === b.id || u.garrison === b.id)) this.exitBuilding(u, b);
+      // Only people physically inside THIS building come out (a resident praying
+      // at a shrine stays there; it just loses its home).
+      if (u.hidden && (u.garrison === b.id || (u.garrison < 0 && u.home === b.id))) this.exitBuilding(u, b);
       if (u.home === b.id) u.home = -1;
       if (u.targetBuilding === b.id) this.abandonTask(u);
     }
@@ -1502,7 +1520,10 @@ export class World implements SimQueries {
     }
 
     // Residents step out for a stroll — except from a full house that's growing.
-    const growing = full && b.tier < DWELLING_TIERS.length - 1;
+    const nextTier = DWELLING_TIERS[b.tier + 1];
+    // Residents stay in to grow the house — unless it's ready and waiting on wood
+    // (then they go out and fetch it).
+    const growing = full && !!nextTier && (b.fullTime < nextTier.growSeconds || tribe.wood >= nextTier.growWood);
     b.outingTimer -= dt;
     if (b.outingTimer <= 0) {
       b.outingTimer = OUTING_SECONDS * (0.6 + this.random() * 0.8);
@@ -1615,7 +1636,13 @@ export class World implements SimQueries {
         }
         continue;
       }
-      if (t.alive) continue;
+      if (t.alive) {
+        if (this.map.heightAt(t.x, t.z) < WALK_MIN_HEIGHT) {
+          t.alive = false; // drowned (or blasted into a crater lake)
+          t.regrow = TREE_REGROW_SECONDS;
+        }
+        continue;
+      }
       t.regrow -= dt;
       if (t.regrow <= 0 && walkable(this.map, t.x, t.z)) t.alive = true;
     }
@@ -1875,6 +1902,22 @@ export class World implements SimQueries {
   // Orders & helpers
   // -------------------------------------------------------------------------
 
+  private isUnreachable(u: Unit, target: string): boolean {
+    const until = this.unreachable.get(`${u.id}:${target}`);
+    return until !== undefined && until > this.elapsed;
+  }
+
+  /**
+   * sendTo for a job the unit chose itself: a smaller search budget, and on
+   * failure the target is remembered as unreachable for a while so the unit
+   * picks something else instead of re-running the same failed search every tick.
+   */
+  private autoSendTo(u: Unit, tx: number, tz: number, target: string): boolean {
+    if (this.sendTo(u, tx, tz, World.AUTO_EXPANSIONS)) return true;
+    this.unreachable.set(`${u.id}:${target}`, this.elapsed + 20 + this.random() * 10);
+    return false;
+  }
+
   sendTo(u: Unit, tx: number, tz: number, maxExpansions = 4000): boolean {
     const path = findPath(this.map, u.x, u.z, tx, tz, maxExpansions);
     if (!path || path.length === 0) return false;
@@ -1992,7 +2035,7 @@ export class World implements SimQueries {
     let bestDist = 28;
     for (let i = 0; i < this.trees.length; i++) {
       const t = this.trees[i];
-      if (!t.alive || t.burning > 0 || claimed.has(i)) continue;
+      if (!t.alive || t.burning > 0 || claimed.has(i) || this.isUnreachable(u, `t${i}`)) continue;
       const d = this.distTo(u, t.x, t.z);
       if (d < bestDist) {
         bestDist = d;
