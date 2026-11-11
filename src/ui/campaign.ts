@@ -48,6 +48,8 @@ export class CampaignController {
   private seenMessages = 0;
   private handled = false;
   private recorded = false;
+  /** Sim time when the game ended (the sim may keep running under "Keep watching"). */
+  private endedAt = 0;
   private debriefTimer = 0;
   private readonly autoDebrief: boolean;
 
@@ -193,6 +195,7 @@ export class CampaignController {
     const w = this.hooks.world;
     if (!id || !w.gameOver || this.recorded) return;
     this.recorded = true;
+    this.endedAt = w.elapsed;
     const optionalMet = w.objectives.map((o, i) => (o.optional && o.done ? i : -1)).filter((i) => i >= 0);
     this.store.save(recordResult(this.store.load(), id, { victory: w.gameOver === 'victory', seconds: w.elapsed, optionalMet }));
   }
@@ -214,7 +217,7 @@ export class CampaignController {
       title: s.title,
       result: w.gameOver,
       reason: w.gameOverReason ?? '',
-      seconds: w.elapsed,
+      seconds: this.endedAt,
       bestTime: p.records[id]?.bestTime ?? null,
       objectives: w.objectives.map((o) => ({ text: o.text, done: o.done, optional: o.optional })),
       boonOffer: offer,
