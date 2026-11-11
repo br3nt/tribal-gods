@@ -118,7 +118,7 @@ addEventListener('pointerdown', unlockAudio, { once: true });
 // Open on your tribe, not a random patch of ocean (there are two leaders
 // on this planet — make sure we look at OURS).
 function centerOnHome(): void {
-  const home = world.tribes.player.home;
+  const home = world.tribes.player?.home ?? { x: 0, z: 0 };
   rig.target.set(home.x * 2, 0, home.z * 2);
 }
 centerOnHome();

@@ -29,12 +29,13 @@ const WORLD_UNITS = WORLD_SIZE * TILE;
 
 function buildFor(b: Building, world: World): BuildingModel {
   const team = TRIBE_COLORS[b.tribe];
-  const civ = CIVS[world.tribes[b.tribe].civ]; // architecture follows the builder's civ
+  const civ = CIVS[world.tribes[b.tribe]?.civ ?? 'forest']; // architecture follows the builder's civ
   switch (b.kind) {
     case 'warriorHut': return buildWarriorHut(team, civ);
     case 'fireHut': return buildFireHut(team, civ);
     case 'tower': return buildTower(team);
     case 'hut': return buildHut(team, civ);
+    default: return buildHut(team, civ); // kinds without a model yet borrow the dwelling
   }
 }
 
@@ -47,14 +48,14 @@ export class BuildingRenderer {
 
   sync(world: World, camTarget: THREE.Vector3): void {
     // Each tribe's totem, built lazily, re-anchored every frame.
-    for (const id of ['player', 'red'] as TribeId[]) {
+    for (const id of world.activeTribes() as TribeId[]) {
       let totem = this.totems[id];
       if (!totem) {
         totem = buildTotem(TRIBE_COLORS[id]);
         this.scene.add(totem);
         this.totems[id] = totem;
       }
-      const home = world.tribes[id].home;
+      const home = world.tribes[id]!.home;
       this.anchor(totem.position, home.x, home.z, world, camTarget);
     }
 

@@ -68,13 +68,13 @@ export class BuildPlacer {
   private ghostFor(kind: BuildingKind): THREE.Group {
     let g = this.ghosts.get(kind);
     if (!g) {
-      const builders: Record<BuildingKind, (c: number) => BuildingModel> = {
+      const builders: Partial<Record<BuildingKind, (c: number) => BuildingModel>> = {
         hut: buildHut,
         warriorHut: buildWarriorHut,
         fireHut: buildFireHut,
         tower: buildTower,
       };
-      const model = builders[kind](0xffffff);
+      const model = (builders[kind] ?? buildHut)(0xffffff);
       model.setProgress(1); // ghosts show the finished building
       model.root.traverse((o) => {
         if (o instanceof THREE.Mesh) o.material = this.ghostMat;
