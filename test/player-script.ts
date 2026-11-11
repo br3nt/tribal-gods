@@ -124,6 +124,22 @@ export class PlayerScript {
       }
     }
 
+    // Home guard: idle fighters go for raiders near the village, and man empty towers.
+    const raiders = w.units.filter((u) => !u.hidden && w.foeOfTribe('player', u) && UNITS[u.kind].dmg > 0 && d(u.x, u.z, t.home.x, t.home.z) < 16);
+    const idleFighters = army.filter((u) => u.task === 'none' && u.state === 'idle');
+    if (raiders.length && idleFighters.length) {
+      for (const f of idleFighters) {
+        const r = raiders.reduce((a, b) => (w.distTo(f, a.x, a.z) < w.distTo(f, b.x, b.z) ? a : b));
+        w.orderAttack([f.id], r.id);
+      }
+    } else {
+      for (const b of mine) {
+        if (b.kind !== 'tower' || b.progress < 1 || b.garrison.length >= 2) continue;
+        const f = idleFighters.find((u) => d(u.x, u.z, t.home.x, t.home.z) < 30);
+        if (f) w.orderGarrison([f.id], b.id);
+      }
+    }
+
     // Leader: the stones first (nearest open one we can walk to), else home.
     const leader = w.leaderOf('player');
     if (leader && !leader.castSpell && leader.task === 'none') {
@@ -131,6 +147,9 @@ export class PlayerScript {
       let bestD = Infinity;
       w.monuments.forEach((m, i) => {
         if (!w.monumentAvailable(m) || (m.mode === 'teach' && t.known.has(m.spell))) return;
+        // A guarded stone only with spears enough to win (as a sensible player would judge it).
+        const guards = Object.values(m.guards ?? {}).reduce((n, k) => n + (k ?? 0), 0);
+        if (guards > 0 && this.fighters(w).length < guards + 2) return;
         if (regionNear(w.map, m.x, m.z) !== regionNear(w.map, leader.x, leader.z)) return;
         const dd = w.distTo(leader, m.x, m.z);
         if (dd < bestD) {
@@ -138,7 +157,15 @@ export class PlayerScript {
           best = i;
         }
       });
-      if (best >= 0 && bestD < 70) w.orderWorship([leader.id], best);
+      if (best >= 0 && bestD < 70) {
+        // A guarded or great stone: walk the spears there first, like a sensible player.
+        const m = w.monuments[best];
+        if (m.guards || spellDef(m.spell).tier >= 2) {
+          const escort = this.fighters(w).filter((u) => u.task === 'none').slice(0, 4);
+          if (escort.length) w.orderMove(escort.map((u) => u.id), m.x, m.z + 3);
+        }
+        w.orderWorship([leader.id], best);
+      }
       // Kindle wanderers in reach.
       else if (w.spellState('player', 'convert').charges > 0) {
         const wild = w.units.find((u) => u.kind === 'wildman' && w.distTo(leader, u.x, u.z) < 25);
@@ -148,7 +175,7 @@ export class PlayerScript {
 
     // Defend: Blast a crowd of hostiles near home or near our army.
     if (leader && !leader.castSpell) {
-      const foes = w.units.filter((u) => !u.hidden && u.tribe !== 'wild' && w.hostile('player', u.tribe) && w.distTo(leader, u.x, u.z) < spellDef('blast').range);
+      const foes = w.units.filter((u) => !u.hidden && w.foeOfTribe('player', u) && w.distTo(leader, u.x, u.z) < spellDef('blast').range);
       for (const f of foes) {
         const crowd = foes.filter((q) => d(q.x, q.z, f.x, f.z) < 4).length;
         const ours = w.units.filter((q) => q.tribe === 'player' && !q.hidden && d(q.x, q.z, f.x, f.z) < 4).length;

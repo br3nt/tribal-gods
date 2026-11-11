@@ -16,6 +16,7 @@ import { regionNear } from '../src/sim/regions';
 import { World } from '../src/sim/world-state';
 import { loadScenario } from './campaign-helpers';
 import { HUTS, LAYOUT as L1 } from '../src/level/campaign/c01-landfall';
+import { LAYOUT as L5 } from '../src/level/campaign/c05-vigil-at-the-caldera';
 import { landfallExtra, PlayerScript, ScriptOptions } from './player-script';
 
 const RUN = !!process.env.BALANCE;
@@ -129,6 +130,14 @@ describe.skipIf(!RUN)('balance: a scripted player', () => {
       const idle = s.fighters(w).filter((u) => u.task === 'none' && u.state === 'idle' && w.distTo(u, shrine.x, shrine.z) > 7);
       if (idle.length) w.orderMove(idle.map((u) => u.id), shrine.x, shrine.z + 5);
       const leader = w.leaderOf('player');
+      // Charged: wake the mountain where the most raiders are coming through (chapter 5's finale).
+      const v = w.spellState('player', 'volcano');
+      if (leader && !leader.castSpell && v.charges > 0) {
+        const breach = L5.breaches
+          .map((b) => ({ b, n: w.units.filter((u) => u.tribe === 'violet' && w.distTo(u, b.x, b.z) < 12).length }))
+          .sort((a, b) => b.n - a.n)[0].b;
+        if (s.cast(w, 'volcano', breach.x, breach.z)) return;
+      }
       if (leader && leader.task === 'none' && !leader.castSpell && w.distTo(leader, shrine.x, shrine.z) > 9) w.sendTo(leader, shrine.x + 2, shrine.z + 6);
     };
     const w = await chapter('c05_vigil_at_the_caldera', { huts: 6, attackAt: 0, plan: ['tower', 'lumberyard'], armyCap: 14, extra }, 30);

@@ -58,7 +58,7 @@ describe('stones as set pieces', () => {
     run(v, 2);
     expect(v.monuments[1].communing).toBe(true);
     const boat = v.units.filter((u) => u.tribe === 'violet');
-    expect(boat.length).toBe(3);
+    expect(boat.length).toBe(2);
     run(v, 12);
     expect(boat.some((u) => v.distTo(u, L2.level.x, L2.level.z) < 8 || u.hp <= 0)).toBe(true);
   }, 20_000);

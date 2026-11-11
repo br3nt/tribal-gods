@@ -344,6 +344,8 @@ function answerRituals(world: World, id: TribeId, tribe: TribeState, army: Unit[
   });
 }
 
+const guardCount = (m: World['monuments'][number]) => Object.values(m.guards ?? {}).reduce((n, k) => n + (k ?? 0), 0);
+
 /** Stones that need an escort: a great spell, or guardians. */
 const needsEscort = (m: World['monuments'][number]) =>
   spellDef(m.spell).tier >= 2 || Object.keys(m.guards ?? {}).length > 0;
@@ -355,15 +357,20 @@ function seekMonuments(world: World, id: TribeId, army: Unit[] = []): void {
   const tribe = world.tribes[id]!;
   const canTrain = [...tribe.allowed].some((k) => BUILDINGS[k].trains);
   const fighters = army.filter((u) => isFighter(u) && u.garrison < 0);
+  const villages = new Set(world.buildings.map((b) => b.tribe));
   let bestIdx = -1;
   let bestD = 55;
   for (let i = 0; i < world.monuments.length; i++) {
     const m = world.monuments[i];
     if (!world.canCommune(m, id)) continue;
+    // Early on, a rival village's doorstep stone is that rival's errand, not ours.
+    if (world.elapsed < 600 && world.activeTribes().some((o) => o !== id && world.hostile(id, o) && villages.has(o) &&
+      dist(m.x, m.z, world.tribes[o]!.home.x, world.tribes[o]!.home.z) < dist(m.x, m.z, tribe.home.x, tribe.home.z))) continue;
     // A great or guarded stone waits for an escort (unless this god can never raise one).
+    // Guardians: only with spears enough to beat them (their number and two more).
+    const guards = guardCount(m);
+    if (guards > 0 && fighters.length < guards + 2 && (canTrain || fighters.length > 0)) continue;
     if (needsEscort(m) && fighters.length < 2) {
-      const guarded = Object.keys(m.guards ?? {}).length > 0;
-      if (guarded && (canTrain || fighters.length > 0)) continue; // never alone at a guarded stone
       if (canTrain && world.elapsed < 600) continue; // early on, wait for spears
     }
     // A taught spell we already know is worth nothing to us.
@@ -377,7 +384,7 @@ function seekMonuments(world: World, id: TribeId, army: Unit[] = []): void {
   if (bestIdx < 0) return;
   const m = world.monuments[bestIdx];
   if (needsEscort(m) && fighters.length > 0) {
-    const free = fighters.filter((u) => u.task === 'none' || u.state === 'idle').slice(0, 4);
+    const free = fighters.filter((u) => u.task === 'none' || u.state === 'idle').slice(0, Math.max(4, guardCount(m) + 2));
     if (free.length) world.groupMove(free, m.x, m.z + 2.5);
   }
   world.orderWorship([leader.id], bestIdx);

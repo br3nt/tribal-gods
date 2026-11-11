@@ -83,7 +83,7 @@ export const scenario: CampaignScenario = {
         tribes: [
           {
             id: 'player', name: 'the Lantern-folk', ai: false,
-            loadout: { spells: ['blast', 'convert'], buildings: ['hut', 'lumberyard', 'tower'], startUnits: { brave: 7, warrior: 2 }, startWood: 12 },
+            loadout: { spells: ['blast', 'convert'], buildings: ['hut', 'lumberyard', 'tower'], startUnits: { brave: 7, warrior: 4 }, startWood: 12 },
           },
           { id: 'violet', name: 'the Unmoored', ...RAIDER_TRIBE },
         ],
@@ -102,7 +102,7 @@ export const scenario: CampaignScenario = {
             when: { type: 'commune', index: 1, tribe: 'player' },
             message: 'A boat below the knoll — the Unmoored have seen the ritual! Guard the leader: one blow and it breaks.',
             focus: LAYOUT.cove,
-            actions: [{ type: 'spawn', tribe: 'violet', units: { warrior: 3 }, x: LAYOUT.cove.x, z: LAYOUT.cove.z, march: LAYOUT.level }],
+            actions: [{ type: 'spawn', tribe: 'violet', units: { warrior: 2 }, x: LAYOUT.cove.x, z: LAYOUT.cove.z, march: LAYOUT.level, hold: 40 }],
           },
           raid(170, 2, 'Sails on the eastern beach — the Unmoored are coming for the ford.'),
           raid(340, 3, 'More Unmoored boats. They smell the smoke of your hearths.'),
@@ -117,7 +117,7 @@ export const scenario: CampaignScenario = {
             'We are not the first boats to find this island. The Unmoored, whose isles drowned before ours, raid every shore that smokes — and the only crossing is the ford.',
           tips: [
             'At a stone your leader kneels for a while and learns its spell — but a kneeling leader is helpless, and one blow breaks the ritual.',
-            'Your two spear-bearers fight best from a Watchtower — order them inside, near the ford.',
+            'Your spear-bearers fight best from a Watchtower — order them inside, near the ford.',
             'Blast throws raiders clear; thrown into the river, they drown.',
           ],
         },
