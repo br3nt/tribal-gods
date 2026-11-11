@@ -110,10 +110,12 @@ const focus = async (x, z) => {
 async function clickUnit(u, opts = {}) {
   await focus(u.x, u.z);
   const now = await tg((id) => window.__tg.world.unitById(id), u.id);
+  const seen = [];
   for (const lift of [1.1, 1.5, 0.7, 1.9]) {
     const p = await screenOf(now.x, now.z, lift);
     if (!p) continue;
     const under = await tg(([x, y]) => window.__tg.ui.orders.whatIsUnder(x, y), [p.x, p.y]);
+    seen.push(JSON.stringify(under));
     if (under.unit !== u.id) continue;
     await page.mouse.click(p.x, p.y, opts);
     await wait(120);
@@ -121,11 +123,36 @@ async function clickUnit(u, opts = {}) {
     expect(sel.includes(u.id), `clicked ${u.kind} #${u.id} but selection is [${sel.join(',')}]`);
     return p;
   }
-  throw new Error(`no point on ${u.kind} #${u.id} where it is the thing under the cursor`);
+  throw new Error(`no point on ${u.kind} #${u.id} (${now.state}/${now.task} at ${now.x.toFixed(1)},${now.z.toFixed(1)}) where it is the thing under the cursor; saw ${seen.join(' ')}`);
+}
+
+/**
+ * Click one of your people of `kind` that the player can actually see (one
+ * standing behind a building's walls can't be clicked — correctly), and
+ * return it. Tries candidates nearest home first.
+ */
+async function clickSomeUnit(kind) {
+  const cands = await tg((k) => {
+    const w = window.__tg.world;
+    const h = w.tribes.player.home;
+    return w.units.filter((u) => u.tribe === 'player' && u.kind === k && !u.hidden)
+      .sort((a, b) => Math.hypot(a.x - h.x, a.z - h.z) - Math.hypot(b.x - h.x, b.z - h.z)).slice(0, 8);
+  }, kind);
+  expect(cands.length, `no ${kind} to click`);
+  let last = '';
+  for (const u of cands) {
+    try {
+      const p = await clickUnit(u);
+      return { u, p };
+    } catch (e) {
+      last = String(e.message ?? e);
+    }
+  }
+  throw new Error(`none of ${cands.length} ${kind}s clickable; last: ${last}`);
 }
 
 /** Click a building where the building itself is drawn (not someone standing in front of it). */
-async function clickBuilding(b) {
+async function clickBuilding(b, opts = {}) {
   await focus(b.x, b.z);
   const half = b.size / 2 - 0.5;
   const tries = [[0, 0, 3], [0, 0, 2], [0, 0, 4], [-half, 0, 2], [half, 0, 2], [0, -half, 3], [-half, -half, 2], [half, -half, 2], [0, half, 1]];
@@ -136,7 +163,7 @@ async function clickBuilding(b) {
     const under = await tg(([x, y]) => window.__tg.ui.orders.whatIsUnder(x, y), [p.x, p.y]);
     lastUnder = under;
     if (under.unit !== null || under.building !== b.id) continue;
-    await page.mouse.click(p.x, p.y);
+    await page.mouse.click(p.x, p.y, opts);
     await wait(200);
     return p;
   }
@@ -196,8 +223,7 @@ const home = await tg(() => window.__tg.world.tribes.player.home);
 await step('select: click a villager, box-select, double-click selects kind on screen', async () => {
   await lookAt(home.x, home.z);
   await wait(300);
-  const v = await tg(() => window.__tg.world.units.find((u) => u.tribe === 'player' && u.kind === 'brave' && !u.hidden));
-  await clickUnit(v);
+  await clickSomeUnit('brave');
   let n = await tg(() => window.__tg.ui.selection.units.size);
   expect(n === 1, `click selected ${n}`);
   // Box: drag across the middle of the screen, over the village.
@@ -210,8 +236,7 @@ await step('select: click a villager, box-select, double-click selects kind on s
   await wait(150);
   n = await tg(() => window.__tg.ui.selection.units.size);
   expect(n >= 2, `box selected ${n}`);
-  const v2 = await tg(() => window.__tg.world.units.find((u) => u.tribe === 'player' && u.kind === 'brave' && !u.hidden));
-  const p2 = await clickUnit(v2); // the first click of the double-click, checked
+  const { p: p2 } = await clickSomeUnit('brave'); // the first click of the double-click, checked
   await page.mouse.dblclick(p2.x, p2.y);
   await wait(150);
   const kinds = await tg(() => [...window.__tg.ui.selection.units].map((id) => window.__tg.world.unitById(id)?.kind));
@@ -314,21 +339,17 @@ await step('train: all 4 trainable units through the selection panel (+1 button)
 
 await step('garrison: right-click a tower with a warrior, a shrine with villagers', async () => {
   const tower = await tg(() => window.__tg.world.buildings.find((b) => b.tribe === 'player' && b.kind === 'tower'));
-  const warrior = await tg(() => window.__tg.world.units.find((u) => u.tribe === 'player' && u.kind === 'warrior' && !u.hidden));
-  expect(warrior, 'no warrior to garrison');
-  await clickUnit(warrior);
-  await focus(tower.x, tower.z);
-  let p = await screenOf(tower.x, tower.z, 4);
-  await page.mouse.click(p.x, p.y, { button: 'right' });
+  const { u: warrior } = await clickSomeUnit('warrior');
+  await clickBuilding(tower, { button: 'right' });
+  const wt = await tg((id) => { const u = window.__tg.world.unitById(id); return `${u.state}/${u.task} at ${u.x.toFixed(1)},${u.z.toFixed(1)}`; }, warrior.id);
+  expect(/garrison/.test(wt), `right-clicking the tower left the warrior ${wt}`);
   const shrine = await tg(() => window.__tg.world.buildings.find((b) => b.tribe === 'player' && b.kind === 'shrine'));
-  const vill = await tg(() => window.__tg.world.units.find((u) => u.tribe === 'player' && u.kind === 'brave' && !u.hidden));
-  await clickUnit(vill);
-  await focus(shrine.x, shrine.z);
-  p = await screenOf(shrine.x, shrine.z, 3);
-  await page.mouse.click(p.x, p.y, { button: 'right' });
+  await clickSomeUnit('brave');
+  await clickBuilding(shrine, { button: 'right' });
   await ticks(25);
   const g = await tg(([t, s]) => [window.__tg.world.getBuilding(t).garrison.length, window.__tg.world.getBuilding(s).garrison.length], [tower.id, shrine.id]);
-  expect(g[0] >= 1, `tower garrison ${g[0]}`);
+  const after = await tg((id) => { const u = window.__tg.world.unitById(id); return u ? `${u.state}/${u.task} at ${u.x.toFixed(1)},${u.z.toFixed(1)}` : 'gone'; }, warrior.id);
+  expect(g[0] >= 1, `tower garrison ${g[0]} (warrior now ${after}, door ${tower.x},${tower.z + tower.size / 2})`);
   expect(g[1] >= 1, `shrine worshippers ${g[1]}`);
   return `tower ${g[0]}, shrine ${g[1]}`;
 });
