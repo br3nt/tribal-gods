@@ -287,11 +287,11 @@ export function buildTotem(tribe: Tribe, civ: Civ): { root: THREE.Group; flames:
     parts.push(st);
   }
   const pit = torus(0.6, 0.18, 6, 12);
-  place(pit, 0, 0.1, 1.2, Math.PI / 2, 0, 0);
+  place(pit, 1.7, 0.1, 0.5, Math.PI / 2, 0, 0);
   paint(pit, STONE_DARK);
   parts.push(pit);
   const coals = blob(0.5, 0.1, 0.5, 8, 4, 0.04, 2, 9);
-  place(coals, 0, 0.1, 1.2);
+  place(coals, 1.7, 0.1, 0.5);
   paint(coals, 0xffa040);
   shine(coals, 0xff5010, 2.6);
   gl.push(coals);
@@ -302,7 +302,7 @@ export function buildTotem(tribe: Tribe, civ: Civ): { root: THREE.Group; flames:
     m.castShadow = m.receiveShadow = true;
     root.add(m);
   }
-  return { root, flames: [v3(0, 0.25, 1.2)] };
+  return { root, flames: [v3(1.7, 0.25, 0.5)] };
 }
 
 /**
