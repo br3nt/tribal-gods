@@ -372,6 +372,10 @@ export interface HurtOptions {
 /** A struck villager's neighbours within this many tiles come to help (at most HELPERS of them). */
 const RALLY_RADIUS = 3.5;
 const HELPERS = 4;
+/** An attacker with a fellow fighter this close is a war band: villagers run rather than mob it. */
+const BAND_RADIUS = 5;
+/** How far a fleeing villager runs (tiles) when home is not the way out. */
+const FLEE_DISTANCE = 8;
 
 export class World implements SimQueries {
   readonly map = new Heightmap();
@@ -1898,7 +1902,8 @@ export class World implements SimQueries {
 
   /**
    * Struck by a foe, people fight back: the one hit turns on the attacker,
-   * and villagers working or standing close by down tools and join in.
+   * and villagers working or standing close by down tools and join in —
+   * unless the attacker is one of a war band, when a struck villager runs.
    * Without this a single wounded raider could walk through a village
    * killing everyone in it one by one, nobody so much as raising a hand.
    * Who stands up: anyone who can strike (not a leader or a chanter), out
@@ -1917,6 +1922,13 @@ export class World implements SimQueries {
       if (this.distTo(q, attacker.x, attacker.z) <= UNITS[q.kind].range) q.state = 'fighting';
       else if (!this.sendTo(q, attacker.x, attacker.z)) this.abandonTask(q);
     };
+    // A villager against a war band runs for it (toward home, away from the
+    // blow): a crowd of villagers rushing three spears only feeds them. A
+    // lone raider is another matter — the village pulls it down.
+    if (victim.kind === 'brave' && this.anyUnitNear(attacker.x, attacker.z, BAND_RADIUS, (q) => q !== attacker && q.hp > 0 && q.tribe === attacker.tribe && isFighterKind(q.kind))) {
+      if (willing(victim)) this.flee(victim, attacker);
+      return;
+    }
     if (willing(victim)) turn(victim);
     if (victim.kind !== 'brave') return;
     let helpers = 0;
@@ -1926,6 +1938,23 @@ export class World implements SimQueries {
       turn(q);
       helpers++;
     });
+  }
+
+  /** Run from `from`: toward the tribe's home circle if that is away from the danger, else straight away. */
+  private flee(u: Unit, from: Unit): void {
+    const ax = wrapDelta(u.x - from.x, WORLD_SIZE), az = wrapDelta(u.z - from.z, WORLD_SIZE);
+    const len = Math.hypot(ax, az) || 1;
+    let tx = u.x + (ax / len) * FLEE_DISTANCE, tz = u.z + (az / len) * FLEE_DISTANCE;
+    const home = u.tribe !== 'wild' ? this.tribes[u.tribe]?.home : undefined;
+    if (home) {
+      const hx = wrapDelta(home.x - u.x, WORLD_SIZE), hz = wrapDelta(home.z - u.z, WORLD_SIZE);
+      if (hx * ax + hz * az > 0 && Math.hypot(hx, hz) > 3) {
+        tx = home.x;
+        tz = home.z;
+      }
+    }
+    this.abandonTask(u);
+    this.sendTo(u, Math.round(tx), Math.round(tz), 600);
   }
 
   displaceUnit(u: Unit, dx: number, dz: number): void {

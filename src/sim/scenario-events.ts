@@ -66,8 +66,18 @@ function holds(world: World, w: ScenarioTrigger): boolean {
       const m = world.monuments[w.index];
       return !!m && (!!m.communing || (m.communeProgress ?? 0) > 0 || !!m.claimer) && (!w.tribe || m.communer === w.tribe || m.claimer === w.tribe);
     }
+    case 'noCasts': {
+      const t = world.tribes[w.tribe ?? 'player'];
+      if (!t) return false;
+      const sp = t.spells[w.spell];
+      return sp.gifted <= 0 && !(t.known.has(w.spell) && sp.charges > 0);
+    }
     case 'any':
       return w.of.some((t) => holds(world, t));
+    case 'all':
+      return w.of.every((t) => holds(world, t));
+    case 'not':
+      return !holds(world, w.of);
     default:
       return false;
   }
@@ -90,7 +100,18 @@ export function tickScenarioEvents(world: World): void {
     if (!mem) return;
     const times = ev.repeat?.times ?? 1;
     if (mem.fired >= times) return;
-    if (mem.fired === 0 ? !triggered(world, ev, mem) : world.elapsed < mem.next) return;
+    if (ev.repeat?.while) {
+      // A `while` event fires each time its trigger has HELD for a whole
+      // `every` (the first time too): a recovery that lends another cast only
+      // while one is needed, never the moment one is spent.
+      if (!holds(world, ev.when)) {
+        mem.armedAt = undefined;
+        return;
+      }
+      mem.armedAt ??= world.elapsed;
+      if (world.elapsed - mem.armedAt < ev.repeat.every) return;
+      mem.armedAt = world.elapsed;
+    } else if (mem.fired === 0 ? !triggered(world, ev, mem) : world.elapsed < mem.next) return;
     mem.fired++;
     mem.next = world.elapsed + (ev.repeat?.every ?? 0);
     if (ev.message) world.say(ev.message, ev.focus);

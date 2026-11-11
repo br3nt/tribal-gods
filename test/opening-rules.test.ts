@@ -331,6 +331,32 @@ describe('stranded kin and massing hosts', () => {
 });
 
 describe('the scenario language: triggers, actions, staged objectives', () => {
+  it('all / not / noCasts, and a `while` event that fires each time its trigger has held for a whole `every`', () => {
+    const w = flatWorld(rulesFor(undefined, {
+      events: [{
+        when: { type: 'all', of: [{ type: 'time', at: 1 }, { type: 'not', of: { type: 'killed', tribe: 'red', count: 1 } }, { type: 'noCasts', spell: 'lightning' }] },
+        repeat: { every: 5, times: 4, while: true },
+        actions: [{ type: 'gift', tribe: 'player', spell: 'lightning', charges: 1 }],
+      }],
+    }));
+    w.spawn('shaman', 'player', 20, 20);
+    run(w, 5); // held since t=1: not yet a whole `every`
+    expect(w.spellState('player', 'lightning').gifted).toBe(0);
+    run(w, 1.5);
+    expect(w.spellState('player', 'lightning').gifted).toBe(1);
+    run(w, 12); // holding one: the repeats wait
+    expect(w.spellState('player', 'lightning').gifted).toBe(1);
+    w.tribes.player!.spells.lightning.gifted = 0;
+    run(w, 3); // just spent: the clock restarted — not yet
+    expect(w.spellState('player', 'lightning').gifted).toBe(0);
+    run(w, 3);
+    expect(w.spellState('player', 'lightning').gifted).toBe(1);
+    w.tribes.player!.spells.lightning.gifted = 0;
+    w.statsOf('red').lostTotal = 1; // 'not killed' no longer holds
+    run(w, 10);
+    expect(w.spellState('player', 'lightning').gifted).toBe(0);
+  });
+
   it('spellCast / joined / killed / commune / any triggers, delay, openStone, defeat, message focus', () => {
     const w = flatWorld(rulesFor([{ id: 'player', ai: false }, { id: 'red', ai: false }], {
       events: [

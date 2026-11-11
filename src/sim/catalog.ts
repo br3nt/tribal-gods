@@ -479,8 +479,14 @@ export type ScenarioTrigger =
   | { type: 'killed'; tribe: TribeId; count: number; kind?: UnitKind }
   /** A commune has begun at stone `index` (by `tribe`, if given). */
   | { type: 'commune'; index: number; tribe?: TribeId }
+  /** `tribe` (default the player) holds no cast of `spell` right now: no gift left and no charge of a known spell. */
+  | { type: 'noCasts'; spell: SpellId; tribe?: TribeId }
   /** Any of these. */
-  | { type: 'any'; of: ScenarioTrigger[] };
+  | { type: 'any'; of: ScenarioTrigger[] }
+  /** All of these. */
+  | { type: 'all'; of: ScenarioTrigger[] }
+  /** This one does not hold. */
+  | { type: 'not'; of: ScenarioTrigger };
 
 export type ScenarioAction =
   /**
@@ -517,8 +523,14 @@ export interface ScenarioEvent {
   when: ScenarioTrigger;
   /** Seconds between the trigger first holding and the event firing (a visible countdown). */
   delay?: number;
-  /** Fire again every `every` seconds after the first, `times` times in all (default once). */
-  repeat?: { every: number; times: number };
+  /**
+   * Fire again every `every` seconds after the first, `times` times in all
+   * (default once). `while`: instead, it fires each time its trigger has
+   * HELD for a whole `every` seconds (the first time too), up to `times` —
+   * a recovery that lends another cast only while one is needed, never
+   * the moment one is spent. (`delay` is ignored.)
+   */
+  repeat?: { every: number; times: number; while?: boolean };
   actions: ScenarioAction[];
   /** Shown to the player when it fires (world.messages). */
   message?: string;

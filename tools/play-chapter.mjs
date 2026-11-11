@@ -5,7 +5,7 @@
  * select the leader with a key, cast with a key and a click, kneel at a
  * stone by clicking it, place buildings with Shift+N and a click.
  *
- *   node tools/play-chapter.mjs <base url> --chapter c01_landfall [--pace fast|slow] [--shots dir] [--speed 1|2|3]
+ *   node tools/play-chapter.mjs <base url> --chapter c01_landfall [--pace fast|slow] [--shots dir] [--speed 1|2|3] [--skip-volcano]
  *
  * The page is driven ONLY by page.mouse / page.keyboard (the title screen,
  * the campaign map, the briefing, the HUD, the canvas). window.__tg is used
@@ -34,7 +34,10 @@ let pace = 'fast';
 let shotDir = null;
 let speed = 2;
 let size = [1440, 900];
+/** Never kneel at the headland: the host must be beaten without the Volcano (c01's recovery path). */
+let skipVolcano = false;
 for (let i = 1; i < args.length; i++) {
+  if (args[i] === '--skip-volcano') skipVolcano = true;
   if (args[i] === '--chapter') chapter = args[++i];
   else if (args[i] === '--pace') pace = args[++i];
   else if (args[i] === '--shots') shotDir = args[++i];
@@ -431,6 +434,8 @@ async function landfall() {
   beat('raid beaten', t1, s.t);
   await shot('raid-beaten');
 
+  if (skipVolcano) return defendWithoutVolcano();
+
   // 6. The headland stone: one Volcano.
   t1 = s.t;
   s = await until((q) => !q.monuments[1].asleep, 30, 'the headland stone to wake');
@@ -478,6 +483,35 @@ async function landfall() {
     if (s.t - t1 > 300) throw new Error('host not broken in 300s');
   }
   beat('host broken → victory', t1, s.t);
+}
+
+/**
+ * c01's recovery path: a player who never goes to the headland. The host
+ * masses, marches, and has to be broken with what is at hand — Lightning
+ * from the strand stone (it lends again after its cooldown), Blast, and the
+ * villagers, who fight back.
+ */
+async function defendWithoutVolcano() {
+  const t1 = (await snap()).t;
+  let shots = 0;
+  for (;;) {
+    s = await snap();
+    if (s.over) break;
+    const near = loose(s, s.home, 22);
+    if (s.leader && !s.leader.cast && s.leader.task !== 'worship') {
+      if (near.length && (s.spells.lightning > 0 || s.spells.blast > 0)) {
+        if (await strikeRaiders(s, s.home, 22)) await until((q) => !q.leader || !q.leader.cast, 30, 'the strike');
+      } else if (!near.length && s.spells.lightning <= 0 && s.monuments[0].available) {
+        await commune(0);
+      } else await think(1);
+    } else await think(1);
+    if (near.length && shots < 3 && s.t - t1 > 30 * shots) {
+      shots++;
+      await shot(`host-at-the-village-${shots}`);
+    }
+    if (s.t - t1 > 600) throw new Error('host not broken in 600s without the Volcano');
+  }
+  beat('host broken without the Volcano', t1, s.t);
 }
 
 // --- Chapter 2: The Speaking Stones ----------------------------------------------

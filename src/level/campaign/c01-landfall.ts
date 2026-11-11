@@ -21,6 +21,11 @@
  *      host's scouts may come for you) and it lends ONE Volcano. Wake the
  *      mountain under the host — the strand becomes a mountain for good.
  *
+ * Nobody is soft-locked: a Causeway that missed is lent again while the kin
+ * wait; Level and Kindle are taught and recharge; both stones lend again
+ * after a cooldown; a host that marches before the Volcano lands can still
+ * be broken with Lightning, Blast and the villagers, who fight back.
+ *
  * Fail: ten villagers dead (a scripted `killed` → `defeat`). Optional:
  * lose nobody, Kindle every wanderer, bury the host with the Volcano,
  * win inside twelve minutes.
@@ -70,6 +75,10 @@ const HOST = { warrior: 12, firewarrior: 2 };
 export const HOST_HOLD = 95;
 /** Seconds from the first raid's end to the host coming ashore (the fleet is on the horizon meanwhile). */
 const FLEET_DELAY = 60;
+/** A spent Causeway that left the kin stranded is lent again after this long. */
+const CAUSEWAY_AGAIN = 30;
+/** The headland stone lends its Volcano again after this long (a missed or wasted cast is not the end). */
+const VOLCANO_AGAIN = 100;
 
 /** Objective indices (events refer to them). */
 const O = { kin: 0, kindle: 1, level: 2, huts: 3, raid: 4, stone: 5, host: 6 };
@@ -121,6 +130,16 @@ export const scenario: CampaignScenario = {
     const events: ScenarioEvent[] = [
       { when: { type: 'time', at: 2 }, message: 'Kin on the sandbar! The last boat ran aground across the channel. Raise a Causeway to them.', focus: sandbar, actions: [] },
       { when: { type: 'time', at: 20 }, message: 'Wanderers on the north meadow. Kindle them into the tribe.', focus: meadow, actions: [] },
+      // Recovery: a Causeway that missed (or was spent elsewhere) leaves the kin
+      // stranded for good — so while they still wait and no Causeway is in
+      // hand, the tide-song lends another.
+      {
+        when: { type: 'all', of: [{ type: 'not', of: { type: 'objective', index: O.kin } }, { type: 'noCasts', spell: 'landbridge' }] },
+        repeat: { every: CAUSEWAY_AGAIN, times: 8, while: true },
+        message: 'The kin still wait across the channel. The tide-song gives you another Causeway — from the shore, straight at the sandbar.',
+        focus: sandbar,
+        actions: [{ type: 'gift', tribe: 'player', spell: 'landbridge', charges: 1 }],
+      },
       {
         when: { type: 'objective', index: O.kin },
         message: 'The kin are home — and they remember the Levelling chant. Cut shelves into the hillside so the village can rise.',
@@ -169,7 +188,7 @@ export const scenario: CampaignScenario = {
       homes: { player: home, violet: landing },
       monuments: [
         { x: lightning.x, z: lightning.z, spell: 'lightning', mode: 'gift', charges: 3, cooldown: 75, asleep: true },
-        { x: headland.x, z: headland.z, spell: 'volcano', mode: 'gift', charges: 1, cooldown: 9999, asleep: true, communeSeconds: 14 },
+        { x: headland.x, z: headland.z, spell: 'volcano', mode: 'gift', charges: 1, cooldown: VOLCANO_AGAIN, asleep: true, communeSeconds: 14 },
       ],
       units: [
         { tribe: 'player', joins: 'player', kind: 'brave', x: sandbar.x, z: sandbar.z, count: KIN.brave },

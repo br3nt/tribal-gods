@@ -140,4 +140,21 @@ describe('villagers fight back', () => {
     expect(near.task).toBe('attack');
     expect(far.task).not.toBe('attack');
   });
+
+  it('against a war band a struck villager runs for home instead of feeding the spears', () => {
+    const w = flatWorld(rulesFor([{ id: 'player', ai: false }, { id: 'violet', ai: false }], { objectives: [{ objective: { type: 'survive', seconds: 99999 }, text: 'wait' }] }));
+    const hit = w.spawn('brave', 'player', 40, 40);
+    const near = w.spawn('brave', 'player', 41.5, 40.5);
+    const a = w.spawn('warrior', 'violet', 40.8, 39.4);
+    w.spawn('warrior', 'violet', 42, 38);
+    run(w, 1 / 15);
+    w.hurtUnit(hit, 1, { by: a });
+    expect(hit.task).not.toBe('attack');
+    expect(hit.state).toBe('moving');
+    expect(near.task).not.toBe('attack');
+    // running toward home (20,20), away from the blow
+    run(w, 2);
+    expect(Math.hypot(hit.x - 20, hit.z - 20)).toBeLessThan(Math.hypot(40 - 20, 40 - 20));
+  });
 });
+

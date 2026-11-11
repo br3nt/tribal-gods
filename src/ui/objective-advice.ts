@@ -68,6 +68,20 @@ function quietAdvice(world: World, click: string): string {
   return `None of them in sight yet. Keep your fighters near the village and a spell charged.`;
 }
 
+/** Strongest first: what to hit a host with when the leader holds it. */
+const STRIKES: SpellId[] = ['volcano', 'emberfall', 'earthquake', 'lightning', 'blast'];
+
+/** Foes in sight: name the strongest spell in hand (a stone's gift first), then the fighters. */
+function strikeAdvice(world: World, click: string): string {
+  const fighters = `select your fighters (${labelFor('select-army') || ','}) and ${click} an enemy`;
+  const ready = world.leaderOf('player') && STRIKES.find((id) => {
+    const s = world.spellState('player', id);
+    return s.gifted > 0 || (s.known && s.charges > 0);
+  });
+  if (!ready) return `${fighters[0].toUpperCase()}${fighters.slice(1)} to attack.`;
+  return `Strike them with ${spellDef(ready).name}${k(`spell:${ready}`)} — or ${fighters}.`;
+}
+
 /** The chip's text (HTML) for an objective, or null when there's nothing useful to add. */
 export function objectiveAdvice(world: World, o: Objective, leftClickOrders: boolean): string | null {
   const click = orderVerb(leftClickOrders);
@@ -112,7 +126,7 @@ export function objectiveAdvice(world: World, o: Objective, leftClickOrders: boo
       return `Keep your people standing on the marked ground until the time is up.`;
     case 'killUnits':
       if (!world.units.some((u) => u.tribe === o.tribe && !u.hidden)) return quietAdvice(world, click);
-      return `Select your fighters (${labelFor('select-army') || ','}) and ${click} an enemy to attack — or strike them with a spell.`;
+      return strikeAdvice(world, click);
     case 'destroyTribe':
     case 'destroyAll':
       return `Select your fighters (${labelFor('select-army') || ','}) and ${click} an enemy to attack.`;
