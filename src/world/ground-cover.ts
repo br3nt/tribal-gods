@@ -2,10 +2,12 @@
  * world/ground-cover.ts — grass you can see the wind in.
  *
  * A carpet of little grass clumps (and the odd flower) around the camera,
- * drawn as ONE instanced mesh. Like the terrain, the carpet is a fixed grid
- * of instances that slides with the camera in whole-cell steps, so every
- * clump stays put in the world as you pan. Everything else happens in the
- * vertex shader:
+ * drawn as ONE instanced mesh. The carpet is a fixed grid of instances
+ * that slides with the camera in whole-cell steps; each instance looks up
+ * WHICH world cell it covers and everything about its clump comes from that
+ * cell (grass-placement.ts), so a blade stays on its spot of ground however
+ * the camera pans, turns or zooms. Clumps only come and go in a thin faded
+ * band at the far edge. Everything else happens in the vertex shader:
  *
  *   - height and slope come from the heightmap texture (terrain-glsl.ts),
  *     so clumps sit exactly on the bicubic ground and ride live sculpting;
@@ -27,6 +29,7 @@ import * as THREE from 'three';
 import { TILE, WORLD_SIZE } from '../config';
 import { GROUND_COVER, QualityTier, TERRAIN } from '../render/look';
 import { curveShader } from './curvature';
+import { GRASS_CELLS_PER_LAP, GRASS_JITTER, GRASS_SPACING } from './grass-placement';
 import { heightGlsl, noiseGlsl } from './terrain-glsl';
 import { TerrainMesh } from './terrain-mesh';
 
@@ -69,17 +72,21 @@ export class GroundCover {
   private readonly uTime = { value: 0 };
   /** Zoomed far out the clumps are sub-pixel speckle: shrink them away. */
   private readonly uFade = { value: 1 };
+  /** The world cell (integer index) the grid is centred on this frame. */
+  private readonly uOrigin = { value: new THREE.Vector2() };
 
   constructor(terrain: TerrainMesh, quality: QualityTier) {
     const radius = quality.name === 'high' ? GROUND_COVER.radiusHigh : GROUND_COVER.radiusMedium;
-    this.spacing = GROUND_COVER.spacing;
-    const n = Math.ceil((radius * 2) / this.spacing);
+    this.spacing = GRASS_SPACING;
+    const n = Math.ceil((radius * 2) / this.spacing) + 2;
+    // Each instance is a whole-cell offset from the grid origin (integers,
+    // exact in float32). The origin cell is a uniform set per frame.
     const offsets = new Float32Array(n * n * 2);
     let k = 0;
     for (let j = 0; j < n; j++) {
       for (let i = 0; i < n; i++) {
-        offsets[k++] = (i - n / 2) * this.spacing;
-        offsets[k++] = (j - n / 2) * this.spacing;
+        offsets[k++] = i - Math.floor(n / 2);
+        offsets[k++] = j - Math.floor(n / 2);
       }
     }
     const clump = clumpGeometry(4, 3);
@@ -98,6 +105,7 @@ export class GroundCover {
       uTileTex: terrain.uniforms.uTileTex,
       uRadius: { value: radius },
       uSpacing: { value: this.spacing },
+      uOrigin: this.uOrigin,
       uHeightScale: { value: GROUND_COVER.height },
       uLush: { value: new THREE.Color(TERRAIN.grassLush) },
       uLush2: { value: new THREE.Color(TERRAIN.grassLush2) },
@@ -117,6 +125,9 @@ export class GroundCover {
           ${heightGlsl}
           ${noiseGlsl}
           #define TG_WORLD_UNITS ${(WORLD_SIZE * TILE).toFixed(1)}
+          #define TG_GRASS_LAP ${GRASS_CELLS_PER_LAP.toFixed(1)}
+          #define TG_GRASS_JITTER ${GRASS_JITTER.toFixed(3)}
+          uniform vec2 uOrigin;
           attribute vec2 aOffset;
           attribute float aT;
           uniform sampler2D uTileTex;
@@ -129,10 +140,13 @@ export class GroundCover {
         .replace(
           '#include <begin_vertex>',
           /* glsl */ `
-          vec2 cell = (modelMatrix * vec4(aOffset.x, 0.0, aOffset.y, 1.0)).xz;
-          vec2 wcell = mod(floor(cell / uSpacing + 0.5), TG_WORLD_UNITS / uSpacing);
+          // WORLD-ANCHORED: the clump is a pure function of its world cell
+          // (an integer index); the camera only decides WHICH cells are drawn.
+          // Mirrored on the CPU by grass-placement.ts (unit-tested there).
+          vec2 cellIdx = uOrigin + aOffset;
+          vec2 wcell = mod(cellIdx, TG_GRASS_LAP);
           float r1 = tgHash(wcell), r2 = tgHash(wcell + 17.3), r3 = tgHash(wcell + 41.9);
-          vec2 root = cell + (vec2(r1, r2) - 0.5) * uSpacing * 0.9;
+          vec2 root = cellIdx * uSpacing + (vec2(r1, r2) - 0.5) * uSpacing * TG_GRASS_JITTER;
           vec3 hg = tgHeightGrad(root / TG_TILE);
           float h = hg.x;
           float slope = 1.0 - normalize(vec3(-hg.y / TG_TILE, 1.0, -hg.z / TG_TILE)).y;
@@ -146,8 +160,11 @@ export class GroundCover {
           m *= 1.0 - smoothstep(0.1, 0.4, td.a);                              // not scorched
           float patchy = tgNoise(root * 0.12, TG_WORLD_UNITS * 0.12);
           m *= smoothstep(0.3, 0.55, patchy + 0.15 + 0.2 * r2);               // tufty meadows and clearings
+          // Only the FAR EDGE of the carpet fades (a thin, ragged band near
+          // the radius): inside it every clump is full size wherever the
+          // camera is, so nothing grows or shrinks under your eyes as you pan.
           float dist = length(root - uCamTarget.xz);
-          m *= 1.0 - smoothstep(uRadius * 0.4, uRadius * 0.95, dist + r1 * uRadius * 0.15); // soft, ragged carpet edge
+          m *= 1.0 - smoothstep(uRadius * 0.8, uRadius * 0.97, dist + (r1 - 0.5) * uRadius * 0.08);
           float size = m * uFade * uHeightScale * (0.6 + 0.8 * r3);
 
           // Colour: matches the ground's lush/dry, darker at the root, sunlit tips.
@@ -170,9 +187,7 @@ export class GroundCover {
           // size == 0 collapses the clump to a point: masked-out grass costs
           // a few vertex invocations and no pixels.
           vec3 transformed = vec3(root.x, h, root.y) + vec3(xz.x, position.y, xz.y) * size;
-          // We built WORLD coordinates; undo the model translation the
-          // project chunk is about to apply.
-          transformed -= vec3(modelMatrix[3].x, 0.0, modelMatrix[3].z);`,
+          // These are WORLD coordinates (the mesh itself stays at the origin).`,
         );
       shader.fragmentShader = shader.fragmentShader
         .replace('#include <common>', '#include <common>\nvarying vec3 vGrass;')
@@ -192,7 +207,7 @@ export class GroundCover {
     this.uFade.value = 1 - THREE.MathUtils.smoothstep(viewDistance, GROUND_COVER.fadeOut[0], GROUND_COVER.fadeOut[1]);
     this.mesh.visible = this.uFade.value > 0;
     const s = this.spacing;
-    this.mesh.position.set(Math.round(camTarget.x / s) * s, 0, Math.round(camTarget.z / s) * s);
+    this.uOrigin.value.set(Math.round(camTarget.x / s), Math.round(camTarget.z / s));
     this.uTime.value += dt;
   }
 }

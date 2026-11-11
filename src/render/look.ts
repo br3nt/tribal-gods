@@ -188,8 +188,8 @@ export const LIMB_K = 0.0022;
 
 /** Grass carpet around the camera (world/ground-cover.ts). Off at `low`. */
 export const GROUND_COVER = {
-  /** Grid spacing between clumps (world units). */
-  spacing: 0.6,
+  // (Clump spacing is fixed by world/grass-placement.ts: it must divide one
+  // lap of the planet exactly so the carpet doesn't reshuffle at the seam.)
   /** Carpet radius around the camera target, by tier. */
   radiusHigh: 44,
   radiusMedium: 28,
