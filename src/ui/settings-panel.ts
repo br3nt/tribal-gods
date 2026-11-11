@@ -1,8 +1,8 @@
 /**
  * ui/settings-panel.ts — the Settings form (main menu and in-game menu).
  *
- * Sound (volume, mute), graphics quality, interface size, edge panning and
- * hints. Each control writes its setting and applies at once — graphics
+ * Sound (volume, mute), graphics quality, interface size, edge panning,
+ * left-click orders and hints. Each control writes its setting and applies at once — graphics
  * too (main.ts rebuilds the post chain live; only the terrain mesh's
  * detail waits for the next load, and the panel says so when it matters).
  */
@@ -125,6 +125,11 @@ export function settingsPanel(hooks: SettingsHooks): HTMLDivElement {
     saveSettings();
     hooks.onEdgePan(v);
   }, 'Edge panning'), 'Move the view when the cursor touches the edge of the window.');
+
+  row('Left-click orders', toggle(() => settings.leftClickOrders, (v) => {
+    settings.leftClickOrders = v;
+    saveSettings();
+  }, 'Left-click orders'), 'With your people selected, clicking the ground (or an enemy, a stone, your tower) sends them, like a right-click. Clicking your own people or buildings still selects them.');
 
   const hintsRow = h('div', { style: 'display:flex;gap:0.75rem;align-items:center' },
     toggle(() => settings.hints, (v) => {

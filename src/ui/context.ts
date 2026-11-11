@@ -46,7 +46,12 @@ export interface UiContext {
   groups: ControlGroups;
   /** Last pointer position in CSS px, and whether it is over the canvas. */
   pointer: { x: number; y: number; onCanvas: boolean };
-  /** The unit or building under the cursor (ui/orders.ts keeps it current). */
-  hover: { unit: number | null; building: number | null };
+  /**
+   * What is under the cursor (ui/orders.ts keeps it current, ~12×/s): one
+   * person, building or standing stone at most. This is THE hover hook —
+   * ui/world-hover.ts draws its ring and name tag from it, and a renderer
+   * may read it to outline the model.
+   */
+  hover: { unit: number | null; building: number | null; monument: number | null };
   actions: UiActions;
 }

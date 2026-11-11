@@ -43,6 +43,7 @@ import { SelectionPanel } from './selection-panel';
 import { SpellAim } from './spell-aim';
 import { SpellBook } from './spell-book';
 import { TopBar } from './top-bar';
+import { WorldHover } from './world-hover';
 import { WorldOverlay } from './world-overlay';
 import { activeBuilding, activeSpell, resetTool, toolState } from './tools';
 import { hideTip } from './tooltip';
@@ -83,6 +84,7 @@ export class GameUi {
   private heardMessages = 0;
   private readonly debug: DebugOverlay;
   private readonly overlay: WorldOverlay;
+  private readonly worldHover: WorldHover;
   private readonly root: HTMLDivElement;
   private slow = 0;
   private lastIdle: number | null = null;
@@ -110,7 +112,7 @@ export class GameUi {
     const actions = this.makeActions(world, view);
     this.ctx = {
       world, view, scene, canvas, stats, selection: this.selection, groups: new ControlGroups(), pointer, actions,
-      hover: { unit: null, building: null },
+      hover: { unit: null, building: null, monument: null },
     };
 
     // --- Panels ---
@@ -144,6 +146,8 @@ export class GameUi {
       return true;
     };
     this.overlay = new WorldOverlay(this.ctx);
+    this.worldHover = new WorldHover(this.ctx);
+    this.worldHover.preview = this.orders.preview;
     // One calm column at top-centre: the narrator's line, then the hint chip.
     const centre = h('div.hud-centre', {}, this.narrator.el);
     this.root.appendChild(centre);
@@ -317,6 +321,7 @@ export class GameUi {
     this.root.style.display = inGame ? '' : 'none';
     if (!inGame) {
       if (activeSpell() || activeBuilding()) resetTool();
+      this.worldHover.update(dt);
       this.aim.update();
       this.placer.update();
       return;
@@ -325,6 +330,7 @@ export class GameUi {
     this.aim.update();
     this.placer.update();
     this.orders.update(dt);
+    this.worldHover.update(dt);
     this.minimap.update(dt);
     this.debug.update(dt, this.selection.units.size);
     this.hints.update(dt);
