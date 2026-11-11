@@ -78,7 +78,7 @@ import { isMajor, regionAt, regionNear } from './regions';
 import { UnitGrid } from './spatial';
 import { Rng } from './rng';
 import { ALL_BUILDINGS, skirmishRules, STARTER_SPELLS } from './rules';
-import { EventMemory, initEventMemory, tickScenarioEvents } from './scenario-events';
+import { EventMemory, initEventMemory, PendingLanding, tickLandings, tickScenarioEvents } from './scenario-events';
 import { finishHeldObjectives } from './objectives';
 import { hasCast, manaIncome, newSpellBook, pourMana, slotState, SpellBook, spendCast } from './spellbook';
 import { Aura, castSpell, SpellJob, tickJobs } from './spells';
@@ -337,6 +337,14 @@ export interface TribeState {
   ai: AiState | null;
   /** How its AI behaves (empty = the standard rival). */
   personality: AiPersonality;
+  /**
+   * A war band with no home: a tribe that never builds (personality
+   * `builds: false`) and was given no buildings. It has no home circle to
+   * draw or defend, and its spawns by a shore come in by boat. Cleared the
+   * moment it has a building of its own. (Missing on old saves: readers fall
+   * back to the personality rule.)
+   */
+  homeless?: boolean;
   /** Running tallies (see TribeStats). May be missing on an old save — read through world.statsOf(). */
   stats?: TribeStats;
 }
@@ -357,7 +365,13 @@ const SITE_CLIFF = 4.5;
 export interface HurtOptions {
   /** Damage from a spell: Wardens shrug off half. */
   spell?: boolean;
+  /** Who struck the blow (melee or a thrown ember): the struck may turn on them (standUp). */
+  by?: Unit;
 }
+
+/** A struck villager's neighbours within this many tiles come to help (at most HELPERS of them). */
+const RALLY_RADIUS = 3.5;
+const HELPERS = 4;
 
 export class World implements SimQueries {
   readonly map = new Heightmap();
@@ -387,6 +401,8 @@ export class World implements SimQueries {
   messageSeq = 0;
   /** Running memory for rules.events (scenario-events.ts). */
   eventMemory: EventMemory[] = [];
+  /** Boats on their way in: crews that step ashore when their hulls ground (scenario-events.ts LANDING). */
+  landings: PendingLanding[] = [];
   readonly rng = new Rng(1);
 
   /** Next id for a unit or building. Public for sim/save.ts only. */
@@ -519,6 +535,7 @@ export class World implements SimQueries {
     this.messages = [];
     this.messageSeq = 0;
     this.eventMemory = [];
+    this.landings = [];
     this.tribes = {};
     this.nextId = 1;
     this.unreachable.clear();
@@ -764,6 +781,7 @@ export class World implements SimQueries {
     this.objectives = obj.states;
     this.objectiveMemory = obj.memory;
     this.eventMemory = initEventMemory(rules.events);
+    this.landings = [];
   }
 
   /**
@@ -852,6 +870,7 @@ export class World implements SimQueries {
       everBuilt: new Set(),
       ai: t.ai ? { state: 'grow', evalTimer: 2, target: null, awake: !personality.passive, castCooldown: 0, crossing: null } : null,
       personality,
+      homeless: personality.builds === false && !lo.startBuildings?.length,
       stats: World.freshStats(),
     };
     this.tribes[t.id] = state;
@@ -1027,6 +1046,7 @@ export class World implements SimQueries {
       this.tickStranded();
     }
     tickScenarioEvents(this);
+    tickLandings(this);
     tickJobs(this, dt);
     tickAi(this, dt);
 
@@ -1669,7 +1689,7 @@ export class World implements SimQueries {
       if (u.attackCooldown <= 0) {
         u.attackCooldown = this.unitCooldown(u);
         this.strike(u, target.x, target.z, stats.range > 2);
-        this.hurtUnit(target, stats.dmg);
+        this.hurtUnit(target, stats.dmg, { by: u });
       }
       return;
     }
@@ -1869,6 +1889,39 @@ export class World implements SimQueries {
     if (kneeling && a > 0) this.abandonTask(u);
     const g = u.guardOf ?? -1;
     if (g >= 0 && u.tribe === 'wild' && a > 0 && this.monuments[g]) this.wakeGuards(this.monuments[g]);
+    if (opts.by && a > 0 && u.hp > 0) this.standUp(u, opts.by);
+  }
+
+  /**
+   * Struck by a foe, people fight back: the one hit turns on the attacker,
+   * and villagers working or standing close by down tools and join in.
+   * Without this a single wounded raider could walk through a village
+   * killing everyone in it one by one, nobody so much as raising a hand.
+   * Who stands up: anyone who can strike (not a leader or a chanter), out
+   * in the open, not already fighting, kneeling, casting or garrisoning.
+   */
+  private standUp(victim: Unit, attacker: Unit): void {
+    if (attacker.hp <= 0 || attacker.hidden) return;
+    const willing = (q: Unit) =>
+      q.hp > 0 && !q.hidden && q.state !== 'inside' && q.tribe !== 'wild' && UNITS[q.kind].dmg > 0 && q.kind !== 'chanter' &&
+      q.task !== 'attack' && q.task !== 'attackBuilding' && q.task !== 'worship' && q.task !== 'garrison' && !q.castSpell &&
+      this.foes(q, attacker);
+    const turn = (q: Unit) => {
+      this.abandonTask(q);
+      q.task = 'attack';
+      q.targetUnit = attacker.id;
+      if (this.distTo(q, attacker.x, attacker.z) <= UNITS[q.kind].range) q.state = 'fighting';
+      else if (!this.sendTo(q, attacker.x, attacker.z)) this.abandonTask(q);
+    };
+    if (willing(victim)) turn(victim);
+    if (victim.kind !== 'brave') return;
+    let helpers = 0;
+    this.grid.forEachNear(victim.x, victim.z, RALLY_RADIUS, (q) => {
+      if (helpers >= HELPERS || q === victim || q.tribe !== victim.tribe || q.kind !== 'brave') return;
+      if (Math.hypot(wrapDelta(q.x - victim.x, WORLD_SIZE), wrapDelta(q.z - victim.z, WORLD_SIZE)) >= RALLY_RADIUS || !willing(q)) return;
+      turn(q);
+      helpers++;
+    });
   }
 
   displaceUnit(u: Unit, dx: number, dz: number): void {
@@ -2315,6 +2368,8 @@ export class World implements SimQueries {
       burning: 0,
       wardTime: 0,
     };
+    const owner = this.tribes[tribe];
+    if (owner) owner.homeless = false; // a building of its own is a home
     this.indexedBuildings();
     this.buildings.push(b);
     this.buildingIndex.set(b.id, b);

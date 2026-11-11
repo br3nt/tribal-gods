@@ -8,6 +8,7 @@
 import { describe, expect, it } from 'vitest';
 import { communeSecondsFor, spellDef, START_CHARGES } from '../src/sim/catalog';
 import { openingBoost } from '../src/sim/spellbook';
+import { LANDING } from '../src/sim/scenario-events';
 import { HOME_CLEAR, SITE_LEVEL_SECONDS, World } from '../src/sim/world-state';
 import type { Monument } from '../src/sim/world-state';
 import { regionNear } from '../src/sim/regions';
@@ -313,12 +314,14 @@ describe('stranded kin and massing hosts', () => {
   it('a host told to hold waits on its beach, then its god sends it', () => {
     const w = flatWorld(rulesFor(
       [{ id: 'player', ai: false }, { id: 'violet', ai: true, personality: { builds: false, defends: false, harassAt: 1, assaultAt: 1, target: 'player' }, loadout: { startUnits: { shaman: 0, brave: 0 } } }],
-      { events: [{ when: { type: 'time', at: 1 }, actions: [{ type: 'spawn', tribe: 'violet', units: { warrior: 5 }, x: 70, z: 70, march: { x: 60, z: 60 }, hold: 30 }] }] },
+      { events: [{ when: { type: 'time', at: 1 }, actions: [{ type: 'spawn', tribe: 'violet', units: { warrior: 5 }, x: 70, z: 70, march: { x: 60, z: 60 }, hold: 30, by: 'sea' }] }] },
     ));
     w.spawn('shaman', 'player', 20, 20);
-    run(w, 3);
+    run(w, 1.5);
     expect(eventsOf(w, 'landing').length).toBe(1);
-    run(w, 22);
+    expect(w.units.some((u) => u.tribe === 'violet')).toBe(false); // still at sea
+    run(w, 1.5 + LANDING.seconds);
+    run(w, 22 - LANDING.seconds);
     const host = w.units.filter((u) => u.tribe === 'violet');
     expect(host.length).toBe(5);
     expect(host.every((u) => w.distTo(u, 60, 60) < 7)).toBe(true);

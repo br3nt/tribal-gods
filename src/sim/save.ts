@@ -71,6 +71,8 @@ export interface SaveData {
   messages: World['messages'];
   messageSeq: number;
   eventMemory: World['eventMemory'];
+  /** Boats still running in (absent in saves from before landings had a lead). */
+  landings?: World['landings'];
   rng: number;
   nextId: number;
   unreachable: Array<[string, number]>;
@@ -170,6 +172,7 @@ export function saveWorld(world: World): SaveData {
     messages: plain(world.messages),
     messageSeq: world.messageSeq,
     eventMemory: plain(world.eventMemory),
+    landings: plain(world.landings),
     rng: world.rng.s,
     nextId: world.nextId,
     unreachable: [...world.unreachable],
@@ -236,6 +239,7 @@ export function restoreWorld(world: World, data: SaveData): void {
   world.messages = d.messages;
   world.messageSeq = d.messageSeq;
   world.eventMemory = d.eventMemory;
+  world.landings = d.landings ?? [];
   world.events = [];
   world.rng.s = d.rng >>> 0;
   world.nextId = d.nextId;

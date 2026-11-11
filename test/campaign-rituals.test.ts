@@ -7,6 +7,7 @@ import { LAYOUT as L2 } from '../src/level/campaign/c02-speaking-stones';
 import { LAYOUT as L6 } from '../src/level/campaign/c06-barefoot-road';
 import { LAYOUT as L8, OPENS_AT } from '../src/level/campaign/c08-firemount-race';
 import { SPELLS } from '../src/sim/catalog';
+import { LANDING } from '../src/sim/scenario-events';
 import { CAMPAIGN, homeOf, loadScenario, reaches } from './campaign-helpers';
 import { run } from './helpers';
 
@@ -57,6 +58,9 @@ describe('stones as set pieces', () => {
     v.orderWorship([l2.id], 1);
     run(v, 2);
     expect(v.monuments[1].communing).toBe(true);
+    // The boat is on its way in: its crew steps onto the sand when the hull grounds.
+    expect(v.landings.length).toBe(1);
+    run(v, LANDING.seconds);
     const boat = v.units.filter((u) => u.tribe === 'violet');
     expect(boat.length).toBe(2);
     run(v, 12);

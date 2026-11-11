@@ -9,8 +9,11 @@
  *   in from far out to sea toward the landing beach, closing as the
  *   countdown runs down — the threat is visible before it lands.
  *
- *   LANDING. The `landing` event (x, z = where they came ashore, magnitude
- *   = how many, tribe = whose) beaches one boat per three or so raiders:
+ *   LANDING. The `landing` event (x, z = where they come ashore, magnitude
+ *   = how many, tribe = whose) goes out when the boats set off for the
+ *   beach; the sim puts the crews on the sand LANDING.seconds later
+ *   (sim/scenario-events.ts), and the boats ground just before that. One
+ *   boat per three or so raiders:
  *   they run in from the sea with spray at the bow and slide up the sand,
  *   then stay there, heeled over, as props for a couple of minutes before
  *   they settle into the shallows and are gone.
@@ -24,6 +27,7 @@ import { TILE, WORLD_SIZE } from '../config';
 import { wrapDelta } from '../core/util';
 import { TRIBE_COLORS, Tribe } from '../sim/catalog';
 import type { World } from '../sim/world-state';
+import { LANDING } from '../sim/scenario-events';
 import { buildBoat } from '../assets/models/boats';
 import { curveObject } from '../world/curvature';
 import type { EffectsRenderer } from './effects';
@@ -91,7 +95,8 @@ export class Fleet {
       this.add({
         sx: ex + sea.ux * out, sz: ez + sea.uz * out, ex, ez,
         yaw: Math.atan2(-sea.ux, -sea.uz) + (Math.random() - 0.5) * 0.25,
-        run: 2.4 + Math.random() * 0.8, stay: STAY + Math.random() * 20, horizon: false, color, seed: i,
+        // grounded just before the crews step out (the sim lands them LANDING.seconds after this event)
+        run: LANDING.seconds * (0.78 + Math.random() * 0.18), stay: STAY + Math.random() * 20, horizon: false, color, seed: i,
       });
     }
   }
