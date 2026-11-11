@@ -141,7 +141,7 @@ export class Terrain {
     return this.apply((x, z, h) => {
       const d = lineDist(x, z, pts);
       if (d > width) return h;
-      const k = 1 - smoothstep(width * 0.35, width, d);
+      const k = 1 - smoothstep(Math.max(width * 0.35, width - 2.2), width, d);
       return Math.max(h, h * (1 - k) + (height * (1 + this.wobble(x, z, 11) * jag)) * k);
     });
   }

@@ -105,7 +105,7 @@ export const scenario: CampaignScenario = {
           body:
             'Between the twin lands stands the Firemount, and on its crown a stone that teaches the mountain’s own fire. It sleeps until the fourth minute. ' +
             'The Ashmark are closer to it than we are. If their leader sits with that stone first, we will not survive what she learns. ' +
-            'The Keepers guard the crown and fight anyone who climbs. And the tide gives us half an hour to finish the Ashmark after.',
+            'The Keepers guard the crown and fight anyone who climbs, and the tide gives us half an hour to finish the Ashmark after.',
           tips: [
             'Get your leader — and spears — to the foot of the mountain before the stone wakes.',
             'Causeway across the mere shortens the walk. It is already in your book.',

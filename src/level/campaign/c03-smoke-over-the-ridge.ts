@@ -37,11 +37,11 @@ export const scenario: CampaignScenario = {
       const dz = (z - 64) / 36;
       return inside(Math.hypot(dx, dz) * 40 + t.wobble(x, z, 1) * 10, 40, 7);
     }, { base: 2.3, roll: 1.7 });
-    // The spine: impassable but for the pass and the southern shore.
-    t.ridge([{ x: 66, z: 20 }, { x: 62, z: 40 }, { x: 65, z: 54 }], 9, 14, 0.3);
-    t.ridge([{ x: 63, z: 63 }, { x: 61, z: 76 }, { x: 64, z: 89 }], 9, 14, 0.3);
     t.peak(44, 38, 9, 4).peak(86, 90, 9, 4);
     t.smooth(1);
+    // The spine: impassable but for the pass and the southern shore.
+    t.ridge([{ x: 66, z: 20 }, { x: 62, z: 40 }, { x: 65, z: 54 }], 9, 14, 0.3);
+    t.ridge([{ x: 63, z: 63 }, { x: 61, z: 74 }, { x: 63, z: 84 }], 9, 14, 0.3);
     t.road([{ x: pass.x - 9, z: pass.z }, { x: pass.x + 9, z: pass.z + 1 }], 6, 4.2);
     t.pad(pass.x, pass.z, 3, 4.6, 3);
     t.pad(home.x, home.z, 8, 2.4, 5).pad(red.x, red.z, 8, 2.6, 5);
@@ -89,7 +89,7 @@ export const scenario: CampaignScenario = {
           body:
             'The far valley smokes in the mornings. The Ashmark came down from their burnt hills a season before us, and they do not share. ' +
             'Twofold is split by a spine of rock with a single high pass, and a stone in that pass that teaches the lightning. ' +
-            'They are few yet — fewer than us. That will not last. Build a War Lodge, raise spears, and take the valley before they fill it.',
+            'They are few yet — fewer than us — but that will not last. Build a War Lodge, raise spears, and take the valley before they fill it.',
           tips: [
             'A War Lodge turns villagers into Warriors. Queue a few, then rally them where you want them.',
             'The pass is the short road for both of you; a Watchtower beside it sees them coming.',

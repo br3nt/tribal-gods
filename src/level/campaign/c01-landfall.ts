@@ -68,7 +68,7 @@ export const scenario: CampaignScenario = {
           body:
             'The Long Tide took the old shore, and the boats carried what was left of the Lantern-folk here: a hook of land around a quiet bay. ' +
             'Nobody else has claimed it. The wood is good, the ground is soft, and the people are tired of the sea. ' +
-            'Give them roofs. Give them children. Make a home before the tide finds this place too.',
+            'Give them roofs and children, and make a home before the tide finds this place too.',
           tips: [
             'Villagers fell trees and raise buildings on their own — you choose where the Dwellings go.',
             'A full Dwelling breeds; a Dwelling full for long enough grows bigger. More roofs, more people.',

@@ -270,6 +270,22 @@ describe('AI personalities', () => {
   });
 });
 
+describe('Causeway over deep water', () => {
+  it('a diagonal causeway is walkable end to end (sloped shoulders, no corner-cut gaps)', async () => {
+    const { castSpell } = await import('../src/sim/spells');
+    const { findPath } = await import('../src/sim/pathfinding');
+    const w = setupFlat(rulesFor());
+    w.map.heights.fill(-4.5);
+    for (let z = 50; z < 70; z++) for (let x = 10; x < 30; x++) w.map.heights[z * 128 + x] = 2;
+    for (let z = 60; z < 80; z++) for (let x = 46; x < 66; x++) w.map.heights[z * 128 + x] = 2;
+    w.map.version++;
+    expect(findPath(w.map, 20, 60, 56, 70, 20000)).toBeNull();
+    castSpell(w, 'landbridge', 47, 69, 29, 61, 'player');
+    run(w, 6);
+    expect(findPath(w.map, 20, 60, 56, 70, 20000)).not.toBeNull();
+  });
+});
+
 describe('world.loadLevel uses level.rules when no rules are passed', () => {
   it('falls back to skirmish rules for a v1 level', async () => {
     const { OFFICIAL_LEVELS } = await import('../src/level/official-levels');

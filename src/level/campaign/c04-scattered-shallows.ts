@@ -23,13 +23,13 @@ export const LAYOUT = {
   red: { x: 102, z: 64 },
   /** The intended bridges: shore to shore, each inside Causeway's reach. */
   bridges: [
-    { from: { x: 35, z: 62 }, to: { x: 54, z: 62 } },
-    { from: { x: 74, z: 62 }, to: { x: 88, z: 63 } },
+    { from: { x: 37, z: 62 }, to: { x: 57, z: 62 } },
+    { from: { x: 74, z: 62 }, to: { x: 90, z: 63 } },
   ],
 };
 
 const ISLES = [
-  { x: 22, z: 64, r: 14 },
+  { x: 25, z: 64, r: 14 },
   { x: 64, z: 62, r: 11 },
   { x: 102, z: 64, r: 17 },
 ];

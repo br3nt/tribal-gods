@@ -53,6 +53,13 @@ export const scenario: CampaignScenario = {
     const t = new Terrain(50505);
     const { home, shrine } = LAYOUT;
     t.landFrom((x, z) => inside(dist(x, z, C.x, C.z) + t.wobble(x, z, 1) * 9, 46, 8), { base: 2.0, roll: 1.4 });
+    // Outer flanks: a gentle apron so the wall reads as a mountain from outside.
+    t.apply((x, z, h) => {
+      const d = dist(x, z, C.x, C.z);
+      const apron = inside(Math.abs(d - RIM_R - 4), 6, 6) * 3;
+      return h > 0 ? h + apron : h;
+    });
+    t.smooth(1);
     // The crater wall, in three arcs with the breaches between them.
     const gap = 9; // degrees either side of a breach
     const sorted = [...BREACHES].sort((a, b) => a - b);
@@ -61,13 +68,6 @@ export const scenario: CampaignScenario = {
       const a1 = (i + 1 < sorted.length ? sorted[i + 1] : sorted[0] + 360) - gap;
       t.ridge(arc(C.x, C.z, RIM_R, a0, a1, 6), 6.5, 13, 0.35);
     }
-    // Outer flanks: a gentle apron so the wall reads as a mountain from outside.
-    t.apply((x, z, h) => {
-      const d = dist(x, z, C.x, C.z);
-      const apron = inside(Math.abs(d - RIM_R - 4), 6, 6) * 3;
-      return h > 0 ? h + apron : h;
-    });
-    t.smooth(1);
     // The basin floor, and the breach floors.
     t.apply((x, z, h) => {
       const k = inside(dist(x, z, C.x, C.z), RIM_R - 7, 5);
