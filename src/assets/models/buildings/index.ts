@@ -272,6 +272,12 @@ export function buildTotem(tribe: Tribe, civ: Civ): { root: THREE.Group; flames:
   paint(gem, 0xfff0c0);
   shine(gem, civ.accent, 2.5);
   gl.push(gem);
+  const base = cyl(0.7, 0.8, 0.4, 12);
+  place(base, 0, 0.0, 0);
+  paint(base, STONE);
+  parts.push(base);
+  // the pole stands at the back of the circle, leaving the middle for the leader
+  for (const g of [...parts, ...gl]) g.translate(0, 0, -1.7);
   // ring of stones and a fire pit
   for (let i = 0; i < 10; i++) {
     const a = (i / 10) * Math.PI * 2;
@@ -281,18 +287,14 @@ export function buildTotem(tribe: Tribe, civ: Civ): { root: THREE.Group; flames:
     parts.push(st);
   }
   const pit = torus(0.6, 0.18, 6, 12);
-  place(pit, 0, 0.1, 1.6, Math.PI / 2, 0, 0);
+  place(pit, 0, 0.1, 1.2, Math.PI / 2, 0, 0);
   paint(pit, STONE_DARK);
   parts.push(pit);
   const coals = blob(0.5, 0.1, 0.5, 8, 4, 0.04, 2, 9);
-  place(coals, 0, 0.1, 1.6);
+  place(coals, 0, 0.1, 1.2);
   paint(coals, 0xffa040);
   shine(coals, 0xff5010, 2.6);
   gl.push(coals);
-  const base = cyl(0.7, 0.8, 0.4, 12);
-  place(base, 0, 0.0, 0);
-  paint(base, STONE);
-  parts.push(base);
   const root = new THREE.Group();
   const mats = sharedMaterials();
   for (const [list, mat] of [[parts, mats.matte], [gl, mats.matte]] as const) {
@@ -300,7 +302,7 @@ export function buildTotem(tribe: Tribe, civ: Civ): { root: THREE.Group; flames:
     m.castShadow = m.receiveShadow = true;
     root.add(m);
   }
-  return { root, flames: [v3(0, 0.25, 1.6)] };
+  return { root, flames: [v3(0, 0.25, 1.2)] };
 }
 
 /**
