@@ -12,13 +12,14 @@
  */
 
 import * as THREE from 'three';
-import { TILE } from '../config';
+import { TILE, WORLD_SIZE } from '../config';
+import { wrapDelta } from '../core/util';
 import { applyCurvatureTo } from '../world/curvature';
 import type { World } from '../sim/world-state';
 import { CHUNK, EffectsRenderer, PETAL } from './effects';
 
 interface Bird {
-  /** Circle centre (world units, relative to the camera target), radius, angular speed, height. */
+  /** Circle centre (world units; re-seeded near the camera when it falls far behind), radius, angular speed, height. */
   cx: number; cz: number; r: number; w: number; y: number;
   a: number;
   phase: number;
@@ -26,8 +27,13 @@ interface Bird {
 }
 
 const FLOCKS = 3;
+/** A flock farther than this (world units) from the camera target is re-seeded near it. */
+const FLOCK_RANGE = 95;
+/** Butterfly colours (linear rgb). */
+const WINGS = [[1, 0.9, 0.4], [1, 1, 1], [1, 0.53, 0.75], [0.52, 0.75, 1]] as const;
 const PER_FLOCK = 5;
 const BIRDS = FLOCKS * PER_FLOCK;
+const WORLD_UNITS = WORLD_SIZE * TILE;
 
 export class AmbientLife {
   private readonly left: THREE.InstancedMesh;
@@ -61,8 +67,9 @@ export class AmbientLife {
       scene.add(im);
     }
     for (let f = 0; f < FLOCKS; f++) {
-      const cx = (Math.random() - 0.5) * 120;
-      const cz = (Math.random() - 0.5) * 120;
+      // placed for real on the first frame (seeded round the camera)
+      const cx = Infinity;
+      const cz = Infinity;
       const r = 10 + Math.random() * 14;
       const w = (0.25 + Math.random() * 0.2) * (Math.random() < 0.5 ? -1 : 1);
       const y = 16 + Math.random() * 10;
@@ -80,14 +87,30 @@ export class AmbientLife {
   }
 
   private birdsTick(world: World, cam: THREE.Vector3, dt: number): void {
+    // Flocks live at world positions (so they stay put as the view pans);
+    // one left far behind is re-seeded somewhere round the camera.
+    for (let f = 0; f < FLOCKS; f++) {
+      const lead = this.birds[f * PER_FLOCK];
+      const dx = wrapDelta(lead.cx - cam.x, WORLD_UNITS);
+      const dz = wrapDelta(lead.cz - cam.z, WORLD_UNITS);
+      if (dx * dx + dz * dz < FLOCK_RANGE * FLOCK_RANGE) continue;
+      const a = Math.random() * Math.PI * 2;
+      const r = 25 + Math.random() * 45;
+      for (let k = 0; k < PER_FLOCK; k++) {
+        const b = this.birds[f * PER_FLOCK + k];
+        b.cx = cam.x + Math.cos(a) * r;
+        b.cz = cam.z + Math.sin(a) * r;
+      }
+    }
     for (let i = 0; i < this.birds.length; i++) {
       const b = this.birds[i];
       b.a += b.w * dt;
       // flocks drift so they don't hang over one spot forever
-      b.cx += Math.sin(this.clock * 0.05 + i) * dt * 0.6;
-      b.cz += Math.cos(this.clock * 0.04 + i * 0.7) * dt * 0.6;
-      const x = cam.x + b.cx + Math.cos(b.a) * b.r;
-      const z = cam.z + b.cz + Math.sin(b.a) * b.r;
+      b.cx += Math.sin(this.clock * 0.05 + ((i / PER_FLOCK) | 0)) * dt * 0.6;
+      b.cz += Math.cos(this.clock * 0.04 + ((i / PER_FLOCK) | 0) * 0.7) * dt * 0.6;
+      // draw the image of the flock nearest the camera (the planet wraps)
+      const x = cam.x + wrapDelta(b.cx - cam.x, WORLD_UNITS) + Math.cos(b.a) * b.r;
+      const z = cam.z + wrapDelta(b.cz - cam.z, WORLD_UNITS) + Math.sin(b.a) * b.r;
       const ground = Math.max(0, world.map.sampleHeight(x / TILE, z / TILE));
       const y = ground + b.y + Math.sin(this.clock * 0.7 + b.phase) * 1.2;
       // flap in bursts, glide between
@@ -97,15 +120,18 @@ export class AmbientLife {
       const bank = -0.35 * Math.sign(b.w);
       this.p.set(x, y, z);
       this.s.setScalar(0.8);
-      for (const [im, side] of [[this.left, 1], [this.right, -1]] as const) {
-        this.e.set(0, yaw, bank + side * b.flap, 'YXZ');
-        this.q.setFromEuler(this.e);
-        this.m.compose(this.p, this.q, this.s);
-        im.setMatrixAt(i, this.m);
-      }
+      this.wing(this.left, i, yaw, bank + b.flap);
+      this.wing(this.right, i, yaw, bank - b.flap);
     }
     this.left.instanceMatrix.needsUpdate = true;
     this.right.instanceMatrix.needsUpdate = true;
+  }
+
+  private wing(im: THREE.InstancedMesh, i: number, yaw: number, roll: number): void {
+    this.e.set(0, yaw, roll, 'YXZ');
+    this.q.setFromEuler(this.e);
+    this.m.compose(this.p, this.q, this.s);
+    im.setMatrixAt(i, this.m);
   }
 
   /** A fish jumps in the shallows, now and then, near the camera. */
@@ -137,17 +163,16 @@ export class AmbientLife {
     this.flutterAcc += dt * 2.5;
     const fx = this.fx;
     const cam = fx.camTargetNow;
-    const cols = [0xfff2a8, 0xffffff, 0xffc0e0, 0xbfe0ff];
     for (; this.flutterAcc >= 1; this.flutterAcc--) {
       const tx = cam.x / TILE + (Math.random() - 0.5) * 22;
       const tz = cam.z / TILE + (Math.random() - 0.5) * 22;
       const h = world.map.sampleHeight(tx, tz);
       if (h < 1.6 || h > 9) continue;
       const p = fx.at(tx, tz, 0.6 + Math.random() * 0.8);
-      const c = new THREE.Color(cols[(Math.random() * cols.length) | 0]);
+      const c = WINGS[(Math.random() * WINGS.length) | 0];
       fx.matter.emit({
         x: p.x, y: p.y, z: p.z, vx: (Math.random() - 0.5) * 1.2, vy: 0.3, vz: (Math.random() - 0.5) * 1.2,
-        life: 3.5, size: 0.28, r: c.r, g: c.g, b: c.b, alpha: 0.95, drag: 0.2, shape: PETAL, fadeIn: 0.15,
+        life: 3.5, size: 0.28, r: c[0], g: c[1], b: c[2], alpha: 0.95, drag: 0.2, shape: PETAL, fadeIn: 0.15,
         swirl: (Math.random() - 0.5) * 3, ax: p.x + (Math.random() - 0.5) * 1.5, az: p.z + (Math.random() - 0.5) * 1.5,
       });
     }

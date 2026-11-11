@@ -527,6 +527,7 @@ export class UnitRenderer {
             return mm;
           });
         }
+        for (const eye of e.eyes) eye.visible = false; // the light goes out of a fallen guardian
         let fly: Ghost['fly'] = null;
         if (e.burn > 0 && mode === 'die') {
           // burned to death on the mountain: thrown clear of it, smoking

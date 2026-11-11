@@ -22,6 +22,8 @@ import { SPELL_LOOK, SPELL_LOOK_DEFAULT } from './look';
 interface Gather {
   spell: string;
   color: number;
+  /** The spell's colour as a THREE.Color (cached: motes read it every frame). */
+  c: THREE.Color;
   under: MeshFx;
   mark: MeshFx;
   ux: number;
@@ -61,7 +63,7 @@ export class CastGather {
       const color = (SPELL_LOOK[spell] ?? SPELL_LOOK_DEFAULT).glow;
       if (!g) {
         g = {
-          spell, color, under: this.sigil(u.x, u.z, color, 2.6), mark: this.sigil(u.castTarget!.x, u.castTarget!.z, color, Math.max(3, spellDef(spell).radius * TILE * 0.55)),
+          spell, color, c: new THREE.Color(color), under: this.sigil(u.x, u.z, color, 2.6), mark: this.sigil(u.castTarget!.x, u.castTarget!.z, color, Math.max(3, spellDef(spell).radius * TILE * 0.55)),
           ux: u.x, uz: u.z, tx: u.castTarget!.x, tz: u.castTarget!.z, prog: 0, seen: true, acc: 0, cloudAcc: 0,
         };
         this.live.set(u.id, g);
@@ -73,10 +75,9 @@ export class CastGather {
       g.uz = u.z;
       g.tx = u.castTarget!.x;
       g.tz = u.castTarget!.z;
-      for (const m of [g.under, g.mark]) {
-        m.ttl = Infinity;
-        m.mats[0].uniforms.uProg.value = g.prog;
-      }
+      g.under.ttl = g.mark.ttl = Infinity;
+      g.under.mats[0].uniforms.uProg.value = g.prog;
+      g.mark.mats[0].uniforms.uProg.value = g.prog;
       g.under.tx = g.ux;
       g.under.tz = g.uz;
       g.mark.tx = g.tx;
@@ -94,7 +95,7 @@ export class CastGather {
   private motes(g: Gather, dt: number): void {
     const fx = this.fx;
     g.acc += dt * fx.detail * (20 + 50 * g.prog);
-    const c = new THREE.Color(g.color);
+    const c = g.c;
     const centre = fx.at(g.ux, g.uz, 0);
     const cx = centre.x, cz = centre.z;
     for (; g.acc >= 1; g.acc--) {

@@ -484,6 +484,7 @@ export class EffectsRenderer {
     scene.add(this.screenQuad);
     this.spectacle = new Spectacle(this, scene, terrain);
     this.life = this.tier === 'low' ? null : new AmbientLife(this, scene);
+    terrain?.onWorldChange.push(() => this.reset());
 
     // Funnel: a lathe that flares from a tight base to a wide top.
     const pts: THREE.Vector2[] = [];
@@ -512,6 +513,23 @@ export class EffectsRenderer {
   /** Scale a particle count by the quality tier (at least `min`). */
   n(count: number, min = 1): number {
     return Math.max(min, Math.round(count * this.detail));
+  }
+
+  /**
+   * A different world was loaded: drop everything that belongs to the old
+   * one (running set pieces, vents, boats, bombs, fires, shocks, flashes).
+   * Without this a volcano running at load time would end() into a vent
+   * smoking over the new map.
+   */
+  reset(): void {
+    this.spectacle.reset();
+    this.bombs = [];
+    this.burns = [];
+    this.projectiles = [];
+    this.shockAge = -1;
+    grassShock.value.w = 0;
+    this.screenUniforms.uAmount.value = 0;
+    this.screenQuad.visible = false;
   }
 
   /** Light up the whole screen for a moment (additive; `amount` ~0.1 subtle … 1 blinding). */
@@ -1272,7 +1290,7 @@ export class EffectsRenderer {
     for (let i = 0; i < n; i++) {
       const a = Math.random() * Math.PI * 2;
       const r = radius * Math.sqrt(Math.random());
-      const p = this.at(tx + (Math.cos(a) * r) / 1, tz + (Math.sin(a) * r) / 1, 0.2);
+      const p = this.at(tx + (Math.cos(a) * r) / TILE, tz + (Math.sin(a) * r) / TILE, 0.2);
       const k = 0.7 + Math.random() * 0.4;
       this.matter.emit({
         x: p.x, y: p.y, z: p.z, vx: (Math.random() - 0.5) * 2, vy: 3 + Math.random() * 4, vz: (Math.random() - 0.5) * 2,
@@ -1660,7 +1678,7 @@ const HANDLERS: Record<string, Handler> = {
     fx.dust(x, z, 24, 5, 0x56603a, 1.5);
     fx.ring(x, z, 0x9aba5a, 9, 1.2, 1.6, 0.12);
     fx.ring(x, z, 0x6a8a3a, 5, 1.6, 1.2, 0.2, true);
-    fx.mud(x, z, fx.n(30, 10), 4);
+    fx.mud(x, z, fx.n(30, 10), 8);
     fx.motes(x, z, fx.n(24, 8), lin(0xb8e070), { radius: 7, rise: 1.2, life: 2, hdr: 2 });
   },
   denied(fx, x, z) {

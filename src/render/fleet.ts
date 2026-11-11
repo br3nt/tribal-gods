@@ -106,15 +106,16 @@ export class Fleet {
   }
 
   sync(world: World, dt: number): void {
-    this.syncHorizon(world);
+    if (world.rules?.events?.length || this.horizon.size) this.syncHorizon(world);
     for (const list of this.horizon.values()) for (const b of list) this.place(b, world, dt);
     for (const b of this.boats) {
       b.age += dt;
       this.place(b, world, dt);
     }
-    const gone = this.boats.filter((b) => b.age > b.run + b.stay + SINK);
-    for (const b of gone) this.scene.remove(b.obj);
-    if (gone.length) this.boats = this.boats.filter((b) => !gone.includes(b));
+    if (this.boats.some((b) => b.age > b.run + b.stay + SINK)) {
+      for (const b of this.boats) if (b.age > b.run + b.stay + SINK) this.scene.remove(b.obj);
+      this.boats = this.boats.filter((b) => b.age <= b.run + b.stay + SINK);
+    }
   }
 
   /** Countdowns to a landing put sails on the horizon. */
@@ -133,7 +134,10 @@ export class Fleet {
       let list = this.horizon.get(i);
       if (!list) {
         const sea = seaward(world, spawn.x, spawn.z);
-        if (!sea) continue;
+        if (!sea) {
+          this.horizon.set(i, []); // inland landing: no sails to show (and don't rescan every frame)
+          continue;
+        }
         const total = Object.values(spawn.units).reduce((a: number, b) => a + (b ?? 0), 0);
         const n = Math.max(2, Math.min(7, Math.ceil(total / 2.5)));
         const color = TRIBE_COLORS[spawn.tribe] ?? TRIBE_COLORS.red;

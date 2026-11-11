@@ -267,10 +267,18 @@ export class TerrainMesh {
     this.scorchTimer = 0;
   }
 
+  /**
+   * Called when a different world is loaded (main.ts worldChanged, via
+   * clearScorch): renderers holding per-world state (spell set pieces,
+   * boats, vents) drop it here.
+   */
+  readonly onWorldChange: Array<() => void> = [];
+
   /** Forget all burnt ground (a new world was loaded). */
   clearScorch(): void {
     this.scorch.fill(0);
     this.fx.clear();
+    for (const f of this.onWorldChange) f();
     this.scorchLive = false;
     this.writeTileTexture();
   }

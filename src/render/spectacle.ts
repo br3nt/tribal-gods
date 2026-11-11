@@ -46,6 +46,9 @@ import { Fleet } from './fleet';
 
 const N = WORLD_SIZE;
 const rand = (a: number, b: number) => a + Math.random() * (b - a);
+/** Clod colours (linear rgb): a turf-topped one, a bare one. */
+const TURF = [0.22, 0.32, 0.12] as const;
+const CLOD = [0.32, 0.22, 0.14] as const;
 
 /** A lava rivulet: a downhill path (tile coords) and how far the molten front has run. */
 interface Rivulet {
@@ -97,6 +100,8 @@ export class Spectacle {
   private readonly gather: CastGather;
   private readonly fleet: Fleet;
   private siteAcc = 0;
+  /** Scratch point for the quake's fault path. */
+  private readonly q = { x: 0, z: 0 };
   /** Freshly levelled ground shows as bare cut earth for a while (world/wear.ts patches). */
   private cuts: { key: string; ttl: number }[] = [];
   private cutSeq = 0;
@@ -150,8 +155,10 @@ export class Spectacle {
       this.end(s, world);
       this.states.delete(job);
     }
-    for (const v of this.vents) this.vent(v, world, dt);
-    this.vents = this.vents.filter((v) => v.age < v.life);
+    if (this.vents.length) {
+      for (const v of this.vents) this.vent(v, world, dt);
+      if (this.vents.some((v) => v.age >= v.life)) this.vents = this.vents.filter((v) => v.age < v.life);
+    }
     this.siteDust(world, dt);
     if (this.cuts.length) {
       for (const c of this.cuts) if ((c.ttl -= dt) <= 0) clearWear(c.key);
@@ -511,7 +518,7 @@ export class Spectacle {
       const r = Math.sqrt(Math.random()) * R;
       const p = fx.at(j.x + Math.cos(a) * r, j.z + Math.sin(a) * r, 0.4);
       const sp = rand(2, 5);
-      const c = Math.random() < 0.3 ? [0.22, 0.32, 0.12] : [0.32, 0.22, 0.14];
+      const c = Math.random() < 0.3 ? TURF : CLOD;
       fx.matter.emit({
         x: p.x, y: p.y, z: p.z, vx: Math.cos(a) * sp, vy: rand(3, 6), vz: Math.sin(a) * sp,
         life: rand(0.8, 1.3), size: rand(0.3, 0.6), r: c[0], g: c[1], b: c[2], gravity: 22, shape: CHUNK, fadeIn: 0.01,
@@ -561,16 +568,19 @@ export class Spectacle {
     const acc = s.acc;
     const seed = (j.seed % 1000) * 0.01;
     const wig = (t: number) => Math.sin(t * 1.3 + seed) * 0.55 + Math.sin(t * 0.47 + seed * 2) * 0.8;
+    const q = this.q;
     const P = (t: number, w = 0) => {
       const o = wig(t) + w;
-      return { x: j.x + c * t - sn * o, z: j.z + sn * t + c * o };
+      q.x = j.x + c * t - sn * o;
+      q.z = j.z + sn * t + c * o;
+      return q;
     };
     // the tear runs outward from the mark both ways
     const L = len * Math.min(1, j.t / 1.4);
     if (surf) {
       for (let t = s.torn; t <= L; t += 0.4) {
-        for (const sign of [-1, 1]) {
-          const q = P(t * sign);
+        for (let sign = -1; sign <= 1; sign += 2) {
+          P(t * sign);
           surf.paint(FxChannel.Crack, q.x, q.z, 0.9, 1);
           surf.paint(FxChannel.Crack, q.x, q.z, 2.4, 0.3, 0.45);
           if (Math.random() < 0.35) fx.debris(q.x, q.z, this.fx.n(3, 1), 6, 0x5a4a38, 0.35);
@@ -638,18 +648,19 @@ export class Spectacle {
     }
     // foam rings surge inward
     if (owed(acc, 0, 1.1, dt) > 0) fx.ring(j.x, j.z, 0xf0faff, R * TILE * 1.15, 1.5, 1.4, 0.1, true);
-    // foam swirling in round the rim
+    // foam swirling in round the rim (fx.at returns a shared vector: copy before the next call)
+    const centre = fx.at(j.x, j.z, 0);
+    const ax = centre.x, az = centre.z;
     for (let n = owed(acc, 1, fx.detail * 50, dt); n > 0; n--) {
       const a = Math.random() * Math.PI * 2;
       const r = R * rand(0.4, 1.05);
       const tx = j.x + Math.cos(a) * r, tz = j.z + Math.sin(a) * r;
       if (world.map.sampleHeight(tx, tz) > 0.15) continue;
       const p = fx.at(tx, tz, 0.15);
-      const c = fx.at(j.x, j.z, 0);
       fx.matter.emit({
         x: p.x, y: p.y, z: p.z, vx: -Math.cos(a) * 1.5, vy: 0.3, vz: -Math.sin(a) * 1.5,
         life: rand(1.2, 2), size: rand(0.8, 1.4), sizeEnd: rand(2, 3), r: 0.95, g: 0.98, b: 1, alpha: 0.6,
-        drag: 0.5, shape: SMOKE, fadeIn: 0.1, swirl: 1.4, ax: c.x, az: c.z,
+        drag: 0.5, shape: SMOKE, fadeIn: 0.1, swirl: 1.4, ax, az,
       });
     }
     // the rim slumps: earth slides in, wet behind it
