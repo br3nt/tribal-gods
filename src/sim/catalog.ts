@@ -368,6 +368,8 @@ export interface AiPersonality {
   assaultAt?: number;
   /** Stops training past this many fighters (default 24). */
   maxArmy?: number;
+  /** Stops raising Dwellings past this many (default by difficulty: 6 / 8 / 11). */
+  maxDwellings?: number;
   /** No raids or assaults until attacked, `wakeAt` passes, or a `wake` event fires. */
   passive?: boolean;
   wakeAt?: number;

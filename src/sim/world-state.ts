@@ -234,6 +234,10 @@ export interface AiState {
   site?: { id: number; progress: number; since: number };
   /** False while a `passive` personality is holding back (see AiPersonality). */
   awake: boolean;
+  /** Seconds until its leader may cast again (difficulty's aiCastGap after each cast). */
+  castCooldown: number;
+  /** The gap it is bridging to reach its target (sim/crossing.ts), re-planned as land rises. */
+  crossing?: { from: { x: number; z: number }; to: { x: number; z: number }; kind: 'water' | 'cliff'; width: number; at: number; wait?: number } | null;
 }
 
 /** Everything one tribe owns that isn't a unit or a building. */
@@ -587,7 +591,7 @@ export class World implements SimQueries {
         leaderDeaths: 0,
         threatTimer: 0,
         everBuilt: new Set(),
-        ai: t.ai ? { state: 'grow', evalTimer: 2, target: null, awake: !personality.passive } : null,
+        ai: t.ai ? { state: 'grow', evalTimer: 2, target: null, awake: !personality.passive, castCooldown: 0, crossing: null } : null,
         personality,
       };
     }

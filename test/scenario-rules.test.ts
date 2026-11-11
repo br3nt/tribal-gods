@@ -262,7 +262,8 @@ describe('AI personalities', () => {
       rulesFor([{ id: 'player', ai: false }, { id: 'red', ai: true, personality: { passive: true, builds: false } }]),
     );
     const leader = w.leaderOf('red')!;
-    for (let i = 0; i < 4; i++) w.spawn('brave', 'player', leader.x + 6 + i * 0.5, leader.z);
+    // Clear of red's own villagers (the AI won't blast its own people).
+    for (let i = 0; i < 4; i++) w.spawn('warrior', 'player', leader.x + 9.5 + i * 0.5, leader.z).pacified = 999;
     w.tribes.red!.spells.blast.charges = 4;
     run(w, 10);
     expect(eventsOf(w, 'explosion').length).toBe(0);

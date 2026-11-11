@@ -155,13 +155,15 @@ export type Difficulty = 'easy' | 'normal' | 'hard';
 
 /**
  * Difficulty tunes the AI's tempo, never its rules: it decides more or
- * less often (a slow god is a beatable god) and starts with more or less
- * of a head start in followers.
+ * less often (a slow god is a beatable god), waits longer or shorter
+ * between spells (`aiCastGap`, seconds), stops raising dwellings sooner or
+ * later (`aiDwellings` — an AI town is a size, not a flood), and starts
+ * with more or less of a head start in followers.
  */
-export const DIFFICULTIES: Record<Difficulty, { aiEvalSeconds: number; redStartBraves: number; label: string }> = {
-  easy: { aiEvalSeconds: 4, redStartBraves: 6, label: 'A patient, sleepy god' },
-  normal: { aiEvalSeconds: 2, redStartBraves: 8, label: 'An even match' },
-  hard: { aiEvalSeconds: 1.3, redStartBraves: 11, label: 'It dreams of your extinction' },
+export const DIFFICULTIES: Record<Difficulty, { aiEvalSeconds: number; aiCastGap: number; aiDwellings: number; redStartBraves: number; label: string }> = {
+  easy: { aiEvalSeconds: 4, aiCastGap: 16, aiDwellings: 6, redStartBraves: 6, label: 'A patient, sleepy god' },
+  normal: { aiEvalSeconds: 2, aiCastGap: 9, aiDwellings: 8, redStartBraves: 8, label: 'An even match' },
+  hard: { aiEvalSeconds: 1.3, aiCastGap: 5.5, aiDwellings: 11, redStartBraves: 11, label: 'It dreams of your extinction' },
 };
 
 // ---------------------------------------------------------------------------

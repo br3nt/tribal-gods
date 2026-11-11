@@ -70,7 +70,7 @@ export const scenario: CampaignScenario = {
           },
           {
             id: 'red', ai: true,
-            personality: { passive: true, wakeAt: 480, harassAt: 4, assaultAt: 8, maxArmy: 10 },
+            personality: { passive: true, wakeAt: 480, harassAt: 4, assaultAt: 8, maxArmy: 10, maxDwellings: 5 },
             loadout: {
               spells: ['blast', 'convert'],
               buildings: ['hut', 'lumberyard', 'warriorHut'],

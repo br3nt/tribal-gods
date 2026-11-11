@@ -10,9 +10,23 @@
  *             the leader to the standing stones.
  *   HARASS  — army ≥ harass threshold: a small squad pokes the nearest
  *             rival's village.
- *   ASSAULT — army ≥ assault threshold: march everything, leader included,
- *             at the rival's home circle; the leader opens with the big spells.
+ *   ASSAULT — army ≥ assault threshold: march everything at the rival's
+ *             home circle; the leader follows behind the army and opens
+ *             with the big spells when a village is in reach.
  *   DEFEND  — took damage recently: recall the army, garrison towers.
+ *
+ * Two judgements sit on top of the posture:
+ *
+ *   CASTING WITH RESTRAINT — the leader waits the difficulty's cast gap
+ *   after every spell, spends a charge only on a target worth it (a crowd,
+ *   a champion, a village — never one villager; our own people under the
+ *   circle count against it), and keeps world-shapers for a real town. A
+ *   hurt leader with soldiers near walks home instead of dying for nothing.
+ *
+ *   AN ANSWER TO WATER — if the rival lives across a strait (or up a
+ *   cliff), the leader learns or charges Causeway (Level for cliffs),
+ *   walks to the narrowest gap (sim/crossing.ts) and bridges it, cast by
+ *   cast, until the land joins; the army waits at the shore, then marches.
  *
  * A tribe's AiPersonality (catalog.ts, from the scenario) tunes these
  * decisions: raid/assault thresholds, passive-until-provoked, war bands that
@@ -21,14 +35,16 @@
  * The AI never cheats: it places buildings through canPlaceBuilding, pays
  * the same wood, trains through the same queues, and its leader casts
  * through the same charge model and range rules as yours. Difficulty
- * tunes tempo (how often it thinks) — never the rules.
+ * tunes tempo (how often it thinks and casts) — never the rules.
  */
 
 import { DIFFICULTIES, MIN_BRAVES, WORLD_SIZE } from '../config';
 import { wrapDelta } from '../core/util';
-import { BuildingKind, BUILDINGS, ECONOMY, SpellId, SPELLS, spellDef, TribeId, UNITS } from './catalog';
+import { BuildingKind, BUILDINGS, ECONOMY, SpellId, SPELLS, spellDef, TribeId, UnitKind, UNITS } from './catalog';
+import { findCrossing } from './crossing';
 import { findPath } from './pathfinding';
-import type { Building, TribeState, Unit, World } from './world-state';
+import { regionNear } from './regions';
+import type { TribeState, Unit, World } from './world-state';
 
 const HARASS_ARMY = 5;
 const ASSAULT_ARMY = 11;
@@ -38,10 +54,10 @@ const MAX_ARMY = 24;
 /** The order an AI wants its town in: [kind, how many]. */
 const PLAN: Array<[BuildingKind, number]> = [
   ['hut', 2], ['lumberyard', 1], ['warriorHut', 1], ['hut', 3], ['tower', 1], ['shrine', 1],
-  ['fireHut', 1], ['hut', 4], ['chantHall', 1], ['wardenHall', 1], ['hut', 6], ['tower', 2], ['hut', 8],
+  ['fireHut', 1], ['hut', 4], ['chantHall', 1], ['wardenHall', 1], ['hut', 6], ['warriorHut', 2], ['tower', 2], ['hut', 8],
 ];
 
-/** Spells the AI never casts — it switches them off so the rest charge faster. */
+/** Spells the AI doesn't charge unless it needs them (bridging switches them on). */
 const UNUSED: SpellId[] = ['flatten', 'landbridge'];
 
 export function tickAi(world: World, dt: number): void {
@@ -49,6 +65,7 @@ export function tickAi(world: World, dt: number): void {
   for (const id of world.activeTribes()) {
     const tribe = world.tribes[id]!;
     if (!tribe.ai) continue;
+    tribe.ai.castCooldown = Math.max(0, (tribe.ai.castCooldown ?? 0) - dt);
     tribe.ai.evalTimer -= dt;
     if (tribe.ai.evalTimer > 0) continue;
     // Difficulty IS tempo: a hard god thinks every 1.3s, an easy one every 4.
@@ -67,10 +84,12 @@ function pickTarget(world: World, id: TribeId, tribe: TribeState): TribeId | nul
   if (pinned && world.tribes[pinned] && world.hostile(id, pinned) && world.tribeAlive(pinned)) return pinned;
   let best: TribeId | null = null;
   let bestD = Infinity;
+  const here = regionNear(world.map, tribe.home.x, tribe.home.z, 3);
   for (const other of world.activeTribes()) {
     if (!world.hostile(id, other) || !world.tribeAlive(other)) continue;
     const h = world.tribes[other]!.home;
-    const d = dist(h.x, h.z, tribe.home.x, tribe.home.z);
+    // A rival we can walk to beats a nearer one across the water.
+    const d = dist(h.x, h.z, tribe.home.x, tribe.home.z) + (regionNear(world.map, h.x, h.z, 3) === here ? 0 : 1000);
     if (d < bestD) {
       bestD = d;
       best = other;
@@ -112,6 +131,16 @@ function think(world: World, id: TribeId, tribe: TribeState): void {
   }
   queueTraining(world, id, tribe, army.length);
 
+  // Across the water? An awake god with an army to send makes land.
+  const across = !!enemyHome &&
+    regionNear(world.map, tribe.home.x, tribe.home.z, 3) !== regionNear(world.map, enemyHome.x, enemyHome.z, 3);
+  if (!across) ai.crossing = null;
+  const retreating = leaderSafety(world, id, tribe);
+  const bridging = across && ai.awake && !retreating && army.length >= Math.min(harassAt, assaultAt) &&
+    bridgeTo(world, id, tribe, enemyHome!);
+  // Where the army goes: the enemy, or the shore of the gap while the bridge rises.
+  const goal = across && ai.crossing ? ai.crossing.from : enemyHome;
+
   const free = (u: Unit) => (u.task === 'none' || u.state === 'idle') && !u.castSpell;
   const jitter = (r: number) => world.random() * 2 * r - r;
   switch (ai.state) {
@@ -124,28 +153,47 @@ function think(world: World, id: TribeId, tribe: TribeState): void {
     }
     case 'harass': {
       garrisonTowers(world, id, tribe);
-      const squad = army.filter((s) => s.task === 'none' && s.state === 'idle').slice(0, SQUAD_SIZE);
-      for (const s of squad) world.sendTo(s, enemyHome!.x + jitter(5), enemyHome!.z + jitter(5));
+      if (goal) {
+        const squad = army.filter((s) => s.task === 'none' && s.state === 'idle').slice(0, SQUAD_SIZE);
+        for (const s of squad) world.sendTo(s, goal.x + jitter(5), goal.z + jitter(5));
+      }
       break;
     }
     case 'assault': {
-      for (const s of army) {
-        if (free(s)) world.sendTo(s, enemyHome!.x + jitter(4), enemyHome!.z + jitter(4));
+      if (goal) {
+        for (const s of army) {
+          if (free(s)) world.sendTo(s, goal.x + jitter(4), goal.z + jitter(4));
+        }
       }
+      // The leader walks behind the army, not in front of it.
       const leader = world.leaderOf(id);
-      if (leader && leader.task === 'none' && !leader.castSpell && leader.state === 'idle') {
-        world.sendTo(leader, enemyHome!.x + jitter(6), enemyHome!.z + jitter(6));
+      if (!bridging && !retreating && leader && leader.task === 'none' && !leader.castSpell && leader.state === 'idle' && army.length) {
+        let cx = 0;
+        let cz = 0;
+        for (const s of army) {
+          cx += wrapDelta(s.x - leader.x, WORLD_SIZE);
+          cz += wrapDelta(s.z - leader.z, WORLD_SIZE);
+        }
+        cx = leader.x + cx / army.length;
+        cz = leader.z + cz / army.length;
+        const bx = wrapDelta(tribe.home.x - cx, WORLD_SIZE);
+        const bz = wrapDelta(tribe.home.z - cz, WORLD_SIZE);
+        const bl = Math.hypot(bx, bz) || 1;
+        const back = Math.min(4, bl);
+        const tx = cx + (bx / bl) * back;
+        const tz = cz + (bz / bl) * back;
+        if (dist(leader.x, leader.z, tx, tz) > 4) world.sendTo(leader, tx, tz);
       }
       break;
     }
     case 'grow':
       garrisonTowers(world, id, tribe);
-      if (p.seeksStones ?? true) seekMonuments(world, id);
+      if (!bridging && !retreating && (p.seeksStones ?? true)) seekMonuments(world, id);
       break;
   }
 
   // A passive god keeps its hands down: no spells at anyone until it wakes.
-  if (ai.awake) leaderCasts(world, id, tribe);
+  if (ai.awake && !retreating) leaderCasts(world, id, tribe);
 }
 
 /** Next step of the plan that isn't done yet; places it if it can. */
@@ -160,8 +208,11 @@ function buildTown(world: World, id: TribeId, tribe: TribeState): void {
     else if (world.elapsed - ai.site.since > 60) world.demolish(site.id);
     return;
   }
+  const maxHuts = tribe.personality.maxDwellings ?? DIFFICULTIES[world.settings.difficulty].aiDwellings;
+  const huts = mine.filter((b) => b.kind === 'hut').length;
   for (const [kind, n] of PLAN) {
     if (mine.filter((b) => b.kind === kind).length >= n) continue;
+    if (kind === 'hut' && huts >= maxHuts) continue;
     // Not allowed here, or its prerequisite isn't up yet: the plan lists
     // prerequisites first, so skip ahead and come back to it.
     if (!tribe.allowed.has(kind)) continue;
@@ -171,8 +222,12 @@ function buildTown(world: World, id: TribeId, tribe: TribeState): void {
     placeNearHome(world, id, tribe, kind);
     return;
   }
-  // Plan complete: keep adding dwellings while wood piles up.
-  if (tribe.wood > 20 && tribe.allowed.has('hut')) placeNearHome(world, id, tribe, 'hut');
+  // Plan complete: more dwellings while wood piles up (to the town's size),
+  // then a second lodge to turn the surplus into soldiers.
+  if (tribe.wood > 20 && tribe.allowed.has('hut') && huts < maxHuts) placeNearHome(world, id, tribe, 'hut');
+  else if (tribe.wood > 25 && tribe.allowed.has('warriorHut') && mine.filter((b) => b.kind === 'warriorHut').length < 3) {
+    placeNearHome(world, id, tribe, 'warriorHut');
+  }
 }
 
 function placeNearHome(world: World, id: TribeId, tribe: TribeState, kind: BuildingKind): boolean {
@@ -207,13 +262,17 @@ function queueTraining(world: World, id: TribeId, tribe: TribeState, armySize: n
   const spare = braves - (MIN_BRAVES + 2) - queued;
   if (spare <= 0) return;
   const chanters = world.countUnits((u) => u.tribe === id && u.kind === 'chanter');
+  // A recruit per think, more when villagers are plentiful (a big village
+  // that never arms is no rival at all).
+  let budget = Math.min(3, Math.max(1, Math.floor(spare / 6)));
   for (const b of halls) {
+    if (budget <= 0) return;
     const kind = BUILDINGS[b.kind].trains!;
     if (kind === 'chanter' && chanters >= 3) continue;
-    if (b.queue >= 2 || tribe.wood < UNITS[kind].trainWood) continue;
+    if (b.queue >= 3 || tribe.wood < UNITS[kind].trainWood) continue;
     world.queueTraining(b.id, 1);
     if (!b.rally) world.setRally(b.id, tribe.home.x + 3, tribe.home.z + 3);
-    return; // one recruit per think
+    budget--;
   }
 }
 
@@ -271,85 +330,127 @@ const ready = (world: World, id: TribeId, spell: SpellId) => {
   return s.gifted > 0 || (s.known && s.charges > 0);
 };
 
-/** Best hostile cluster (units) within `range` of the leader: [unit, crowd size]. */
-function bestCrowd(world: World, id: TribeId, leader: Unit, range: number): [Unit | null, number] {
-  let best: Unit | null = null;
-  let bestScore = 0;
-  const foes = world.units.filter((u) => !u.hidden && u.tribe !== 'wild' && world.hostile(id, u.tribe));
-  for (const u of foes) {
-    if (world.distTo(leader, u.x, u.z) > range) continue;
-    let score = 1;
-    for (const q of foes) if (q !== u && dist(q.x, q.z, u.x, u.z) < 3) score++;
-    if (score > bestScore) {
-      bestScore = score;
-      best = u;
-    }
+// ---------------------------------------------------------------------------
+// Judging a target. A god spends a charge when the blow is worth it: a crowd
+// of soldiers, a leader, a village — never one villager in a field. Our own
+// people under the circle count against it, twice over.
+// ---------------------------------------------------------------------------
+
+const UNIT_VALUE: Record<UnitKind, number> = { brave: 1, warrior: 2, firewarrior: 2, warden: 3, chanter: 2, shaman: 6, wildman: 0 };
+const BUILDING_VALUE: Record<BuildingKind, number> = {
+  hut: 3, lumberyard: 2, warriorHut: 4, fireHut: 4, tower: 3, shrine: 5, wardenHall: 5, chantHall: 4,
+};
+
+/** Hostile value minus twice our own (and allies') value of people within r of (x, z). */
+function peopleValue(world: World, id: TribeId, x: number, z: number, r: number): number {
+  let v = 0;
+  for (const u of world.units) {
+    if (u.hidden || u.tribe === 'wild' || dist(u.x, u.z, x, z) > r) continue;
+    if (world.hostile(id, u.tribe)) v += UNIT_VALUE[u.kind];
+    else v -= 2 * UNIT_VALUE[u.kind];
   }
-  return [best, bestScore];
+  return v;
 }
 
-function bestBuilding(world: World, id: TribeId, leader: Unit, range: number): [Building | null, number] {
-  let best: Building | null = null;
-  let bestScore = 0;
-  const foes = world.buildings.filter((b) => world.hostile(id, b.tribe));
-  for (const b of foes) {
-    if (world.distTo(leader, b.x, b.z) > range) continue;
-    let score = 1;
-    for (const q of foes) if (q !== b && dist(q.x, q.z, b.x, b.z) < 8) score++;
-    if (score > bestScore) {
-      bestScore = score;
-      best = b;
-    }
+/** Same for buildings (a building counts if its footprint touches the circle). */
+function townValue(world: World, id: TribeId, x: number, z: number, r: number): number {
+  let v = 0;
+  for (const b of world.buildings) {
+    if (dist(b.x, b.z, x, z) > r + b.size / 2) continue;
+    if (world.hostile(id, b.tribe)) v += BUILDING_VALUE[b.kind] * (b.progress >= 1 ? 1 : 0.5);
+    else v -= 2 * BUILDING_VALUE[b.kind];
   }
-  return [best, bestScore];
+  return v;
 }
 
-/** The leader zaps crowds, flattens villages, blesses the army — and recruits when the flock thins. */
+/** The best centre (a hostile unit or building) for a circle, within `range` of the leader. */
+function bestCentre(
+  world: World, id: TribeId, leader: Unit, range: number, score: (x: number, z: number) => number, pool: 'units' | 'buildings',
+): { x: number; z: number; v: number } | null {
+  let best: { x: number; z: number; v: number } | null = null;
+  const consider = (x: number, z: number) => {
+    if (world.distTo(leader, x, z) > range) return;
+    const v = score(x, z);
+    if (!best || v > best.v) best = { x, z, v };
+  };
+  if (pool === 'units') {
+    for (const u of world.units) if (!u.hidden && u.tribe !== 'wild' && world.hostile(id, u.tribe)) consider(u.x, u.z);
+  } else {
+    for (const b of world.buildings) if (world.hostile(id, b.tribe)) consider(b.x, b.z);
+  }
+  return best;
+}
+
+/** Minimum target value per spell (net of friendly fire). */
+const WORTH: Partial<Record<SpellId, number>> = {
+  blast: 4, lightning: 2, swamp: 5, cyclone: 7,
+  emberfall: 12, sink: 12, earthquake: 12, volcano: 14,
+};
+
+/**
+ * The leader casts with intent: one spell per think at most, and after any
+ * cast she waits the difficulty's cast gap (longer after a world-shaper).
+ * Recruiting and blessings come before violence; tier-3 charges are saved
+ * for a village worth breaking.
+ */
 function leaderCasts(world: World, id: TribeId, tribe: TribeState): void {
+  const ai = tribe.ai!;
   const leader = world.leaderOf(id);
   if (!leader || leader.castSpell || leader.state === 'working' || leader.hidden) return;
-  const cast = (spell: SpellId, x: number, z: number) =>
-    ready(world, id, spell) && world.orderCast(id, spell, x, z) === null;
+  if (ai.castCooldown > 0) return;
+  const gap = DIFFICULTIES[world.settings.difficulty].aiCastGap;
+  const cast = (spell: SpellId, x: number, z: number) => {
+    if (!ready(world, id, spell) || world.orderCast(id, spell, x, z) !== null) return false;
+    ai.castCooldown = gap * (spellDef(spell).tier === 3 ? 1.6 : 1);
+    return true;
+  };
 
-  // POPULATION EMERGENCY: villagers do all the chopping, building and
-  // breeding. Kindle the nearest wanderers into fresh villagers.
+  // Kindle wanderers: two or more are always worth a charge; one only when
+  // the flock is thin (villagers do all the chopping, building and breeding).
   const braves = world.countUnits((u) => u.tribe === id && u.kind === 'brave');
-  if (braves < 4 && ready(world, id, 'convert')) {
-    let nearest: Unit | null = null;
-    let nearestD = 50;
+  if (ready(world, id, 'convert')) {
+    const R = spellDef('convert').radius;
+    let best: Unit | null = null;
+    let bestN = 0;
     for (const u of world.units) {
-      if (u.kind !== 'wildman') continue;
-      const d = world.distTo(leader, u.x, u.z);
-      if (d < nearestD) {
-        nearestD = d;
-        nearest = u;
+      if (u.kind !== 'wildman' || world.distTo(leader, u.x, u.z) > spellDef('convert').range) continue;
+      let n = 0;
+      for (const q of world.units) if (q.kind === 'wildman' && dist(q.x, q.z, u.x, u.z) <= R) n++;
+      if (n > bestN) {
+        bestN = n;
+        best = u;
       }
     }
-    if (nearest && cast('convert', nearest.x, nearest.z)) return;
+    if (best && (bestN >= 2 || braves < 4) && cast('convert', best.x, best.z)) return;
   }
 
-  // Village-breakers first: the big spells on a rival town in reach.
-  const [town, townScore] = bestBuilding(world, id, leader, 16);
-  if (town) {
-    for (const spell of ['volcano', 'earthquake', 'emberfall', 'sink', 'cyclone'] as SpellId[]) {
-      if (townScore >= (spell === 'cyclone' ? 1 : 2) && cast(spell, town.x, town.z)) return;
-    }
+  // Bless our own fighters when there's a real fight.
+  const enemyFighters = world.units.filter(
+    (u) => !u.hidden && u.tribe !== 'wild' && world.hostile(id, u.tribe) && isFighter(u) && world.distTo(leader, u.x, u.z) < 12,
+  );
+  const ours = world.units.filter((u) => u.tribe === id && !u.hidden && isFighter(u) && world.distTo(leader, u.x, u.z) < 9);
+  if (enemyFighters.length >= 2 && ours.length >= 4) {
+    const c = ours[0];
+    if (!ours.some((u) => u.warsongTime > 0) && cast('warsong', c.x, c.z)) return;
+    if (!ours.some((u) => u.wardTime > 0) && cast('ward', c.x, c.z)) return;
   }
 
-  // Bless our own fighters when there's a fight to be had.
-  const [crowd, crowdScore] = bestCrowd(world, id, leader, 16);
-  if (crowd) {
-    const ours = world.units.filter((u) => u.tribe === id && !u.hidden && isFighter(u) && world.distTo(leader, u.x, u.z) < 9);
-    if (ours.length >= 3) {
-      const c = ours[0];
-      if (!ours.some((u) => u.warsongTime > 0) && cast('warsong', c.x, c.z)) return;
-      if (!ours.some((u) => u.wardTime > 0) && cast('ward', c.x, c.z)) return;
-    }
-    // Crowd → blast (knockback + splash). Lone target → lightning, or a mire in their path.
-    if (crowdScore >= 3 && cast('blast', crowd.x, crowd.z)) return;
-    if (crowdScore >= 2 && cast('swamp', crowd.x, crowd.z)) return;
-    if (cast('lightning', crowd.x, crowd.z)) return;
-    if (crowdScore >= 2 && world.distTo(leader, crowd.x, crowd.z) <= spellDef('blast').range && cast('blast', crowd.x, crowd.z)) return;
+  // Village-breakers: only on a town worth it.
+  for (const spell of ['volcano', 'earthquake', 'emberfall', 'sink', 'cyclone'] as SpellId[]) {
+    if (!ready(world, id, spell)) continue;
+    const def = spellDef(spell);
+    const r = spell === 'earthquake' ? def.radius * 0.8 : def.radius;
+    const t = bestCentre(world, id, leader, def.range, (x, z) => townValue(world, id, x, z, r), 'buildings');
+    if (t && t.v >= WORTH[spell]! && cast(spell, t.x, t.z)) return;
+  }
+
+  // People: Blast a crowd, Lightning a champion, Mire a column.
+  for (const spell of ['blast', 'lightning', 'swamp'] as SpellId[]) {
+    if (!ready(world, id, spell)) continue;
+    const def = spellDef(spell);
+    const r = spell === 'lightning' ? 2.5 : def.radius;
+    const t = bestCentre(world, id, leader, def.range, (x, z) => peopleValue(world, id, x, z, r), 'units');
+    if (t && t.v >= WORTH[spell]! && cast(spell, t.x, t.z)) return;
   }
 
   // Short of wood and trees: bloom the home grove.
@@ -357,4 +458,94 @@ function leaderCasts(world: World, id: TribeId, tribe: TribeState): void {
     const living = world.trees.filter((t) => t.alive && dist(t.x, t.z, tribe.home.x, tribe.home.z) < 14).length;
     if (living < 6) cast('bloom', tribe.home.x + 6, tribe.home.z + 6);
   }
+}
+
+/**
+ * Keep the leader out of pointless danger: hurt, with enemy soldiers close,
+ * she walks home. Returns true while she is retreating.
+ */
+function leaderSafety(world: World, id: TribeId, tribe: TribeState): boolean {
+  const leader = world.leaderOf(id);
+  if (!leader || leader.hidden || leader.castSpell) return false;
+  if (leader.hp / leader.maxHp >= 0.45) return false;
+  const threat = world.units.some(
+    (u) => !u.hidden && u.tribe !== 'wild' && world.hostile(id, u.tribe) && isFighter(u) && world.distTo(leader, u.x, u.z) < 8,
+  );
+  if (!threat) return false;
+  const home = tribe.home;
+  const headingHome = leader.goal && dist(leader.goal.x, leader.goal.z, home.x, home.z) < 3;
+  if (world.distTo(leader, home.x, home.z) > 3 && !headingHome) {
+    world.abandonTask(leader);
+    world.sendTo(leader, home.x, home.z);
+  }
+  return true;
+}
+
+/**
+ * The answer to water: when the rival lives across a strait (or up a cliff),
+ * walk the leader to the narrowest gap and raise a Causeway (or Level the
+ * cliff), one cast at a time, until the land joins. Learns the spell at a
+ * stone first if it must. Returns true while the leader is busy with it.
+ */
+function bridgeTo(world: World, id: TribeId, tribe: TribeState, target: { x: number; z: number }): boolean {
+  const ai = tribe.ai!;
+  const leader = world.leaderOf(id);
+  if (!leader || leader.hidden) return false;
+  // A bridge is rising: wait for the land, then plan the next leg from the new shore.
+  if (ai.crossing?.wait !== undefined) {
+    if (world.elapsed < ai.crossing.wait) return true;
+    ai.crossing = null;
+  }
+  if (!ai.crossing || world.elapsed - ai.crossing.at > 10) {
+    const c = findCrossing(world.map, tribe.home, target);
+    ai.crossing = c ? { from: c.from, to: c.to, kind: c.kind, width: c.width, at: world.elapsed } : null;
+  }
+  const c = ai.crossing;
+  if (!c) return false;
+  const spell: SpellId = c.kind === 'water' ? 'landbridge' : 'flatten';
+  world.setSpellCharging(id, spell, true);
+  if (!ready(world, id, spell)) {
+    // Not known and nothing gifted: a stone that holds it, on our side of the water?
+    if (!tribe.known.has(spell)) return seekStone(world, leader, spell);
+    return false; // charging — the leader carries on meanwhile
+  }
+  if (leader.castSpell || leader.state === 'working' || leader.task === 'worship') return true;
+  if (world.distTo(leader, c.from.x, c.from.z) > 2.5) {
+    if (!(leader.goal && dist(leader.goal.x, leader.goal.z, c.from.x, c.from.z) < 2)) {
+      world.abandonTask(leader);
+      if (!world.sendTo(leader, c.from.x, c.from.z)) ai.crossing = null;
+    }
+    return true;
+  }
+  const def = spellDef(spell);
+  const dx = wrapDelta(c.to.x - leader.x, WORLD_SIZE);
+  const dz = wrapDelta(c.to.z - leader.z, WORLD_SIZE);
+  const len = Math.hypot(dx, dz) || 1;
+  const reach = spell === 'landbridge' ? Math.min(len + 2, def.range - 1) : Math.min(len / 2, def.range - 1);
+  if (world.orderCast(id, spell, leader.x + (dx / len) * reach, leader.z + (dz / len) * reach) === null) {
+    // Re-plan once the land has risen: the next gap starts at the new shore.
+    ai.crossing = { ...c, wait: world.elapsed + def.castSeconds + def.duration + 1 };
+  }
+  return true;
+}
+
+/** Walk the leader to a stone holding `spell`, on ground she can reach. */
+function seekStone(world: World, leader: Unit, spell: SpellId): boolean {
+  if (leader.task === 'worship') return true;
+  const here = regionNear(world.map, leader.x, leader.z);
+  let best = -1;
+  let bestD = Infinity;
+  for (let i = 0; i < world.monuments.length; i++) {
+    const m = world.monuments[i];
+    if (m.spell !== spell || !world.monumentAvailable(m) || regionNear(world.map, m.x, m.z) !== here) continue;
+    const d = world.distTo(leader, m.x, m.z);
+    if (d < bestD) {
+      bestD = d;
+      best = i;
+    }
+  }
+  if (best < 0) return false;
+  if (leader.castSpell || leader.state === 'working') return true;
+  world.orderWorship([leader.id], best);
+  return true;
 }
