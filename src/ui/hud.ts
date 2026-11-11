@@ -10,7 +10,6 @@
  * and a victory/defeat overlay ends the show.
  */
 
-import { MANA_CAP } from '../config';
 import { LoopStats } from '../core/loop';
 import { SculptBrush } from './brush';
 import { OrderControl } from './orders';
@@ -80,17 +79,18 @@ export class Hud {
 
     setInterval(() => {
       const player = world.tribes.player;
+      if (!player) return;
       const huts = world.buildings.filter((b) => b.tribe === 'player' && b.progress >= 1).length;
       const sites = world.buildings.filter((b) => b.tribe === 'player').length - huts;
       const army = world.countUnits(
         (u) => u.tribe === 'player' && (u.kind === 'warrior' || u.kind === 'firewarrior'),
       );
       ledger.textContent =
-        `mana ${Math.floor(player.mana)}   wood ${player.wood}   ` +
+        `mana +${player.manaRate.toFixed(1)}/s   wood ${player.wood}   ` +
         `pop ${world.tribePopulation('player')} (${world.housedPopulation('player')} housed)   ` +
         `army ${army}   bldgs ${huts}${sites ? ` +${sites}` : ''}`;
 
-      const redAi = world.tribes.red.ai;
+      const redAi = world.tribes.red?.ai;
       stats.textContent = [
         `fps    ${loopStats.fps.toFixed(0)}`,
         `tick   ${loopStats.tickCount}`,
@@ -117,6 +117,8 @@ export class Hud {
 
   /** Fast loop: called every render frame for the smooth mana fill. */
   update(world: World): void {
-    this.manaFill.style.width = `${(world.tribes.player.mana / MANA_CAP) * 100}%`;
+    // Charge toward the next Blast — a stand-in until the UI stream's spell book lands.
+    const blast = world.spellState('player', 'blast');
+    this.manaFill.style.width = `${(blast.charges >= blast.max ? 1 : blast.progress) * 100}%`;
   }
 }

@@ -28,7 +28,8 @@
  */
 
 import * as THREE from 'three';
-import { CIVS, COLOR_SELECTION, COLOR_TEAM_PLAYER, CURVATURE, TILE, TRIBE_COLORS, UNIT_SPEED, WORLD_SIZE } from '../config';
+import { CIVS, COLOR_SELECTION, COLOR_TEAM_PLAYER, CURVATURE, TILE, TRIBE_COLORS, WORLD_SIZE } from '../config';
+import { UNITS } from '../sim/catalog';
 import { wrapDelta } from '../core/util';
 import {
   buildBrave,
@@ -57,7 +58,7 @@ function buildFor(unit: Unit, world: World): Figure {
   switch (unit.kind) {
     case 'shaman': {
       // The leader wears their civilization (regalia, staff, headgear).
-      const civ = CIVS[world.tribes[unit.tribe as TribeId].civ];
+      const civ = CIVS[world.tribes[unit.tribe as TribeId]?.civ ?? 'forest'];
       return buildLeader(civ, team);
     }
     case 'wildman':
@@ -68,6 +69,8 @@ function buildFor(unit: Unit, world: World): Figure {
       return buildFirewarrior(team);
     case 'brave':
       return buildBrave(team);
+    default:
+      return buildWarrior(team); // kinds without a model yet borrow the warrior
   }
 }
 
@@ -152,7 +155,7 @@ export class UnitRenderer {
         u.state === 'working' ? (u.castSpell ? 'cast' : 'work')
         : u.state === 'moving' ? (u.carrying ? 'carry' : 'walk')
         : 'idle';
-      e.anim.update(dt, clip, UNIT_SPEED[u.kind], e.fig);
+      e.anim.update(dt, clip, UNITS[u.kind].speed, e.fig);
       if (e.fig.carryProp) e.fig.carryProp.visible = u.carrying;
 
       // Selection ring hugs the ground under the figure.

@@ -147,7 +147,7 @@ export class Editor {
     switch (toolState.tool) {
       case 'tree':
         if (walkable(w.map, x, z)) {
-          w.trees.push({ x: w.map.wrap(x), z: w.map.wrap(z), alive: true, regrow: 0 });
+          w.trees.push({ x: w.map.wrap(x), z: w.map.wrap(z), alive: true, regrow: 0, burning: 0 });
           this.say('tree planted (rebuilds on save/test)');
         }
         return;
@@ -157,7 +157,7 @@ export class Editor {
       case 'monument': {
         if (!walkable(w.map, x, z)) return;
         const spell = PLACEABLE_SPELLS[this.monumentSpell];
-        w.monuments.push({ x: w.map.wrap(x), z: w.map.wrap(z), spell, claimedBy: null });
+        w.monuments.push({ x: w.map.wrap(x), z: w.map.wrap(z), spell, mode: 'teach', claimedBy: null, claimer: null, sleep: 0 });
         this.say(`monument of ${spell} placed`);
         return;
       }
@@ -165,7 +165,8 @@ export class Editor {
       case 'homeRed': {
         if (!walkable(w.map, x, z)) return;
         const tribe = toolState.tool === 'homePlayer' ? 'player' : 'red';
-        w.tribes[tribe].home = { x: w.map.wrap(x), z: w.map.wrap(z) };
+        const t = w.tribes[tribe];
+        if (t) t.home = { x: w.map.wrap(x), z: w.map.wrap(z) };
         this.say(`${tribe} home moved`);
         return;
       }
@@ -260,6 +261,7 @@ export class Editor {
 
   /** Used by the library's Edit button to choose the enemy civ shown while editing. */
   setRedCiv(civ: CivId | undefined): void {
-    if (civ && CIVS[civ]) this.world.tribes.red.civ = civ;
+    const red = this.world.tribes.red;
+    if (civ && CIVS[civ] && red) red.civ = civ;
   }
 }

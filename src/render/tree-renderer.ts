@@ -49,6 +49,7 @@ export class TreeRenderer {
 
   /** Re-anchor every tree relative to the camera. Called once per frame. */
   sync(world: World, camTarget: THREE.Vector3): void {
+    if (this.groups.length !== world.trees.length) this.rebuild(world); // Bloom sprouts new trees
     for (let i = 0; i < this.groups.length; i++) {
       const t = this.groups[i];
       // groups[] parallels world.trees[] — chopped trees simply vanish
