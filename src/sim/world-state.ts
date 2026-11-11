@@ -48,6 +48,7 @@ import { LevelData, packTerrain, unpackTerrain } from '../level/level-format';
 import { Heightmap } from '../world/heightmap';
 import { tickAi } from './ai';
 import {
+  AiPersonality,
   BuildingKind,
   BUILDINGS,
   CHANT,
@@ -72,6 +73,7 @@ import { initObjectives, ObjectiveMemory, tickObjectives } from './objectives';
 import { findNearestWalkable, findPath, obstaclesOf, tileIndex, walkable } from './pathfinding';
 import { Rng } from './rng';
 import { ALL_BUILDINGS, skirmishRules, STARTER_SPELLS } from './rules';
+import { EventMemory, initEventMemory, tickScenarioEvents } from './scenario-events';
 import { hasCast, manaIncome, newSpellBook, pourMana, slotState, SpellBook, spendCast } from './spellbook';
 import { Aura, castSpell, SpellJob, tickJobs } from './spells';
 
@@ -117,6 +119,10 @@ export interface Monument {
   claimer: TribeId | null;
   /** Gift stones: seconds until they wake. */
   sleep: number;
+  /** Nobody may commune before this many seconds of scenario time. */
+  opensAt?: number;
+  /** The first tribe ever to commune here (for `monumentTaken`). */
+  firstClaimer?: TribeId;
 }
 
 export interface GameEvent {
@@ -225,6 +231,8 @@ export interface AiState {
   target: TribeId | null;
   /** The construction site it is waiting on, and when it last made progress. */
   site?: { id: number; progress: number; since: number };
+  /** False while a `passive` personality is holding back (see AiPersonality). */
+  awake: boolean;
 }
 
 /** Everything one tribe owns that isn't a unit or a building. */
@@ -255,6 +263,8 @@ export interface TribeState {
   everBuilt: Set<BuildingKind>;
   /** Present on AI-driven tribes only. See sim/ai.ts. */
   ai: AiState | null;
+  /** How its AI behaves (empty = the standard rival). */
+  personality: AiPersonality;
 }
 
 const wrapf = (v: number) => ((v % WORLD_SIZE) + WORLD_SIZE) % WORLD_SIZE;
@@ -289,6 +299,10 @@ export class World implements SimQueries {
   gameOverReason: string | null = null;
   /** Seconds of sim time since the scenario began. */
   elapsed = 0;
+  /** Lines the scenario said to the player (scripted events), oldest first. */
+  messages: Array<{ at: number; text: string }> = [];
+  /** Running memory for rules.events (scenario-events.ts). */
+  eventMemory: EventMemory[] = [];
   readonly rng = new Rng(1);
 
   private nextId = 1;
@@ -358,6 +372,12 @@ export class World implements SimQueries {
     return out;
   }
 
+  /** A scenario line for the player (the UI shows world.messages). */
+  say(text: string): void {
+    this.messages.push({ at: this.elapsed, text });
+    if (this.messages.length > 50) this.messages.shift();
+  }
+
   endGame(result: 'victory' | 'defeat', reason: string): void {
     if (this.gameOver) return;
     this.gameOver = result;
@@ -379,6 +399,8 @@ export class World implements SimQueries {
     this.gameOver = null;
     this.gameOverReason = null;
     this.elapsed = 0;
+    this.messages = [];
+    this.eventMemory = [];
     this.tribes = {};
     this.nextId = 1;
     this.unreachable.clear();
@@ -497,6 +519,11 @@ export class World implements SimQueries {
         : this.rng.pick(otherCivs.length ? otherCivs : civIds);
       const lo = t.loadout ?? {};
       const known = new Set<SpellId>(lo.spells ?? STARTER_SPELLS);
+      const spells = newSpellBook();
+      for (const [id, n] of Object.entries(lo.extraCharges ?? {}) as Array<[SpellId, number]>) spells[id].bonus += n;
+      for (const [id, k] of Object.entries(lo.chargeCost ?? {}) as Array<[SpellId, number]>) spells[id].cost = Math.max(0.05, k);
+      for (const [id, n] of Object.entries(lo.gifts ?? {}) as Array<[SpellId, number]>) spells[id].gifted += n;
+      const personality = { ...(t.personality ?? {}) };
       this.tribes[t.id] = {
         id: t.id,
         wood: lo.startWood ?? START_WOOD,
@@ -504,7 +531,7 @@ export class World implements SimQueries {
         civ,
         known,
         unlocked: known,
-        spells: newSpellBook(),
+        spells,
         income: 0,
         manaRate: 0,
         allowed: new Set(lo.buildings ?? ALL_BUILDINGS),
@@ -514,8 +541,14 @@ export class World implements SimQueries {
         leaderDeaths: 0,
         threatTimer: 0,
         everBuilt: new Set(),
-        ai: t.ai ? { state: 'grow', evalTimer: 2, target: null } : null,
+        ai: t.ai ? { state: 'grow', evalTimer: 2, target: null, awake: !personality.passive } : null,
+        personality,
       };
+    }
+
+    // Starting buildings first, so the people below spawn clear of their walls.
+    for (const t of rules.tribes) {
+      for (const kind of t.loadout?.startBuildings ?? []) this.placeStartBuilding(t.id, kind);
     }
 
     for (const t of rules.tribes) {
@@ -542,6 +575,38 @@ export class World implements SimQueries {
     const obj = initObjectives(rules);
     this.objectives = obj.states;
     this.objectiveMemory = obj.memory;
+    this.eventMemory = initEventMemory(rules.events);
+  }
+
+  /**
+   * Stand a complete building up near a tribe's home circle (scenario start,
+   * boons). Rings outward for a free site; if the ground is too rough
+   * anywhere, levels the nearest candidate and builds there anyway.
+   */
+  placeStartBuilding(tribe: TribeId, kind: BuildingKind): Building | null {
+    const t = this.tribes[tribe];
+    if (!t) return null;
+    const r0 = BUILDINGS[kind].size === 5 ? 7 : 5;
+    for (let r = r0; r <= r0 + 12; r += 2) {
+      const steps = Math.max(8, Math.round(r * 2));
+      for (let k = 0; k < steps; k++) {
+        const a = (k / steps) * Math.PI * 2 + r * 0.7;
+        const x = Math.round(t.home.x + Math.cos(a) * r);
+        const z = Math.round(t.home.z + Math.sin(a) * r);
+        if (this.siteFree(kind, x, z)) return this.spawnBuilding(tribe, kind, x, z);
+      }
+    }
+    const x = Math.round(t.home.x + r0);
+    const z = Math.round(t.home.z);
+    this.map.flatten(x, z, BUILDINGS[kind].size, 1);
+    for (let dz = -3; dz <= 3; dz++) {
+      for (let dx = -3; dx <= 3; dx++) {
+        const i = tileIndex(x + dx, z + dz);
+        if (this.map.heights[i] < 1) this.map.heights[i] = 1;
+      }
+    }
+    this.map.version++;
+    return this.spawnBuilding(tribe, kind, x, z);
   }
 
   /**
@@ -622,6 +687,7 @@ export class World implements SimQueries {
     this.tickBuildings(dt);
     this.tickTrees(dt);
     this.tickMonuments(dt);
+    tickScenarioEvents(this);
     tickJobs(this, dt);
     tickAi(this, dt);
 
@@ -1869,6 +1935,7 @@ export class World implements SimQueries {
   // -------------------------------------------------------------------------
 
   monumentAvailable(m: Monument): boolean {
+    if (m.opensAt !== undefined && this.elapsed < m.opensAt) return false;
     return m.mode === 'teach' ? m.claimedBy === null : m.sleep <= 0;
   }
 
@@ -1877,6 +1944,7 @@ export class World implements SimQueries {
     if (!t) return;
     m.claimer = tribe;
     m.claimedBy = tribe;
+    m.firstClaimer ??= tribe;
     if (m.mode === 'teach') {
       t.known.add(m.spell);
       this.events.push({ type: 'unlock', x: m.x, z: m.z });

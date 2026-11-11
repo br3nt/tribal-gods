@@ -19,13 +19,20 @@ export interface SpellSlot {
   charging: boolean;
   /** Free casts from gift monuments; spent before charges; usable even if unknown. */
   gifted: number;
+  /** Scenario/boon extras: charges above the catalog max, and a chargeMana multiplier. */
+  bonus: number;
+  cost: number;
 }
+
+/** This slot's max charges and mana per charge (catalog numbers + scenario extras). */
+export const slotMax = (id: SpellId, slot: SpellSlot): number => spellDef(id).maxCharges + slot.bonus;
+export const slotCost = (id: SpellId, slot: SpellSlot): number => spellDef(id).chargeMana * slot.cost;
 
 export type SpellBook = Record<SpellId, SpellSlot>;
 
 export function newSpellBook(): SpellBook {
   const book = {} as SpellBook;
-  for (const s of SPELLS) book[s.id] = { mana: 0, charges: 0, charging: true, gifted: 0 };
+  for (const s of SPELLS) book[s.id] = { mana: 0, charges: 0, charging: true, gifted: 0, bonus: 0, cost: 1 };
   return book;
 }
 
@@ -40,7 +47,7 @@ export function activeSlots(book: SpellBook, known: Set<SpellId>): SpellId[] {
   const out: SpellId[] = [];
   for (const s of SPELLS) {
     const slot = book[s.id];
-    if (known.has(s.id) && slot.charging && slot.charges < s.maxCharges) out.push(s.id);
+    if (known.has(s.id) && slot.charging && slot.charges < slotMax(s.id, slot)) out.push(s.id);
   }
   return out;
 }
@@ -55,34 +62,36 @@ export function pourMana(book: SpellBook, known: Set<SpellId>, income: number, d
   if (active.length === 0) return 0;
   const share = (income * dt) / active.length;
   for (const id of active) {
-    const def = spellDef(id);
     const slot = book[id];
+    const max = slotMax(id, slot);
+    const cost = slotCost(id, slot);
     slot.mana += share;
-    while (slot.mana >= def.chargeMana && slot.charges < def.maxCharges) {
-      slot.mana -= def.chargeMana;
+    while (slot.mana >= cost && slot.charges < max) {
+      slot.mana -= cost;
       slot.charges++;
     }
-    if (slot.charges >= def.maxCharges) slot.mana = 0;
+    if (slot.charges >= max) slot.mana = 0;
   }
   return income;
 }
 
 export function slotState(book: SpellBook, known: Set<SpellId>, id: SpellId, income: number): SpellState {
-  const def = spellDef(id);
   const slot = book[id];
+  const max = slotMax(id, slot);
+  const cost = slotCost(id, slot);
   const isKnown = known.has(id);
-  const full = slot.charges >= def.maxCharges;
+  const full = slot.charges >= max;
   const active = activeSlots(book, known);
   const soaking = isKnown && slot.charging && !full;
   const share = soaking && active.length > 0 ? income / active.length : 0;
   return {
     known: isKnown,
     charges: slot.charges,
-    max: def.maxCharges,
-    progress: full ? 0 : slot.mana / def.chargeMana,
+    max,
+    progress: full ? 0 : slot.mana / cost,
     charging: slot.charging,
     gifted: slot.gifted,
-    eta: share > 0 ? (def.chargeMana - slot.mana) / share : Infinity,
+    eta: share > 0 ? (cost - slot.mana) / share : Infinity,
   };
 }
 

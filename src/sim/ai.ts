@@ -14,6 +14,10 @@
  *             at the rival's home circle; the leader opens with the big spells.
  *   DEFEND  — took damage recently: recall the army, garrison towers.
  *
+ * A tribe's AiPersonality (catalog.ts, from the scenario) tunes these
+ * decisions: raid/assault thresholds, passive-until-provoked, war bands that
+ * never build, preferred units, a fixed enemy.
+ *
  * The AI never cheats: it places buildings through canPlaceBuilding, pays
  * the same wood, trains through the same queues, and its leader casts
  * through the same charge model and range rules as yours. Difficulty
@@ -59,6 +63,8 @@ const dist = (ax: number, az: number, bx: number, bz: number) =>
 const isFighter = (u: Unit) => UNITS[u.kind].dmg > 0 && UNITS[u.kind].sight > 0;
 
 function pickTarget(world: World, id: TribeId, tribe: TribeState): TribeId | null {
+  const pinned = tribe.personality.target;
+  if (pinned && world.tribes[pinned] && world.hostile(id, pinned) && world.tribeAlive(pinned)) return pinned;
   let best: TribeId | null = null;
   let bestD = Infinity;
   for (const other of world.activeTribes()) {
@@ -83,19 +89,29 @@ function think(world: World, id: TribeId, tribe: TribeState): void {
   }
 
   const army = world.units.filter((u) => u.tribe === id && !u.hidden && (isFighter(u) || u.kind === 'chanter'));
+  const p = tribe.personality;
+  const harassAt = p.harassAt ?? HARASS_ARMY;
+  const assaultAt = p.assaultAt ?? ASSAULT_ARMY;
+
+  // A passive god wakes when hurt, when its hour comes, or when a scenario event says so.
+  if (!ai.awake && (tribe.threatTimer > 0 || (p.wakeAt !== undefined && world.elapsed >= p.wakeAt))) ai.awake = true;
 
   // --- Choose a posture ---
   const prev = ai.state;
-  if (tribe.threatTimer > 0 && prev !== 'assault') ai.state = 'defend';
-  else if (enemyHome && army.length >= ASSAULT_ARMY) ai.state = 'assault';
-  else if (enemyHome && army.length >= HARASS_ARMY) ai.state = 'harass';
+  const defends = p.defends ?? true;
+  if (defends && tribe.threatTimer > 0 && prev !== 'assault') ai.state = 'defend';
+  else if (!ai.awake) ai.state = 'grow';
+  else if (enemyHome && army.length >= assaultAt) ai.state = 'assault';
+  else if (enemyHome && army.length >= harassAt) ai.state = 'harass';
   else ai.state = 'grow';
-  if (prev === 'assault' && army.length < HARASS_ARMY) ai.state = 'grow';
+  if (prev === 'assault' && army.length < Math.min(harassAt, assaultAt) && ai.state === 'assault') ai.state = 'grow';
 
-  // The town grows whatever the posture.
-  buildTown(world, id, tribe);
+  // The town grows whatever the posture (unless this is a war band).
+  if (p.builds ?? true) {
+    buildTown(world, id, tribe);
+    staffShrines(world, id);
+  }
   queueTraining(world, id, tribe, army.length);
-  staffShrines(world, id);
 
   const free = (u: Unit) => (u.task === 'none' || u.state === 'idle') && !u.castSpell;
   const jitter = (r: number) => world.random() * 2 * r - r;
@@ -125,7 +141,7 @@ function think(world: World, id: TribeId, tribe: TribeState): void {
     }
     case 'grow':
       garrisonTowers(world, id, tribe);
-      seekMonuments(world, id);
+      if (p.seeksStones ?? true) seekMonuments(world, id);
       break;
   }
 
@@ -177,9 +193,16 @@ function placeNearHome(world: World, id: TribeId, tribe: TribeState, kind: Build
 
 /** Keep the training queues ticking over without starving the economy. */
 function queueTraining(world: World, id: TribeId, tribe: TribeState, armySize: number): void {
-  if (armySize >= MAX_ARMY) return;
+  const p = tribe.personality;
+  if (armySize >= (p.maxArmy ?? MAX_ARMY)) return;
   const braves = world.countUnits((u) => u.tribe === id && u.kind === 'brave');
-  const halls = world.buildings.filter((b) => b.tribe === id && b.progress >= 1 && BUILDINGS[b.kind].trains);
+  let halls = world.buildings.filter((b) => b.tribe === id && b.progress >= 1 && BUILDINGS[b.kind].trains);
+  if (p.prefer) {
+    const order = p.prefer;
+    halls = halls
+      .filter((b) => order.includes(BUILDINGS[b.kind].trains!))
+      .sort((a, b) => order.indexOf(BUILDINGS[a.kind].trains!) - order.indexOf(BUILDINGS[b.kind].trains!));
+  }
   const queued = halls.reduce((s, b) => s + b.queue, 0);
   const spare = braves - (MIN_BRAVES + 2) - queued;
   if (spare <= 0) return;
