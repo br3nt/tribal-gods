@@ -61,6 +61,10 @@ describe('level format v2', () => {
     expect(code.startsWith('TG2.')).toBe(true);
     expect(await codeToLevel(code)).toEqual(lvl);
     await expect(codeToLevel('nonsense')).rejects.toThrow();
+    // A hand-edited code with broken rules is refused with a reason, not a crash later.
+    const bad = { ...lvl, rules: { tribes: [{ id: 'player', ai: false, loadout: { spells: ['fireball'] } }], objectives: [], briefing: { title: 't', body: '', tips: [] } } };
+    await expect(codeToLevel(await levelToCode(bad as never))).rejects.toThrow(/unknown spell fireball/);
+    await expect(codeToLevel(await levelToCode({ ...lvl, rules: {} } as never))).rejects.toThrow(/damaged/);
   });
 
   it('v1 official levels still load and play as skirmishes', async () => {

@@ -46,6 +46,13 @@ describe('loadout extras', () => {
     expect(pa.eta).toBeGreaterThan(pb.eta);
   });
 
+  it('startBuildings never overlap: a crowded home gets fewer, not stacked, buildings', () => {
+    const w = setupFlat(rulesFor([{ id: 'player', ai: false, loadout: { startBuildings: Array(40).fill('hut') } }, { id: 'red', ai: false }]));
+    const mine = w.buildings.filter((b) => b.tribe === 'player');
+    expect(mine.length).toBeGreaterThan(5);
+    for (const a of mine) for (const b of mine) if (a !== b) expect(Math.max(Math.abs(a.x - b.x), Math.abs(a.z - b.z))).toBeGreaterThanOrEqual(3);
+  });
+
   it('gifts start as free casts; startBuildings stand complete near home', () => {
     const w = setupFlat(
       rulesFor([
@@ -99,8 +106,21 @@ describe('scripted events', () => {
       }),
     );
     const before = w.units.filter((u) => u.tribe === 'red').length;
-    run(w, 10);
-    expect(w.units.filter((u) => u.tribe === 'red').length - before).toBe(3);
+    const red = () => w.units.filter((u) => u.tribe === 'red').length - before;
+    run(w, 2); // t=2: fired at 1
+    expect(red()).toBe(1);
+    run(w, 2); // t=4: fired at 1 and 3
+    expect(red()).toBe(2);
+    run(w, 6);
+    expect(red()).toBe(3);
+  });
+
+  it('messageSeq keeps counting past the 50 lines world.messages keeps', () => {
+    const w = setupFlat(rulesFor());
+    for (let i = 0; i < 60; i++) w.say(`line ${i}`);
+    expect(w.messages.length).toBe(50);
+    expect(w.messageSeq).toBe(60);
+    expect(w.messages.at(-1)!.text).toBe('line 59');
   });
 
   it('zone triggers fire when the tribe’s units enter; objective triggers after an objective', () => {

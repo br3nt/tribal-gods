@@ -170,7 +170,8 @@ export class LevelLibrary {
     entries = entries.sort((a, b) => {
       if (sort === 'rating') return getRating(b.id) - getRating(a.id);
       if (sort === 'name') {
-        return (a.level?.name ?? OFFICIAL_NAMES[a.id] ?? '').localeCompare(b.level?.name ?? OFFICIAL_NAMES[b.id] ?? '');
+        const nm = (e: CardEntry) => e.campaign?.title ?? e.level?.name ?? OFFICIAL_NAMES[e.id] ?? '';
+        return nm(a).localeCompare(nm(b));
       }
       return (b.official ? 1 : 0) - (a.official ? 1 : 0) || (a.campaign?.chapter ?? 0) - (b.campaign?.chapter ?? 0) || b.savedAt - a.savedAt; // newest, officials pinned first
     });

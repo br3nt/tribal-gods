@@ -104,7 +104,6 @@ function think(world: World, id: TribeId, tribe: TribeState): void {
   else if (enemyHome && army.length >= assaultAt) ai.state = 'assault';
   else if (enemyHome && army.length >= harassAt) ai.state = 'harass';
   else ai.state = 'grow';
-  if (prev === 'assault' && army.length < Math.min(harassAt, assaultAt) && ai.state === 'assault') ai.state = 'grow';
 
   // The town grows whatever the posture (unless this is a war band).
   if (p.builds ?? true) {

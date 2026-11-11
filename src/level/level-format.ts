@@ -24,6 +24,7 @@
  */
 
 import { CivId, WORLD_SIZE } from '../config';
+import { BUILDINGS, SPELLS, TRIBE_IDS, UNITS } from '../sim/catalog';
 import type { BuildingKind, MonumentDef, ScenarioRules, SpellId, Tribe, TribeId, UnitKind } from '../sim/catalog';
 
 type Pt = { x: number; z: number };
@@ -90,9 +91,47 @@ export interface LevelDataV1 {
 
 export type AnyLevelData = LevelData | LevelDataV1;
 
-/** Bring any known version up to v2. v2 documents pass through untouched. */
+/**
+ * Shape check for a level's scenario rules (they arrive in pasted codes):
+ * throws a readable error instead of letting a hand-edited code crash the
+ * loader halfway through. Checks structure and ids, not balance.
+ */
+export function validateRules(rules: unknown): void {
+  const r = rules as ScenarioRules;
+  const fail = (why: string) => {
+    throw new Error(`Level rules are damaged: ${why}`);
+  };
+  if (!r || typeof r !== 'object') fail('not an object');
+  if (!Array.isArray(r.tribes) || r.tribes.length === 0) fail('no tribes');
+  if (!r.tribes.some((t) => t?.id === 'player')) fail('no player tribe');
+  for (const t of r.tribes) {
+    if (!TRIBE_IDS.includes(t?.id)) fail(`unknown tribe ${String(t?.id)}`);
+    for (const s of t.loadout?.spells ?? []) if (!SPELLS.some((d) => d.id === s)) fail(`unknown spell ${s}`);
+    for (const b of t.loadout?.buildings ?? []) if (!BUILDINGS[b]) fail(`unknown building ${b}`);
+    for (const b of t.loadout?.startBuildings ?? []) if (!BUILDINGS[b]) fail(`unknown building ${b}`);
+    for (const u of Object.keys(t.loadout?.startUnits ?? {})) if (!UNITS[u as UnitKind]) fail(`unknown unit ${u}`);
+    for (const k of [...Object.keys(t.loadout?.extraCharges ?? {}), ...Object.keys(t.loadout?.chargeCost ?? {}), ...Object.keys(t.loadout?.gifts ?? {})]) {
+      if (!SPELLS.some((d) => d.id === k)) fail(`unknown spell ${k}`);
+    }
+  }
+  if (!Array.isArray(r.objectives)) fail('no objectives');
+  if (!r.briefing || typeof r.briefing.title !== 'string' || !Array.isArray(r.briefing.tips)) fail('no briefing');
+  for (const e of r.events ?? []) {
+    if (!e?.when || !Array.isArray(e.actions)) fail('a scripted event has no trigger or actions');
+    for (const a of e.actions) {
+      if ('spell' in a && !SPELLS.some((d) => d.id === a.spell)) fail(`unknown spell ${a.spell}`);
+      if (a.type === 'spawn') for (const u of Object.keys(a.units ?? {})) if (!UNITS[u as UnitKind]) fail(`unknown unit ${u}`);
+    }
+  }
+}
+
+/** Bring any known version up to v2. v2 documents pass through untouched (their rules are shape-checked). */
 export function migrateLevel(level: AnyLevelData): LevelData {
-  if (level.v === 2) return level;
+  if (level.v === 2) {
+    if (level.rules !== undefined) validateRules(level.rules);
+    for (const m of level.monuments ?? []) if (!SPELLS.some((d) => d.id === m.spell)) throw new Error(`Level has a stone of unknown spell ${m.spell}`);
+    return level;
+  }
   if (level.v !== 1) throw new Error('Level is from an unknown version');
   const out: LevelData = {
     v: 2,

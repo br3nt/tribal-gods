@@ -90,7 +90,8 @@ const CSS = `
 .tgc-boon.chosen { border-color: var(--tg-accent, var(--gold, #f1c96b)); box-shadow: 0 0 0 1px var(--tg-accent, var(--gold, #f1c96b)); }
 .tgc-boon b { display: block; font-size: 15px; margin-bottom: 2px; }
 .tgc-toast {
-  position: fixed; left: 50%; top: 64px; transform: translateX(-50%); z-index: 35; max-width: min(640px, calc(100vw - 32px));
+  white-space: pre-line;
+  position: fixed; left: 50%; top: var(--tg-toast-top, 9.5rem); transform: translateX(-50%); z-index: 35; max-width: min(640px, calc(100vw - 32px));
   padding: 10px 18px; border-radius: var(--tg-radius, var(--r2, 8px)); pointer-events: none; text-align: center;
   background: var(--tg-toast, rgba(12,16,22,0.88)); border: 1px solid var(--tg-accent, var(--gold, #f1c96b)); color: var(--tg-text, var(--text, #ece6d6));
   font: 15px/1.45 var(--tg-display-font, var(--font-display, Georgia, serif)); transition: opacity 0.6s;
@@ -264,6 +265,8 @@ export interface BriefingData {
   rules: ScenarioRules;
   level: LevelData;
   boons: BoonId[];
+  /** A boon won in an earlier chapter but never chosen (debrief skipped): offer it here. */
+  pendingBoon?: { chapterTitle: string; offer: BoonId[] };
 }
 
 /** What the player starts with, derived from the rules (for the briefing). */
@@ -288,7 +291,7 @@ export function describeLoadout(rules: ScenarioRules) {
 }
 
 export class BriefingScreen extends Overlay {
-  constructor(private readonly hooks: { onPlay(): void; onBack(): void }) {
+  constructor(private readonly hooks: { onPlay(): void; onBack(): void; onBoon?(id: BoonId): void }) {
     super();
   }
 
@@ -351,6 +354,17 @@ export class BriefingScreen extends Overlay {
       side.append(el('div', 'tgc-h', 'Others here'), el('div', undefined, rivals.map((t) => names[t.id] + (t.allies?.length ? ` (allied with ${t.allies.map((a) => names[a] ?? a).join(', ')})` : '')).join('; ')));
     }
     if (d.boons.length) side.append(el('div', 'tgc-h', 'Boons you carry'), chips(d.boons.map((id) => BOONS[id].name)));
+    if (d.pendingBoon && this.hooks.onBoon) {
+      side.append(el('div', 'tgc-h', `Unclaimed boon — ${d.pendingBoon.chapterTitle}`));
+      const grid = el('div', 'tgc-boons');
+      for (const id of d.pendingBoon.offer) {
+        const b = el('button', 'tgc-btn tgc-boon');
+        b.append(el('b', undefined, BOONS[id].name), el('span', 'tgc-sub', BOONS[id].blurb));
+        b.addEventListener('click', () => this.hooks.onBoon!(id));
+        grid.appendChild(b);
+      }
+      side.appendChild(grid);
+    }
     grid.append(story, side);
     this.inner.appendChild(grid);
 

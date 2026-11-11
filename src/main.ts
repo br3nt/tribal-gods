@@ -151,6 +151,7 @@ function newWorld(settings?: Parameters<World['reset']>[1]): void {
 // round-trips — play your level, then pop back with the terrain pristine.
 
 const menu = new Menu((settings) => {
+  campaign.leave();
   appState.mode = 'game';
   newWorld(settings);
 });
@@ -206,11 +207,19 @@ function showTitle(): void {
 let startToken = 0;
 
 /** Launch any level document — under its own rules, or `rules` (a campaign chapter with boons). */
-async function startLevel(level: LevelData, asTest = false, rules?: ScenarioRules): Promise<void> {
+async function startLevel(level: LevelData, asTest = false, rules?: ScenarioRules): Promise<boolean> {
   const token = ++startToken;
   if (!rules) campaign.leave();
-  await world.loadLevel(level, menu.settings, rules);
-  if (token !== startToken) return;
+  try {
+    await world.loadLevel(level, menu.settings, rules);
+  } catch (err) {
+    // A damaged imported level: say so and go back to the title, never a dead screen.
+    console.warn('level failed to load', err);
+    alert(`This level could not be loaded: ${(err as Error).message}`);
+    quitToMenu();
+    return false;
+  }
+  if (token !== startToken) return false;
   treeRenderer.rebuild(world);
   centerOnHome();
   ui?.reset();
@@ -218,6 +227,7 @@ async function startLevel(level: LevelData, asTest = false, rules?: ScenarioRule
   lastStart = { level };
   testingLevel = asTest ? level : null;
   backBtn.style.display = asTest ? 'block' : 'none';
+  return true;
 }
 
 /** Load a level into the editor as clay (sim frozen, placement tools out). */

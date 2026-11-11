@@ -111,6 +111,29 @@ describe('boons applied to a loadout', () => {
     expect(applyBoons(rules({}), ['secondHearth']).tribes[0].loadout!.startBuildings).toEqual(['hut']);
   });
 
+  it('every chapter, with every building/people boon stacked, lays out without overlaps', async () => {
+    const { CAMPAIGN } = await import('../src/level/campaign');
+    for (const c of CAMPAIGN) {
+      const level = await levelOf(c.id);
+      const r = applyBoons(level.rules!, ['secondHearth', 'secondHearth', 'kinfolk', 'kinfolk', 'spearGuard', 'stockpile']);
+      const w = new World();
+      await w.loadLevel(level, SETTINGS, r);
+      const bs = w.buildings;
+      for (const a of bs) {
+        for (const b of bs) {
+          if (a === b) continue;
+          const gap = Math.max(Math.abs(a.x - b.x), Math.abs(a.z - b.z));
+          expect(gap, `${c.id}: ${a.kind}@${a.x},${a.z} vs ${b.kind}@${b.x},${b.z}`).toBeGreaterThanOrEqual((a.size + b.size) / 2);
+        }
+      }
+      const allowed = r.tribes[0].loadout?.buildings;
+      if (!allowed || allowed.includes('hut')) {
+        const placed = level.buildings?.filter((b) => b.tribe === 'player' && b.kind === 'hut').length ?? 0;
+        expect(bs.filter((b) => b.tribe === 'player' && b.kind === 'hut').length, c.id).toBe(placed + 2);
+      }
+    }
+  });
+
   it('a carried boon shows up in the world', async () => {
     let p = recordResult(emptyProgress(), 'c02_speaking_stones', win(800));
     p = chooseBoon(p, 'c02_speaking_stones', 'deepWell');

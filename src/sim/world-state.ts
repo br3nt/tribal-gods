@@ -301,6 +301,8 @@ export class World implements SimQueries {
   elapsed = 0;
   /** Lines the scenario said to the player (scripted events), oldest first. */
   messages: Array<{ at: number; text: string }> = [];
+  /** Lines ever said this scenario (messages keeps only the last 50; readers diff against this). */
+  messageSeq = 0;
   /** Running memory for rules.events (scenario-events.ts). */
   eventMemory: EventMemory[] = [];
   readonly rng = new Rng(1);
@@ -375,6 +377,7 @@ export class World implements SimQueries {
   /** A scenario line for the player (the UI shows world.messages). */
   say(text: string): void {
     this.messages.push({ at: this.elapsed, text });
+    this.messageSeq++;
     if (this.messages.length > 50) this.messages.shift();
   }
 
@@ -400,6 +403,7 @@ export class World implements SimQueries {
     this.gameOverReason = null;
     this.elapsed = 0;
     this.messages = [];
+    this.messageSeq = 0;
     this.eventMemory = [];
     this.tribes = {};
     this.nextId = 1;
@@ -638,8 +642,10 @@ export class World implements SimQueries {
 
   /**
    * Stand a complete building up near a tribe's home circle (scenario start,
-   * boons). Rings outward for a free site; if the ground is too rough
-   * anywhere, levels the nearest candidate and builds there anyway.
+   * boons). Rings outward for a free site; failing that, levels the first
+   * candidate whose footprint (plus its lane) is clear of buildings, homes
+   * and water and builds there. Returns null — no building — rather than
+   * overlap anything.
    */
   placeStartBuilding(tribe: TribeId, kind: BuildingKind): Building | null {
     const t = this.tribes[tribe];
@@ -654,17 +660,30 @@ export class World implements SimQueries {
         if (this.siteFree(kind, x, z)) return this.spawnBuilding(tribe, kind, x, z);
       }
     }
-    const x = Math.round(t.home.x + r0);
-    const z = Math.round(t.home.z);
-    this.map.flatten(x, z, BUILDINGS[kind].size, 1);
-    for (let dz = -3; dz <= 3; dz++) {
-      for (let dx = -3; dx <= 3; dx++) {
-        const i = tileIndex(x + dx, z + dz);
-        if (this.map.heights[i] < 1) this.map.heights[i] = 1;
+    const half = (BUILDINGS[kind].size - 1) / 2;
+    const clear = (x: number, z: number) => {
+      for (let dz = -half - 1; dz <= half + 1; dz++) {
+        for (let dx = -half - 1; dx <= half + 1; dx++) {
+          if (this.obstacles.has(tileIndex(x + dx, z + dz)) || this.map.heightAt(x + dx, z + dz) < WALK_MIN_HEIGHT) return false;
+        }
+      }
+      return !this.activeTribes().some((id) => {
+        const h = this.tribes[id]!.home;
+        return Math.abs(wrapDelta(x - h.x, WORLD_SIZE)) < half + 3 && Math.abs(wrapDelta(z - h.z, WORLD_SIZE)) < half + 3;
+      });
+    };
+    for (let r = r0; r <= r0 + 12; r += 2) {
+      for (let k = 0; k < 16; k++) {
+        const a = (k / 16) * Math.PI * 2;
+        const x = Math.round(t.home.x + Math.cos(a) * r);
+        const z = Math.round(t.home.z + Math.sin(a) * r);
+        if (!clear(x, z)) continue;
+        this.map.flatten(x, z, half + 1.5, 1);
+        this.map.version++;
+        return this.spawnBuilding(tribe, kind, x, z);
       }
     }
-    this.map.version++;
-    return this.spawnBuilding(tribe, kind, x, z);
+    return null;
   }
 
   /**
@@ -1008,14 +1027,17 @@ export class World implements SimQueries {
     // search every tick for every idle villager.
     const free = (b: Building) =>
       b.kind === 'hut' && b.progress >= 1 && b.residents < this.dwellingCapacity(b) && !this.isUnreachable(u, `h${b.id}`);
-    const hut = u.home >= 0
+    const ownHome = u.home >= 0;
+    const hut = ownHome
       ? this.buildings.find((b) => b.id === u.home && free(b))
       : this.buildings.find((b) => b.tribe === u.tribe && free(b));
     if (!hut) return false;
     u.task = 'goHome';
     u.targetBuilding = hut.id;
     const door = this.doorOf(hut);
-    if (this.autoSendTo(u, door.x, door.z, `h${hut.id}`)) return true;
+    // Your own home gets the full search budget; any free hut, the cheap one.
+    if (ownHome ? this.sendTo(u, door.x, door.z) : this.autoSendTo(u, door.x, door.z, `h${hut.id}`)) return true;
+    if (ownHome) this.unreachable.set(`${u.id}:h${hut.id}`, this.elapsed + 20 + this.random() * 10);
     u.task = 'none';
     u.targetBuilding = -1;
     return false;

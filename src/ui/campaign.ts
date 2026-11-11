@@ -28,8 +28,8 @@ import { BriefingScreen, CampaignMapScreen, CampaignToast, DebriefScreen, MapNod
 
 export interface CampaignHooks {
   world: World;
-  /** Load this level under these rules and switch to play. */
-  startScenario(level: LevelData, rules: ScenarioRules): Promise<void>;
+  /** Load this level under these rules and switch to play. Resolves false if the load was superseded. */
+  startScenario(level: LevelData, rules: ScenarioRules): Promise<boolean>;
   /** Freeze the sim (debrief / map open over a finished game). */
   pause(): void;
   /** Back to the main menu. */
@@ -72,6 +72,11 @@ export class CampaignController {
       onBack: () => {
         this.briefing.hide();
         this.showMap();
+      },
+      onBoon: (boon) => {
+        const pending = this.pendingBoonChapter();
+        if (pending) this.store.save(chooseBoon(this.store.load(), pending, boon));
+        if (this.briefingFor) void this.brief(this.briefingFor); // re-brief with the boon applied
       },
     });
     this.debrief = new DebriefScreen({
@@ -130,7 +135,7 @@ export class CampaignController {
         bestTime: rec?.bestTime ?? null,
         stars: rec?.stars.length ?? 0,
         starsTotal: null,
-        boon: p.boons[s.id] ? BOONS[p.boons[s.id]].name : undefined,
+        boon: p.boons[s.id] ? BOONS[p.boons[s.id]].name : boonOffer(p, s.id).length ? 'unclaimed — choose at the next briefing' : undefined,
       };
     });
     this.map.show(nodes);
@@ -152,7 +157,21 @@ export class CampaignController {
     const level = await this.level(id);
     const p = this.store.load();
     this.briefingFor = id;
-    this.briefing.show({ chapter: s.chapter, level, rules: rulesForPlay(p, id, level.rules!), boons: boonsFor(p, id) });
+    const pending = this.pendingBoonChapter(id);
+    this.briefing.show({
+      chapter: s.chapter, level, rules: rulesForPlay(p, id, level.rules!), boons: boonsFor(p, id),
+      ...(pending ? { pendingBoon: { chapterTitle: campaignScenario(pending)!.title, offer: boonOffer(p, pending) } } : {}),
+    });
+  }
+
+  /** The earliest chapter before `id` (default: any) whose won boon was never chosen. */
+  private pendingBoonChapter(id?: string): string | null {
+    const p = this.store.load();
+    const limit = id ? CAMPAIGN.findIndex((s) => s.id === id) : CAMPAIGN.length;
+    for (const s of CAMPAIGN.slice(0, Math.max(0, limit))) {
+      if (boonOffer(p, s.id).length && !p.boons[s.id]) return s.id;
+    }
+    return null;
   }
 
   /** Start a scenario now (no briefing). Locked scenarios are refused unless `force`. */
@@ -161,7 +180,9 @@ export class CampaignController {
     this.hideAll();
     const level = await this.level(id);
     const rules = rulesForPlay(this.store.load(), id, level.rules!);
-    await this.hooks.startScenario(level, rules);
+    this.active = null;
+    // The player may have quit (or started something else) while it loaded.
+    if (!(await this.hooks.startScenario(level, rules))) return false;
     this.active = id;
     this.lastPlayed = id;
     this.handled = false;
@@ -174,9 +195,11 @@ export class CampaignController {
   update(): void {
     if (!this.active) return;
     const w = this.hooks.world;
-    if (w.messages.length > this.seenMessages) {
-      this.toast.say(w.messages[w.messages.length - 1].text);
-      this.seenMessages = w.messages.length;
+    if (w.messageSeq > this.seenMessages) {
+      // Every unseen line (two events in one tick both get said), newest last.
+      const fresh = w.messages.slice(-Math.min(w.messages.length, w.messageSeq - this.seenMessages));
+      this.toast.say(fresh.map((m) => m.text).join('\n'));
+      this.seenMessages = w.messageSeq;
     }
     // The result counts the moment the game ends — whichever button is pressed next.
     if (w.gameOver && !this.recorded) this.record();
