@@ -41,7 +41,7 @@ import { CIVS, TILE, WORLD_SIZE } from '../config';
 import { curvatureDrop } from '../world/curvature';
 import { wrapDelta } from '../core/util';
 import { buildUnitModel, FigureModel } from '../assets/models/registry';
-import { decalMaterial, tickModelMaterials } from '../assets/models/materials';
+import { decalMaterial, disposeModelMaterial, fadeCopy, tickModelMaterials } from '../assets/models/materials';
 import { garrisonSpot } from '../assets/models/buildings/index';
 import { spellDef, TRIBE_COLORS, Tribe, UNITS, UnitKind } from '../sim/catalog';
 import { AnimInput, ClipName, FigureAnimator, runThreshold } from './figure-animator';
@@ -268,19 +268,22 @@ export class UnitRenderer {
       }
     }
 
-    // Units that vanished: deaths become ghosts; resets just disappear.
+    // Units that vanished: deaths become ghosts; resets just disappear. A
+    // world reset/level load removes most units in one frame — no ghosts then.
+    let vanished = 0;
+    for (const id of this.entries.keys()) if (!live.has(id)) vanished++;
+    const reset = vanished > 6 && vanished > live.size * 0.5;
     for (const [id, e] of this.entries) {
       if (live.has(id)) continue;
       this.entries.delete(id);
       this.scene.remove(e.ring);
-      if (e.fig.root.visible && world.units.length > 0) {
+      if (e.fig.root.visible && !reset) {
         const mode: Ghost['mode'] = e.kind === 'shaman' ? 'ascend' : e.inWater ? 'drown' : 'die';
         let fade: THREE.Material[] | null = null;
         if (mode === 'ascend') {
           // a private transparent copy of the materials, so the fade is ours alone
           fade = e.fig.meshes.map((m) => {
-            const mm = (m.material as THREE.Material).clone();
-            mm.transparent = true;
+            const mm = fadeCopy(m.material as THREE.Material);
             m.material = mm;
             return mm;
           });
@@ -371,7 +374,7 @@ export class UnitRenderer {
       g.fig.root.position.set(camTarget.x + relX, y, camTarget.z + relZ);
       g.fig.root.rotation.y = g.yaw;
       if (done) {
-        for (const m of g.fade ?? []) m.dispose();
+        for (const m of g.fade ?? []) disposeModelMaterial(m);
         this.disposeFig(g.fig);
         this.ghosts.splice(i, 1);
       }

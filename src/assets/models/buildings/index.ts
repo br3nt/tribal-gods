@@ -20,10 +20,10 @@
  */
 
 import * as THREE from 'three';
-import { Civ } from '../../../config';
+import { Civ, TILE } from '../../../config';
 import { BuildingKind, BUILDINGS, Tribe, TRIBE_COLORS } from '../../../sim/catalog';
 import { merge } from '../geometry';
-import { glowMaterial, sharedMaterials } from '../materials';
+import { disposeModelMaterial, glowMaterial, sharedMaterials } from '../materials';
 import { rng } from '../rng';
 import {
   blob, cone, cyl, displace, Kit, lathe, paint, place, rbox, rubble, scaffold, shine, stakes, STONE, STONE_DARK, tint, torus, v3, WOOD_DARK,
@@ -185,7 +185,7 @@ export function buildBuilding(kind: BuildingKind, tribe: Tribe, civ: Civ, tier: 
   const scaf = mk(view(c.scaffold.geo), mats.matte);
   const rub = mk(c.rubble, mats.matte);
   rub.visible = false;
-  const half = (BUILDINGS[kind]?.size ?? 3);
+  const half = ((BUILDINGS[kind]?.size ?? 3) * TILE) / 2;
 
   let last = -1;
   const model: BuildingModel = {
@@ -218,9 +218,15 @@ export function buildBuilding(kind: BuildingKind, tribe: Tribe, civ: Civ, tier: 
       this.emit.hurt = done ? (hp < 0.3 ? 2 : hp < 0.6 ? 1 : 0) : 0;
     },
     dispose() {
-      body.geometry.dispose();
-      gloss?.geometry.dispose();
-      scaf.geometry.dispose();
+      // These are VIEWS sharing the cached attribute buffers: detach the
+      // attributes first so dispose() frees only this view's VAO, never the
+      // GPU buffers every other building of the same key still draws from.
+      for (const g of [body.geometry, gloss?.geometry, scaf.geometry]) {
+        if (!g) continue;
+        for (const n of Object.keys(g.attributes)) g.deleteAttribute(n);
+        g.setIndex(null);
+        g.dispose();
+      }
     },
   };
   model.update({ progress: 0, hpFrac: 1, burning: false, dt: 0 });
@@ -232,7 +238,7 @@ export function buildBuilding(kind: BuildingKind, tribe: Tribe, civ: Civ, tier: 
 // ---------------------------------------------------------------------------
 
 /** The tribe's home circle: a carved totem pole in team colours, a ring of stones, a fire pit. */
-export function buildTotem(tribe: Tribe, civ: Civ): { root: THREE.Group; flames: THREE.Vector3[] } {
+export function buildTotem(tribe: Tribe, civ: Civ): { root: THREE.Group; flames: THREE.Vector3[]; dispose(): void } {
   const team = TRIBE_COLORS[tribe] ?? TRIBE_COLORS.wild;
   const parts: THREE.BufferGeometry[] = [];
   const gl: THREE.BufferGeometry[] = [];
@@ -302,7 +308,13 @@ export function buildTotem(tribe: Tribe, civ: Civ): { root: THREE.Group; flames:
     m.castShadow = m.receiveShadow = true;
     root.add(m);
   }
-  return { root, flames: [v3(1.7, 0.25, 0.5)] };
+  return {
+    root,
+    flames: [v3(1.7, 0.25, 0.5)],
+    dispose() {
+      root.traverse((o) => (o as THREE.Mesh).geometry?.dispose());
+    },
+  };
 }
 
 /**
@@ -310,7 +322,7 @@ export function buildTotem(tribe: Tribe, civ: Civ): { root: THREE.Group; flames:
  * spiral that burns with light while it holds a spell. Ringed by lesser
  * stones. Claimed (or sleeping) stones go dark.
  */
-export function buildMonument(): { root: THREE.Group; setClaimed(c: boolean): void } {
+export function buildMonument(): { root: THREE.Group; setClaimed(c: boolean): void; dispose(): void } {
   const parts: THREE.BufferGeometry[] = [];
   const glowParts: THREE.BufferGeometry[] = [];
   const stone = blob(1.25, 3.0, 0.85, 14, 14, 0.1, 17, 1.4);
@@ -389,6 +401,10 @@ export function buildMonument(): { root: THREE.Group; setClaimed(c: boolean): vo
       gm.visible = !c;
       halo.visible = !c;
       dark.visible = c;
+    },
+    dispose() {
+      root.traverse((o) => (o as THREE.Mesh).geometry?.dispose());
+      disposeModelMaterial(halo.material as THREE.Material);
     },
   };
 }

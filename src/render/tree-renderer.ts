@@ -208,10 +208,11 @@ export class TreeRenderer {
       this.p.y -= sink;
       this.m.compose(this.p, this.q, this.s.setScalar(scale));
       const im = this.meshes[st.species];
+      if (counts[st.species] >= this.maxTrees) continue;
       const n = counts[st.species]++;
       im.setMatrixAt(n, this.m);
       const burning = (t.burning ?? 0) > 0;
-      im.setColorAt(n, burning ? new THREE.Color(0.35, 0.3, 0.28) : st.tint);
+      im.setColorAt(n, burning ? CHARRED : st.tint);
       if (burning) {
         let a = this.fireAnchors.get(i);
         if (!a) {
@@ -279,3 +280,4 @@ export class TreeRenderer {
 }
 
 const ZERO = new THREE.Vector3();
+const CHARRED = new THREE.Color(0.35, 0.3, 0.28);

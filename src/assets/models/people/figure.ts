@@ -18,7 +18,7 @@
 import * as THREE from 'three';
 import { Civ } from '../../../config';
 import { Tribe, UnitKind } from '../../../sim/catalog';
-import { glowMaterial, sharedMaterials } from '../materials';
+import { disposeModelMaterial, glowMaterial, sharedMaterials } from '../materials';
 import { buildRecipe, FigureStyle, Recipe } from './recipes';
 import { BI, BoneName, makeBones } from './rig';
 
@@ -156,7 +156,7 @@ export function buildFigure(kind: UnitKind, tribe: Tribe, civ: Civ, seed: number
     },
     dispose() {
       skeleton.dispose();
-      if (aura) (aura.material as THREE.Material).dispose();
+      if (aura) disposeModelMaterial(aura.material as THREE.Material);
       if (focus) focus.material.dispose();
     },
   };

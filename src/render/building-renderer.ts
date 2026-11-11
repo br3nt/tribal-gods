@@ -51,7 +51,7 @@ function activeTribes(world: World): string[] {
 
 export class BuildingRenderer {
   private readonly entries = new Map<number, Entry>();
-  private readonly totems = new Map<string, { root: THREE.Group; flames: THREE.Vector3[]; civ: string }>();
+  private readonly totems = new Map<string, { root: THREE.Group; flames: THREE.Vector3[]; civ: string; dispose(): void }>();
   private monuments: Array<ReturnType<typeof buildMonument>> = [];
   private readonly fx: ModelFx;
   private last = performance.now();
@@ -72,6 +72,7 @@ export class BuildingRenderer {
       let t = this.totems.get(id);
       if (t && t.civ !== civ.id) {
         this.scene.remove(t.root);
+        t.dispose();
         t = undefined;
       }
       if (!t) {
@@ -89,6 +90,7 @@ export class BuildingRenderer {
     for (const [id, t] of this.totems) {
       if (!active.has(id)) {
         this.scene.remove(t.root);
+        t.dispose();
         this.totems.delete(id);
       }
     }
@@ -100,7 +102,11 @@ export class BuildingRenderer {
       this.scene.add(m.root);
       this.monuments.push(m);
     }
-    while (this.monuments.length > world.monuments.length) this.scene.remove(this.monuments.pop()!.root);
+    while (this.monuments.length > world.monuments.length) {
+      const m = this.monuments.pop()!;
+      this.scene.remove(m.root);
+      m.dispose();
+    }
     for (let i = 0; i < world.monuments.length; i++) {
       const sim = world.monuments[i] as unknown as { x: number; z: number; claimedBy: unknown; sleep?: number; mode?: string };
       const model = this.monuments[i];

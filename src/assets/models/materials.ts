@@ -36,8 +36,12 @@ export const modelUniforms = {
 
 /**
  * Hooks applied to every model material's shader at compile time, in
- * order, after our own glow/wind patches. The LOOK stream registers the
- * curvature bend here at integration. Signature mirrors onBeforeCompile.
+ * order, after our own glow/wind patches. Signature mirrors onBeforeCompile.
+ *
+ * CAUTION: figures, buildings and flora are currently curved on the CPU
+ * (renderers place them with world/curvature.ts curvatureDrop()). Registering
+ * the GPU curvature bend here as well would drop them twice — switch the
+ * renderers to unbent placement in the same change.
  */
 export const materialPatches: Array<(shader: THREE.WebGLProgramParametersWithUniforms, material: THREE.Material) => void> = [];
 
@@ -167,6 +171,27 @@ export function decalMaterial(color: number, opacity = 0.85): THREE.MeshBasicMat
   });
   allModelMaterials.push(m);
   return m;
+}
+
+/** Dispose a per-instance factory material and forget it (shared ones must never go through here). */
+export function disposeModelMaterial(m: THREE.Material): void {
+  const i = allModelMaterials.indexOf(m);
+  if (i >= 0) allModelMaterials.splice(i, 1);
+  m.dispose();
+}
+
+/**
+ * A private, fadeable copy of a factory material. Material.clone() drops
+ * the instance-level onBeforeCompile (glow, wind, registered patches), so
+ * copy the hooks across explicitly.
+ */
+export function fadeCopy(m: THREE.Material): THREE.Material {
+  const c = m.clone();
+  c.onBeforeCompile = m.onBeforeCompile;
+  c.customProgramCacheKey = m.customProgramCacheKey;
+  c.transparent = true;
+  allModelMaterials.push(c);
+  return c;
 }
 
 /** Re-run every model material's compile (after pushing a late patch). */

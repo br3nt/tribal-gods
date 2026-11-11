@@ -89,6 +89,7 @@ const _qb = new THREE.Quaternion();
 const _eu = new THREE.Euler();
 const _dir = new THREE.Vector3();
 const _Z = new THREE.Vector3(0, 0, 1);
+const AIM_CHAIN = [BI.clavR, BI.armR, BI.foreR];
 /**
  * Point the right-hand prop (its shaft runs along hand-local +Z) in a
  * chest-space direction given as a pitch: dir = Rx(total)·Z, i.e.
@@ -99,7 +100,7 @@ const _Z = new THREE.Vector3(0, 0, 1);
  */
 function aimR(p: Pose, total: number) {
   _qa.identity();
-  for (const b of [BI.clavR, BI.armR, BI.foreR]) {
+  for (const b of AIM_CHAIN) {
     _eu.set(p[b * 3], p[b * 3 + 1], p[b * 3 + 2]);
     _qa.multiply(_qb.setFromEuler(_eu));
   }
@@ -531,6 +532,8 @@ export class FigureAnimator {
   private readonly from = new Float32Array(POSE_LEN);
   private readonly cur = new Float32Array(POSE_LEN);
   private readonly out = new Float32Array(POSE_LEN);
+  /** Blended clip pose BEFORE layers — what a crossfade snapshots (layers are re-added on top). */
+  private readonly base = new Float32Array(POSE_LEN);
   // layers
   private hit = 0;
   private lookYaw = 0;
@@ -560,7 +563,7 @@ export class FigureAnimator {
   update(dt: number, inp: AnimInput): void {
     const fig = this.fig;
     if (inp.clip !== this.clip) {
-      this.from.set(this.out);
+      this.from.set(this.base);
       this.clip = inp.clip;
       this.clipTime = 0;
       this.blend = 0;
@@ -598,6 +601,7 @@ export class FigureAnimator {
     const w = smooth(this.blend);
     const out = this.out;
     for (let i = 0; i < POSE_LEN; i++) out[i] = this.from[i] + (this.cur[i] - this.from[i]) * w;
+    this.base.set(out);
 
     // --- layers ---
     // glance around when idle-ish
