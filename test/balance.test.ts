@@ -15,7 +15,8 @@ import { findCrossing } from '../src/sim/crossing';
 import { regionNear } from '../src/sim/regions';
 import { World } from '../src/sim/world-state';
 import { loadScenario } from './campaign-helpers';
-import { PlayerScript, ScriptOptions } from './player-script';
+import { HUTS, LAYOUT as L1 } from '../src/level/campaign/c01-landfall';
+import { landfallExtra, PlayerScript, ScriptOptions } from './player-script';
 
 const RUN = !!process.env.BALANCE;
 
@@ -63,7 +64,9 @@ async function chapter(id: string, opts: ScriptOptions, minutes: number) {
 
 describe.skipIf(!RUN)('balance: a scripted player', () => {
   it('ch1 Landfall', async () => {
-    const w = await chapter('c01_landfall', { huts: 8, attackAt: 0, plan: ['lumberyard'] }, 20);
+    const w = await chapter('c01_landfall', {
+      huts: HUTS, attackAt: 0, plan: [], extraFirst: true, extra: landfallExtra(L1), buildWhen: (q) => q.objectives[2].done,
+    }, 15);
     expect(w.gameOver).toBe('victory');
   }, 300_000);
 

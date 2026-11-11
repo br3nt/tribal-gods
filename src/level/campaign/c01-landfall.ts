@@ -1,78 +1,213 @@
 /**
- * Chapter 1 — Landfall. Settle and grow; nobody else is here.
+ * Chapter 1 — Landfall. The boats are ashore; the sea is not done with us.
  *
- * Teaches: dwellings breed villagers, villagers chop wood, wood raises
- * dwellings; Kindle turns wanderers into villagers. No rival, no stones —
- * one quiet island to learn the loop on.
+ * A power-fantasy opening that teaches the basics by having the leader
+ * reshape the world from the first seconds:
  *
- * The map: "the Hook", a crescent island curled around a sheltered bay
- * where the boats came in. The village lands on the inner shore of the
- * southern arm; the long northern horn is wooded and full of wanderers
- * (the reason to walk your leader somewhere). A rocky spine runs along
- * the outer curve; a lone islet sits in the bay.
+ *   1. KIN ON THE SANDBAR. The last boat grounded on a sandbar across a
+ *      channel. The leader holds a gifted Causeway: raise a road out of the
+ *      sea and they walk across (stranded units join when a route reaches
+ *      home). Meanwhile wanderers on the north meadow → Kindle (2 ready).
+ *   2. THE LEVELLING SONG. The rescued kin carry the Level chant (taught +
+ *      two gifted casts). The only ground near the landing is a rumpled,
+ *      boulder-strewn slope: Level it twice, then raise four Dwellings
+ *      (builders auto-work; sites level their own footprints).
+ *   3. SAILS. With the roofs up, the narrator points at the Black Strand:
+ *      Unmoored boats, landing in 40 seconds. The stone above the strand
+ *      wakes and lends three Lightnings; Blast throws raiders into the sea.
+ *   4. THE HOST. Their first boats beaten, the great fleet comes. It lands
+ *      on the Black Strand and MASSES there (spawn `hold`) for a minute and
+ *      a half before it marches. The headland stone wakes: kneel there (the
+ *      host's scouts may come for you) and it lends ONE Volcano. Wake the
+ *      mountain under the host — the strand becomes a mountain for good.
+ *
+ * Fail: ten villagers dead (a scripted `killed` → `defeat`). Optional:
+ * lose nobody, Kindle every wanderer, bury the host with the Volcano,
+ * win inside twelve minutes.
+ *
+ * The map: "the Hook" — a rounded island; the landing (home) on its west
+ * shore facing the sandbar across a narrow channel; the north meadow with
+ * wanderers; a rumpled slope east of the landing; the Black Strand, a broad
+ * beach in the south-east, watched by a stone on a headland.
  */
 
-import { dist, inside, Terrain, wanderers } from '../terrain-kit';
-import { CampaignScenario, makeLevel } from './common';
+import type { ScenarioEvent } from '../../sim/catalog';
+import { dist, inside, lineDist, Terrain, wanderers } from '../terrain-kit';
+import { CampaignScenario, makeLevel, RAIDER_TRIBE } from './common';
 
 export const LAYOUT = {
-  home: { x: 54, z: 86 },
-  /** Where the wanderers roam: the far horn. */
-  horn: { x: 74, z: 28 },
-  bay: { x: 80, z: 56 },
+  home: { x: 46, z: 66 },
+  /** The kin's sandbar, across the channel to the west. */
+  sandbar: { x: 22, z: 64 },
+  /** Where the leader stands to raise the Causeway (west shore). */
+  shore: { x: 39, z: 65 },
+  meadow: { x: 50, z: 47 },
+  meadow2: { x: 73, z: 47 },
+  /** The rumpled slope east of the landing — the building ground, once Levelled. */
+  slope: { x: 57, z: 70 },
+  slopeRadius: 15,
+  /** Stone above the strand: Lightning (gift). */
+  lightning: { x: 55, z: 82 },
+  /** The Black Strand: where raiders come ashore and the host masses. */
+  landing: { x: 81, z: 101 },
+  strand: { x: 74, z: 93 },
+  /** The headland stone: one Volcano (gift). */
+  headland: { x: 87, z: 85 },
 };
+
+const KIN = { brave: 4, warrior: 2 };
+/** Peak-to-peak of the rumple (a 3×3 site spans it; neighbours differ by half). */
+const RUMPLE = 3.6;
+const WAVE = 4;
+export const HUTS = 4;
+const HOST = { warrior: 12, firewarrior: 2 };
+export const HOST_HOLD = 95;
+/** Seconds from the first raid's end to the host coming ashore (the fleet is on the horizon meanwhile). */
+const FLEET_DELAY = 60;
+
+/** Objective indices (events refer to them). */
+const O = { kin: 0, kindle: 1, level: 2, huts: 3, raid: 4, stone: 5, host: 6 };
 
 export const scenario: CampaignScenario = {
   id: 'c01_landfall',
   chapter: 1,
   title: 'Landfall',
-  tagline: 'The boats are ashore. Make this hook of land a home.',
-  teaches: 'Dwellings, wood, growth',
+  tagline: 'Raise a road out of the sea. Then a mountain.',
+  teaches: 'Causeway, Kindle, Level, Dwellings, Blast & Lightning, a great spell',
   async build() {
     const t = new Terrain(10101);
-    const { home, horn, bay } = LAYOUT;
-    // Crescent: a big disc minus the bay, with wobbling coasts.
+    const { home, sandbar, meadow, meadow2, slope, lightning, strand, headland, landing } = LAYOUT;
     t.landFrom((x, z) => {
-      const outer = inside(dist(x, z, 64, 62) + t.wobble(x, z, 1) * 16, 42, 8);
-      const cut = inside(dist(x, z, bay.x, bay.z) + t.wobble(x, z, 2) * 9, 23, 7);
-      const islet = inside(dist(x, z, 88, 54), 4, 3);
-      return Math.max(outer * (1 - cut), islet);
-    }, { base: 2.4, roll: 1.8 });
-    // The spine along the outer curve, highest in the west.
-    t.ridge([{ x: 44, z: 92 }, { x: 30, z: 72 }, { x: 28, z: 52 }, { x: 40, z: 32 }, { x: 58, z: 24 }], 9, 7.5, 0.6);
-    t.peak(30, 58, 8, 3);
-    t.smooth(1);
-    t.pad(home.x, home.z, 8, 2.6, 5);
-    t.addGrove(home.x - 12, home.z - 6, 9, 0.7).addGrove(home.x + 10, home.z + 6, 7, 0.5).addGrove(horn.x, horn.z, 14, 0.5);
+      const main = inside(Math.hypot((x - 64) / 27, (z - 72) / 31) * 30 + t.wobble(x, z, 1) * 3, 30, 5);
+      const cape = inside(lineDist(x, z, [{ x: 80, z: 82 }, { x: 90, z: 85 }]) + t.wobble(x, z, 2) * 1.2, 5, 3);
+      const bar = inside(dist(x, z, sandbar.x, sandbar.z) + t.wobble(x, z, 3) * 1.2, 5, 2.5);
+      return Math.max(main, cape, bar);
+    }, { base: 2.6, roll: 0.9 });
+    // The rumple: an egg-crate of hummocks over the whole island but the
+    // landing itself. Neighbouring tiles differ by under half a step (easy
+    // walking) but every 3×3 patch spans more relief than a Dwelling allows
+    // — nowhere to build until Level smooths it. The phase wanders a little
+    // so it reads as ground, not a grid.
+    const tri = (v: number) => {
+      const f = ((v % 4) + 4) % 4;
+      return f < 2 ? f / 2 : (4 - f) / 2;
+    };
+    t.apply((x, z, h) => {
+      if (h < 0.3) return h;
+      const wx = x + t.wobble(x, z, 7) * 0.6;
+      const wz = z + t.wobble(x, z, 8) * 0.6;
+      const crate = (tri(wx) + tri(wz) - 0.5) * RUMPLE;
+      const keep = 1 - inside(dist(x, z, home.x, home.z), 3, 1.5); // the landing stays smooth
+      return h + (crate + Math.max(0, x - home.x) * 0.04) * keep;
+    });
+    t.pad(home.x, home.z, 3, 2.8, 1.5);
+    // The sandbar: low and flat — the tide is at its edges.
+    t.pad(sandbar.x, sandbar.z, 3, 0.9, 2);
+    // The Black Strand: a broad flat beach.
+    t.pad(strand.x, strand.z, 6, 1.0, 4).pad(landing.x, landing.z, 3, 0.7, 3);
+    // The headland: a high shelf above the strand, its stone on top.
+    t.mesa(headland.x, headland.z, 3.5, 4.2, 2.5);
+    t.pad(headland.x, headland.z, 2, 4.4, 2);
+    t.addGrove(home.x - 6, home.z - 9, 6, 0.8).addGrove(home.x - 3, home.z + 11, 6, 0.8)
+      .addGrove(slope.x + 8, slope.z - 12, 7, 0.6).addGrove(meadow2.x + 6, meadow2.z + 8, 6, 0.5);
+    const raid = (n: number) => ({ type: 'spawn' as const, tribe: 'violet' as const, units: { warrior: n }, x: landing.x, z: landing.z, march: home });
+    const events: ScenarioEvent[] = [
+      { when: { type: 'time', at: 2 }, message: 'Kin on the sandbar! The last boat ran aground across the channel. Raise a Causeway to them.', focus: sandbar, actions: [] },
+      { when: { type: 'time', at: 20 }, message: 'Wanderers on the north meadow. Kindle them into the tribe.', focus: meadow, actions: [] },
+      {
+        when: { type: 'objective', index: O.kin },
+        message: 'The kin are home — and they remember the Levelling chant. Smooth the rumpled slope so the village can rise.',
+        focus: slope,
+        actions: [{ type: 'teach', tribe: 'player', spell: 'flatten' }, { type: 'gift', tribe: 'player', spell: 'flatten', charges: 2 }],
+      },
+      { when: { type: 'objective', index: O.level }, message: 'Good ground. Place Dwellings on it — the villagers will raise them.', focus: slope, actions: [] },
+      // The first sails: a visible countdown, and the strand stone wakes.
+      {
+        when: { type: 'objective', index: O.huts },
+        message: 'Sails off the Black Strand! Unmoored raiders, ashore in forty-five heartbeats. The stone above the strand has woken: kneel there for Lightning.',
+        focus: strand,
+        actions: [{ type: 'openStone', index: 0 }],
+      },
+      { when: { type: 'objective', index: O.huts }, delay: 45, message: 'They are ashore. Blast them into the sea!', focus: landing, actions: [raid(WAVE)] },
+      // The host.
+      {
+        when: { type: 'objective', index: O.raid },
+        delay: 8,
+        message: 'The horizon is full of sails — the whole Unmoored fleet. The headland stone burns with the mountain’s fire: kneel there, and it will lend you one Volcano.',
+        focus: headland,
+        actions: [{ type: 'openStone', index: 1 }],
+      },
+      {
+        when: { type: 'objective', index: O.raid },
+        delay: FLEET_DELAY,
+        message: 'The host is landing on the Black Strand. They will mass there before they march — wake the mountain under them!',
+        focus: strand,
+        actions: [{ type: 'spawn', tribe: 'violet', units: HOST, x: landing.x, z: landing.z, march: strand, hold: HOST_HOLD }],
+      },
+      {
+        when: { type: 'objective', index: O.raid },
+        delay: FLEET_DELAY + HOST_HOLD - 15,
+        message: 'Drums on the strand. The host is about to march on the village.',
+        focus: strand,
+        actions: [],
+      },
+      { when: { type: 'spellCast', spell: 'volcano', x: strand.x, z: strand.z, radius: 9 }, delay: 3, message: 'The Black Strand is a mountain now. Let the Unmoored tell their children.', focus: strand, actions: [] },
+      // Fail: too many of us fall.
+      { when: { type: 'killed', tribe: 'player', count: 10, kind: 'brave' }, actions: [{ type: 'defeat', reason: 'Ten of our people lie on the sand. The Lantern-folk take to the boats again.' }] },
+    ];
     return makeLevel({
       name: 'Landfall',
-      desc: 'Campaign I. A crescent island and a sheltered bay. Grow.',
+      desc: 'Campaign I. Kin on a sandbar, a slope to Level, and the Unmoored fleet on the horizon.',
       terrain: t,
-      homes: { player: home },
-      wildmen: wanderers(t.map, 11, horn.x, horn.z, 14, 8).concat(wanderers(t.map, 12, 40, 66, 8, 3)),
+      homes: { player: home, violet: landing },
+      monuments: [
+        { x: lightning.x, z: lightning.z, spell: 'lightning', mode: 'gift', charges: 3, cooldown: 75, asleep: true },
+        { x: headland.x, z: headland.z, spell: 'volcano', mode: 'gift', charges: 1, cooldown: 9999, asleep: true, communeSeconds: 14 },
+      ],
+      units: [
+        { tribe: 'player', joins: 'player', kind: 'brave', x: sandbar.x, z: sandbar.z, count: KIN.brave },
+        { tribe: 'player', joins: 'player', kind: 'warrior', x: sandbar.x + 1, z: sandbar.z + 1, count: KIN.warrior },
+      ],
+      wildmen: wanderers(t.map, 11, meadow.x, meadow.z, 3, 5).concat(wanderers(t.map, 12, meadow2.x, meadow2.z, 3, 3)),
+      treeDensity: 0.015,
       rules: {
         tribes: [
           {
             id: 'player', name: 'the Lantern-folk', ai: false,
-            loadout: { spells: ['convert'], buildings: ['hut', 'lumberyard'], startUnits: { brave: 6 }, startWood: 10 },
+            loadout: {
+              spells: ['blast', 'convert'],
+              gifts: { landbridge: 1 },
+              buildings: ['hut', 'lumberyard'],
+              startUnits: { brave: 6 },
+              startWood: 15,
+            },
           },
+          { id: 'violet', name: 'the Unmoored', ...RAIDER_TRIBE },
         ],
         objectives: [
-          { objective: { type: 'buildCount', kind: 'hut', count: 8 }, text: 'Raise 8 Dwellings' },
-          { objective: { type: 'reachPopulation', count: 50 }, text: 'Grow the tribe to 50' },
-          { objective: { type: 'buildCount', kind: 'lumberyard', count: 1 }, text: 'Build a Lumberyard', optional: true },
-          { objective: { type: 'reachPopulation', count: 70 }, text: 'Grow the tribe to 70', optional: true },
+          { objective: { type: 'rescueStranded', count: KIN.brave + KIN.warrior }, text: 'Raise a Causeway to the kin on the sandbar' },
+          { objective: { type: 'convertWanderers', count: 4 }, text: 'Kindle the wanderers on the north meadow' },
+          { objective: { type: 'castSpell', spell: 'flatten', count: 2, x: slope.x, z: slope.z, radius: LAYOUT.slopeRadius }, text: 'Level the rumpled slope (twice)', after: O.kin },
+          { objective: { type: 'buildCount', kind: 'hut', count: HUTS }, text: `Raise ${HUTS} Dwellings`, after: O.level },
+          { objective: { type: 'killUnits', tribe: 'violet', count: WAVE - 1 }, text: 'Drive the raiders off the Black Strand', after: O.huts },
+          { objective: { type: 'claimMonument', index: 1 }, text: 'Kneel at the headland stone', after: O.raid },
+          { objective: { type: 'killUnits', tribe: 'violet', count: 10 }, text: 'Break the Unmoored host', after: O.raid },
+          { objective: { type: 'castSpell', spell: 'volcano', x: strand.x, z: strand.z, radius: 9 }, text: 'Bury the host under a mountain', optional: true, after: O.raid },
+          { objective: { type: 'loseAtMost', count: 0, kind: 'brave' }, text: 'Lose no villagers', optional: true },
+          { objective: { type: 'convertWanderers', count: 8 }, text: 'Kindle every wanderer on the Hook', optional: true },
+          { objective: { type: 'winWithin', seconds: 720 }, text: 'Win within 12 minutes', optional: true },
         ],
+        events,
         briefing: {
           title: 'Landfall',
           body:
-            'The Long Tide took the old shore, and the boats carried what was left of the Lantern-folk here: a hook of land around a quiet bay. ' +
-            'Nobody else has claimed it. The wood is good, the ground is soft, and the people are tired of the sea. ' +
-            'Give them roofs and children, and make a home before the tide finds this place too.',
+            'The Long Tide took the old shore, and the boats carried the Lantern-folk to this hook of land. ' +
+            'The last boat ran aground on a sandbar across the channel, and the water is rising round it. ' +
+            'You are their leader, and the land listens to you: raise a road out of the sea, make room for roofs — and be ready, because the Unmoored raid every shore that smokes.',
           tips: [
-            'Villagers fell trees and raise buildings on their own — you choose where the Dwellings go.',
-            'A full Dwelling breeds; a Dwelling full for long enough grows bigger. More roofs, more people.',
-            'Walk your leader to the wanderers on the northern horn and Kindle them into the tribe.',
+            'Select your leader, pick a spell (or press its key) and click where it should land. Causeway runs from her feet to the mark.',
+            'Kneel at a standing stone to take what it offers — but a kneeling leader is helpless, and any blow breaks the ritual.',
+            'If ten villagers die, the landing fails. Keep the raiders off the village.',
           ],
         },
       },

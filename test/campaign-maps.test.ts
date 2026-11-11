@@ -45,6 +45,8 @@ describe('campaign: every scenario', () => {
         const allowed = t.loadout?.buildings;
         if (allowed && allowed.length === 0) continue;
         if (t.loadout?.startUnits?.brave === 0) continue; // a war band / raiders: no village
+        // Landfall's ground must be Levelled first — that's its lesson (test/campaign-ch1.test.ts checks it).
+        if (s.id === 'c01_landfall' && t.id === 'player') continue;
         let sites = 0;
         for (let dz = -14; dz <= 14; dz += 2) {
           for (let dx = -14; dx <= 14; dx += 2) if (w.siteFree('hut', home.x + dx, home.z + dz)) sites++;
@@ -75,7 +77,7 @@ describe('campaign: every scenario', () => {
 });
 
 describe('campaign: intended routes', () => {
-  it('1 Landfall: the wanderers’ horn is a walk from home', async () => {
+  it('1 Landfall: the meadow wanderers are a walk from home', async () => {
     const w = await loadScenario('c01_landfall');
     const set = reachSet(w, homeOf(w, 'player').x, homeOf(w, 'player').z);
     const wild = w.units.filter((u) => u.kind === 'wildman');

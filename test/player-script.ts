@@ -29,6 +29,10 @@ export interface ScriptOptions {
   armyCap?: number;
   /** Extra per-round behaviour for a chapter. */
   extra?: (w: World, s: PlayerScript) => void;
+  /** Run `extra` before the stock leader logic (a chapter whose story beats come first). */
+  extraFirst?: boolean;
+  /** Hold off placing buildings until this says so (a chapter that wants ground Levelled first). */
+  buildWhen?: (w: World) => boolean;
 }
 
 export class PlayerScript {
@@ -88,6 +92,7 @@ export class PlayerScript {
   }
 
   private round(w: World): void {
+    if (this.opts.extraFirst) this.opts.extra?.(w, this);
     const t = w.tribes.player!;
     const mine = this.mine(w);
     const sites = mine.filter((b) => b.progress < 1).length;
@@ -95,7 +100,7 @@ export class PlayerScript {
     const wantHuts = this.opts.huts ?? 6;
 
     // Economy: a dwelling at a time (two once the village is going).
-    if (sites < (huts >= 3 ? 2 : 1)) {
+    if (sites < (huts >= 3 ? 2 : 1) && (this.opts.buildWhen?.(w) ?? true)) {
       const plan = this.opts.plan ?? ['lumberyard', 'warriorHut', 'tower'];
       const next = huts < Math.min(3, wantHuts)
         ? 'hut'
@@ -165,7 +170,7 @@ export class PlayerScript {
       if (best) this.cast(w, 'bloom', best.x, best.z);
     }
 
-    this.opts.extra?.(w, this);
+    if (!this.opts.extraFirst) this.opts.extra?.(w, this);
 
     // Attack like a patient player: gather at home until the army is big
     // enough, then march ALL of it (leader behind, casting); fall back and
@@ -215,4 +220,57 @@ export class PlayerScript {
     }
     return best;
   }
+}
+
+/**
+ * Chapter 1 (Landfall), played the way the narrator tells it: Causeway to
+ * the kin, Kindle the meadow, Level the slope twice (then the economy
+ * builds), Lightning + Blast on the first raiders, then kneel at the
+ * headland and drop the Volcano on the massed host.
+ */
+export function landfallExtra(layout: { sandbar: { x: number; z: number }; home: { x: number; z: number }; strand: { x: number; z: number } }) {
+  const levelAt = [
+    { x: layout.home.x + 8, z: layout.home.z + 3 },
+    { x: layout.home.x + 7, z: layout.home.z - 6 },
+  ];
+  return (w: World, s: PlayerScript): void => {
+    const leader = w.leaderOf('player');
+    if (!leader || leader.castSpell || leader.state === 'working') return;
+    const st = (id: SpellId) => w.spellState('player', id);
+    const ready = (id: SpellId) => st(id).gifted > 0 || (st(id).known && st(id).charges > 0);
+    // 1. Kin on the sandbar.
+    if (ready('landbridge') && w.units.some((u) => u.joins === 'player')) {
+      if (s.cast(w, 'landbridge', layout.sandbar.x, layout.sandbar.z)) s.log.push(`${w.elapsed.toFixed(0)}s causeway`);
+      return;
+    }
+    // 2. Level the slope (the first two casts), the objective's whole point.
+    const level = w.objectives.findIndex((o) => o.objective.type === 'castSpell' && o.objective.spell === 'flatten');
+    if (level >= 0 && w.objectives[level].active && !w.objectives[level].done && ready('flatten')) {
+      const n = s.casts.flatten ?? 0;
+      const p = levelAt[Math.min(n, levelAt.length - 1)];
+      if (s.cast(w, 'flatten', p.x, p.z)) s.log.push(`${w.elapsed.toFixed(0)}s level`);
+      return;
+    }
+    // 4. The host masses on the strand: wake the mountain under it.
+    const host = w.units.filter((u) => u.tribe === 'violet' && (u.holdUntil ?? 0) > w.elapsed && w.distTo(u, layout.strand.x, layout.strand.z) < 8);
+    if (ready('volcano') && host.length >= 6) {
+      let cx = 0;
+      let cz = 0;
+      for (const u of host) {
+        cx += u.x;
+        cz += u.z;
+      }
+      if (s.cast(w, 'volcano', cx / host.length, cz / host.length)) s.log.push(`${w.elapsed.toFixed(0)}s volcano on ${host.length}`);
+      return;
+    }
+    // 3. Raiders near the village: Lightning the nearest, else Blast.
+    const home = w.tribes.player!.home;
+    const raider = w.units
+      .filter((u) => u.tribe === 'violet' && !u.hidden && !((u.holdUntil ?? 0) > w.elapsed) && w.distTo(u, home.x, home.z) < 24)
+      .sort((a, b) => w.distTo(leader, a.x, a.z) - w.distTo(leader, b.x, b.z))[0];
+    if (raider && ready('lightning') && w.distTo(leader, raider.x, raider.z) < 16 && s.cast(w, 'lightning', raider.x, raider.z)) return;
+    if (raider && ready('blast') && w.distTo(leader, raider.x, raider.z) < 14 && s.cast(w, 'blast', raider.x, raider.z)) return;
+    // Raiders on the island and the leader far from the village: go home to meet them.
+    if (raider && leader.task === 'none' && w.distTo(leader, home.x, home.z) > 10) w.sendTo(leader, home.x + 3, home.z + 6);
+  };
 }
