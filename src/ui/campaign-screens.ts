@@ -89,13 +89,6 @@ const CSS = `
 .tgc-boon { cursor: pointer; text-align: left; }
 .tgc-boon.chosen { border-color: var(--tg-accent, var(--gold, #f1c96b)); box-shadow: 0 0 0 1px var(--tg-accent, var(--gold, #f1c96b)); }
 .tgc-boon b { display: block; font-size: 15px; margin-bottom: 2px; }
-.tgc-toast {
-  white-space: pre-line;
-  position: fixed; left: 50%; top: var(--tg-toast-top, 9.5rem); transform: translateX(-50%); z-index: 35; max-width: min(640px, calc(100vw - 32px));
-  padding: 10px 18px; border-radius: var(--tg-radius, var(--r2, 8px)); pointer-events: none; text-align: center;
-  background: var(--tg-toast, rgba(12,16,22,0.88)); border: 1px solid var(--tg-accent, var(--gold, #f1c96b)); color: var(--tg-text, var(--text, #ece6d6));
-  font: 15px/1.45 var(--tg-display-font, var(--font-display, Georgia, serif)); transition: opacity 0.6s;
-}
 `;
 
 let injected = false;
@@ -453,27 +446,5 @@ export class DebriefScreen extends Overlay {
       actions.appendChild(next);
     }
     this.inner.appendChild(actions);
-  }
-}
-
-/** Scenario lines (world.messages) as a fading banner during play. */
-export class CampaignToast {
-  private readonly box: HTMLDivElement;
-  private timer = 0;
-  constructor() {
-    injectCss();
-    this.box = el('div', 'tgc-toast');
-    this.box.style.opacity = '0';
-    document.body.appendChild(this.box);
-  }
-  say(text: string, seconds = 7): void {
-    this.box.textContent = text;
-    this.box.style.opacity = '1';
-    clearTimeout(this.timer);
-    this.timer = window.setTimeout(() => (this.box.style.opacity = '0'), seconds * 1000);
-  }
-  clear(): void {
-    clearTimeout(this.timer);
-    this.box.style.opacity = '0';
   }
 }

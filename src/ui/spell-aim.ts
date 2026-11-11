@@ -20,6 +20,7 @@
  * and casts, and the note says so.
  */
 
+import { orderAck } from '../core/audio';
 import * as THREE from 'three';
 import { WORLD_SIZE } from '../config';
 import { wrapDelta } from '../core/util';
@@ -62,7 +63,10 @@ export class SpellAim {
       if (!hit) return;
       const why = ctx.world.orderCast('player', spell, hit.x, hit.z);
       if (why) toast(why, e.clientX, e.clientY);
-      else if (!e.shiftKey) resetTool();
+      else {
+        orderAck('cast');
+        if (!e.shiftKey) resetTool();
+      }
     });
   }
 

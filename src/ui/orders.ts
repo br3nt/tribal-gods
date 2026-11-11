@@ -24,6 +24,7 @@
  * tile; BOXES project each unit out to screen pixels (ui/project.ts).
  */
 
+import { orderAck } from '../core/audio';
 import { WORLD_SIZE } from '../config';
 import { wrapDelta } from '../core/util';
 import { pickGroundTile } from '../render/ground-picker';
@@ -158,6 +159,69 @@ export class OrderControl {
     return null;
   }
 
+  /**
+   * What the player SEES under the cursor. The ground picker finds the tile
+   * the ray hits, which for a click on a tall roof or a villager's head is
+   * the ground behind it. So people and buildings are also picked in screen
+   * space: the nearest figure whose body is under the cursor, else the
+   * building whose silhouette (footprint wide, roof tall) contains it.
+   */
+  unitAtScreen(px: number, py: number, pred: (u: Unit) => boolean): Unit | null {
+    const view = this.ctx.view;
+    let best: Unit | null = null;
+    let bestD = Infinity;
+    for (const u of this.ctx.world.units) {
+      if (u.hidden || !pred(u)) continue;
+      const h = UNITS[u.kind].height;
+      const foot = toScreen(view, u.x, u.z, 0);
+      const head = toScreen(view, u.x, u.z, h);
+      if (!foot || !head) continue;
+      const bodyPx = Math.max(10, foot.y - head.y);
+      const halfW = Math.max(9, bodyPx * 0.32);
+      if (px < foot.x - halfW || px > foot.x + halfW || py < head.y - 4 || py > foot.y + 6) continue;
+      const d = Math.hypot(px - foot.x, py - (foot.y + head.y) / 2);
+      if (d < bestD) {
+        bestD = d;
+        best = u;
+      }
+    }
+    return best;
+  }
+
+  buildingAtScreen(px: number, py: number): Building | null {
+    const view = this.ctx.view;
+    let best: Building | null = null;
+    let bestDepth = -Infinity;
+    for (const b of this.ctx.world.buildings) {
+      const half = b.size / 2;
+      const base = toScreen(view, b.x, b.z, 0);
+      const top = toScreen(view, b.x, b.z, BUILDINGS[b.kind].height);
+      const l = toScreen(view, b.x - half, b.z, 0);
+      const r = toScreen(view, b.x + half, b.z, 0);
+      const f = toScreen(view, b.x, b.z + half, 0);
+      if (!base || !top || !l || !r || !f) continue;
+      const halfW = Math.max(Math.abs(r.x - l.x), Math.abs(f.x - base.x) * 2) / 2 + 4;
+      if (px < base.x - halfW || px > base.x + halfW || py < top.y - 4 || py > Math.max(base.y, f.y) + 4) continue;
+      // Nearest the camera wins when silhouettes overlap (lower on screen = nearer).
+      if (base.y > bestDepth) {
+        bestDepth = base.y;
+        best = b;
+      }
+    }
+    return best;
+  }
+
+  /** Ground distance (tiles) from the camera to (x, z). */
+  private camDist(x: number, z: number): number {
+    const c = this.ctx.view.camera.position;
+    return Math.hypot(wrapDelta(x - c.x / 2, WORLD_SIZE), wrapDelta(z - c.z / 2, WORLD_SIZE));
+  }
+
+  /** A person whose body is drawn behind this building's walls can't be what was clicked. */
+  private hiddenBehind(u: Unit, b: Building): boolean {
+    return this.camDist(b.x, b.z) + b.size / 2 < this.camDist(u.x, u.z);
+  }
+
   private monumentAt(x: number, z: number): number {
     return this.ctx.world.monuments.findIndex((m) => tileDist(m.x, m.z, x, z) < 2.2);
   }
@@ -169,12 +233,12 @@ export class OrderControl {
     const sel = this.ctx.selection;
     const tile = this.groundTile(px, py);
     if (tile && this.intercept?.(tile.x, tile.z)) return;
-    if (!tile) {
-      if (!shift) sel.clear();
-      return;
-    }
-    const own = this.unitNear(tile.x, tile.z, PICK_RADIUS, (u) => u.tribe === 'player');
-    const any = own ?? this.unitNear(tile.x, tile.z, PICK_RADIUS, () => true);
+    // Screen-space picks first (a roof against the sky has no ground tile behind it).
+    const near = (pred: (u: Unit) => boolean) => (tile ? this.unitNear(tile.x, tile.z, PICK_RADIUS, pred) : null);
+    const roof = this.buildingAtScreen(px, py);
+    const visible = (u: Unit | null) => (u && roof && this.hiddenBehind(u, roof) ? null : u);
+    const own = visible(this.unitAtScreen(px, py, (u) => u.tribe === 'player') ?? near((u) => u.tribe === 'player'));
+    const any = own ?? visible(this.unitAtScreen(px, py, () => true) ?? near(() => true));
     const now = performance.now();
 
     if (any) {
@@ -195,8 +259,12 @@ export class OrderControl {
       return;
     }
     this.lastClick = null;
-    const b = this.buildingAt(tile.x, tile.z);
+    const b = roof ?? (tile ? this.buildingAt(tile.x, tile.z) : null);
     if (b) return sel.setBuilding(b.id);
+    if (!tile) {
+      if (!shift) sel.clear();
+      return;
+    }
     const m = this.monumentAt(tile.x, tile.z);
     if (m >= 0) return sel.setMonument(m);
     if (!shift) sel.clear();
@@ -257,7 +325,20 @@ export class OrderControl {
 
   orderAtScreen(px: number, py: number): void {
     const tile = this.groundTile(px, py);
-    if (tile) this.orderAt(tile.x, tile.z);
+    // Aim at what is drawn under the cursor: an enemy's body or a roof.
+    const w = this.ctx.world;
+    const foe = this.unitAtScreen(px, py, (u) => w.hostile('player', u.tribe));
+    if (foe) return this.orderAt(foe.x, foe.z);
+    if (!tile) {
+      const b = this.buildingAtScreen(px, py);
+      if (b) this.orderAt(b.x, b.z);
+      return;
+    }
+    if (!this.buildingAt(tile.x, tile.z)) {
+      const b = this.buildingAtScreen(px, py);
+      if (b) return this.orderAt(b.x, b.z);
+    }
+    this.orderAt(tile.x, tile.z);
   }
 
   /** Issue the context order at a tile (also used by the minimap). */
@@ -300,6 +381,7 @@ export class OrderControl {
         break;
     }
     this.mark(c.kind, c.unit?.x ?? c.building?.x ?? x, c.unit?.z ?? c.building?.z ?? z);
+    orderAck(c.kind === 'attack' || c.kind === 'attackBuilding' ? 'attack' : c.kind === 'garrison' || c.kind === 'worship' ? 'garrison' : 'move');
   }
 
   private mark(kind: OrderKind, x: number, z: number): void {
@@ -329,14 +411,26 @@ export class OrderControl {
     this.hoverTimer = 0.08;
     const ptr = this.ctx.pointer;
     let cursor = '';
+    const hover = this.ctx.hover;
+    hover.unit = null;
+    hover.building = null;
+    if (appState.mode === 'game' && ptr.onCanvas && !this.dragStart) {
+      // What's under the cursor (its health bar shows while hovered).
+      const tile = this.groundTile(ptr.x, ptr.y);
+      hover.unit = (this.unitAtScreen(ptr.x, ptr.y, () => true) ?? (tile ? this.unitNear(tile.x, tile.z, PICK_RADIUS, () => true) : null))?.id ?? null;
+      if (hover.unit === null) hover.building = ((tile ? this.buildingAt(tile.x, tile.z) : null) ?? this.buildingAtScreen(ptr.x, ptr.y))?.id ?? null;
+    }
     if (appState.mode === 'game' && ptr.onCanvas && toolState.tool === 'select' && !this.dragStart) {
       const tile = this.groundTile(ptr.x, ptr.y);
       if (tile) {
-        const c = this.contextAt(tile.x, tile.z);
+        const hu = hover.unit !== null ? this.ctx.world.unitById(hover.unit) : null;
+        const hb = hover.building !== null ? this.ctx.world.getBuilding(hover.building) : null;
+        const at = hu ?? hb ?? tile;
+        const c = this.contextAt(at.x, at.z);
         cursor = c.kind === 'move' ? '' : CURSORS[c.kind];
         if (c.kind === 'none' || c.kind === 'move') {
           // Plain pointer over something clickable reads as "select".
-          const hoverable = this.unitNear(tile.x, tile.z, PICK_RADIUS, () => true) || this.buildingAt(tile.x, tile.z) || this.monumentAt(tile.x, tile.z) >= 0;
+          const hoverable = hu || hb || this.monumentAt(tile.x, tile.z) >= 0;
           cursor = hoverable ? 'pointer' : c.kind === 'move' ? CURSORS.move : '';
         }
       }

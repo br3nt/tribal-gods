@@ -1,7 +1,8 @@
 /**
  * ui/world-overlay.ts — health bars and status marks that float in the world.
  *
- * Above a person: a health bar when they're selected or hurt, plus small
+ * Above a person: a health bar when they're selected, hurt or under the
+ * cursor, plus small
  * badges for Stone Ward / Warsong. Above a building: health when selected,
  * hurt or still under construction (gold = building progress), a training
  * bar while a villager trains inside, a flame while it burns and a count
@@ -112,7 +113,7 @@ export class WorldOverlay {
   update(): void {
     this.used = 0;
 
-    const { world, view, selection } = this.ctx;
+    const { world, view, selection, hover } = this.ctx;
     const camD = view.camera.position.distanceTo(view.target);
     // Zoomed far out, only selected things get bars (otherwise: confetti).
     const showHurt = camD < 120;
@@ -120,7 +121,7 @@ export class WorldOverlay {
     for (const u of world.units) {
       if (this.used >= MAX_ITEMS) break;
       if (u.hidden) continue;
-      const sel = selection.units.has(u.id);
+      const sel = selection.units.has(u.id) || hover.unit === u.id;
       const hurt = u.hp < u.maxHp - 0.01;
       const buffed = u.wardTime > 0 || u.warsongTime > 0;
       if (!sel && !(showHurt && (hurt || (buffed && u.tribe === 'player')))) continue;
@@ -140,7 +141,7 @@ export class WorldOverlay {
 
     for (const b of world.buildings) {
       if (this.used >= MAX_ITEMS) break;
-      const sel = selection.building === b.id;
+      const sel = selection.building === b.id || hover.building === b.id;
       const hurt = b.hp < b.maxHp - 0.01;
       const building = b.progress < 1;
       const training = b.trainee >= 0 && world.unitById(b.trainee)?.garrison === b.id;
