@@ -18,6 +18,7 @@
  *   kinds=a,b             only these building kinds
  *   zoom=<k>              camera distance multiplier
  *   speed=<u/s>           locomotion speed for walk/run/carry (default 3.6)
+ *   view=death&dieAt=<s>  the in-game death: fall, lie, fade with a tribe wisp
  */
 
 import * as THREE from 'three';
@@ -28,6 +29,8 @@ import { tickModelMaterials } from '../assets/models/materials';
 import { AnimInput, ClipName, FigureAnimator, CLIP_NAMES } from './figure-animator';
 import { buildFloraPreview } from '../assets/models/flora';
 import { ModelFx } from './model-particles';
+import { UnitRenderer } from './unit-renderer';
+import type { World } from '../sim/world-state';
 
 interface Actor {
   fig: FigureModel;
@@ -154,6 +157,26 @@ export function startGallery(): Promise<never> {
     if (view === 'all') frameCenter.z = -10;
   }
 
+  // view=death: the game's own UnitRenderer on a flat stand-in world; the
+  // figures die `dieAt` seconds in (default 1) — fall, lie, fade, wisp.
+  let deathStage: { r: UnitRenderer; world: World; dieAt: number } | null = null;
+  if (view === 'death') {
+    const kinds: UnitKind[] = ['brave', 'warrior', 'firewarrior', 'warden'];
+    const units = kinds.map((kind, i) => ({
+      id: 100 + i, kind, tribe: i % 2 ? 'red' : 'player', x: (i - 1.5) * 1.6, z: 0, prevX: (i - 1.5) * 1.6, prevZ: 0,
+      heading: 0.5, hp: 10, hidden: false, state: 'idle', task: 'none', carrying: false, attackCooldown: 0,
+    }));
+    const map = { sampleHeight: () => 0, heightAt: () => 0 };
+    const world = { units, buildings: [], tribes: {}, map } as unknown as World;
+    const r = new UnitRenderer(scene);
+    r.setCamera(camera);
+    deathStage = { r, world, dieAt: Number(q.get('dieAt') ?? 1) };
+    ground.position.y = -0.001;
+    frameW = 9;
+    frameH = 3.5;
+    frameCenter.set(0, 0.9, 0);
+  }
+
   if (view === 'flora') {
     const g = buildFloraPreview();
     scene.add(g);
@@ -214,6 +237,10 @@ export function startGallery(): Promise<never> {
       b.update({ progress, hpFrac: hp, burning, dt });
       fx.building(b.root, b, dt);
     }
+    if (deathStage) {
+      if (time > deathStage.dieAt) (deathStage.world.units as unknown[]).length = 0;
+      deathStage.r.sync(deathStage.world, ZERO3, 1, dt, EMPTY);
+    }
     scene.updateMatrixWorld();
     fx.update(dt);
     renderer.render(scene, camera);
@@ -223,3 +250,6 @@ export function startGallery(): Promise<never> {
   (window as unknown as { __gallery: unknown }).__gallery = { scene, camera, actors, buildings };
   return new Promise<never>(() => {});
 }
+
+const ZERO3 = new THREE.Vector3();
+const EMPTY = new Set<number>();

@@ -420,7 +420,9 @@ const CLIPS: Record<ClipName, (t: number, p: Pose, c: ClipCtx) => void> = {
     stance(p, 0.1 + 0.4 * stag * (1 - fall), 0.1);
     setR(p, BI.root, -1.5 * fall - 0.05 * settle, 0, 0.1 * fall);
     p[HX + 1] = -0.25 * stag * (1 - fall) - fall * 0.35;
-    p[HX + 2] = -0.25 * fall;
+    // lying on the back: lift by the body's depth so it rests ON the ground
+    // (root-local +z is world up once the root has tipped over)
+    p[HX + 2] = 0.2 * fall;
     setR(p, BI.spine, 0.3 * stag * (1 - fall) - 0.1 * fall, 0, 0);
     setR(p, BI.chest, -0.25 * stag, 0, 0);
     setR(p, BI.head, -0.5 * stag + 0.4 * fall, 0.3 * fall, 0);
