@@ -9,3 +9,4 @@ dist/
 # Scoped to the root so intentional images elsewhere (docs/, etc.) commit fine.
 /*.png
 shots/
+.claude/
