@@ -29,6 +29,7 @@
  * swings FORWARD with negative rotation.x; the figure's left is +X.
  */
 
+import * as THREE from 'three';
 import { BI, NB } from '../assets/models/people/rig';
 import type { FigureModel } from '../assets/models/people/figure';
 import type { FigureStyle } from '../assets/models/people/recipes';
@@ -83,16 +84,37 @@ export interface ClipCtx {
 // ---------------------------------------------------------------------------
 
 /** Orient the right-hand prop: total pitch of the arm chain → hand rotation. */
+const _qa = new THREE.Quaternion();
+const _qb = new THREE.Quaternion();
+const _eu = new THREE.Euler();
+const _dir = new THREE.Vector3();
+const _Z = new THREE.Vector3(0, 0, 1);
+/**
+ * Point the right-hand prop (its shaft runs along hand-local +Z) in a
+ * chest-space direction given as a pitch: dir = Rx(total)·Z, i.e.
+ * −π/2 = straight up, 0 = straight ahead, π/2 = straight down. Solves the
+ * wrist rotation through the whole clavicle→shoulder→elbow chain, so
+ * however the arm is posed (raised, swung out), the staff stays where the
+ * clip asked — upright beside the body, not leaning across the face.
+ */
 function aimR(p: Pose, total: number) {
-  p[BI.handR * 3] = total - p[BI.armR * 3] - p[BI.foreR * 3] - p[BI.clavR * 3];
+  _qa.identity();
+  for (const b of [BI.clavR, BI.armR, BI.foreR]) {
+    _eu.set(p[b * 3], p[b * 3 + 1], p[b * 3 + 2]);
+    _qa.multiply(_qb.setFromEuler(_eu));
+  }
+  _dir.set(0, -Math.sin(total), Math.cos(total)).applyQuaternion(_qa.invert());
+  _qb.setFromUnitVectors(_Z, _dir.normalize());
+  _eu.setFromQuaternion(_qb, 'XYZ');
+  setR(p, BI.handR, _eu.x, _eu.y, _eu.z);
 }
 
 function holdRight(p: Pose, s: FigureStyle, swing: number) {
   switch (s.holdR) {
     case 'staff':
       // staff planted beside the body, not across the face
-      setR(p, BI.armR, -0.28 + swing * 0.25, 0, -0.42);
-      setR(p, BI.foreR, -1.2 + swing * 0.1, 0, 0);
+      setR(p, BI.armR, -0.22 + swing * 0.25, 0, -0.62);
+      setR(p, BI.foreR, -0.95 + swing * 0.1, 0, 0);
       aimR(p, -Math.PI / 2 + 0.14 + swing * 0.15);
       break;
     case 'spear':
@@ -607,8 +629,8 @@ export class FigureAnimator {
     this.sway += this.swayV * dt;
     const flutter = Math.sin(this.clipTime * 7.3) * 0.04 * Math.min(1, sp / 3);
     const chestBack = out[BI.spine * 3] + out[BI.chest * 3];
-    out[BI.cloak1 * 3] = Math.max(0.05, 0.08 + Math.min(0.5, sp * 0.07) + this.sway * 1.5 + flutter + Math.max(0, chestBack) * 0.6 - out[BI.thighL * 3] * 0.1);
-    out[BI.cloak2 * 3] = 0.05 + Math.min(0.35, sp * 0.05) + this.sway * 2 + flutter * 1.5;
+    out[BI.cloak1 * 3] = Math.max(0.05, 0.08 + Math.min(0.3, sp * 0.05) + this.sway * 1.5 + flutter + Math.max(0, chestBack) * 0.6 - out[BI.thighL * 3] * 0.1);
+    out[BI.cloak2 * 3] = 0.05 + Math.min(0.2, sp * 0.03) + this.sway * 2 + flutter * 1.5;
     out[BI.cloak1 * 3 + 2] = this.lean * 0.5;
     out[BI.tail * 3] = 0.1 + Math.min(0.5, sp * 0.06) + this.sway * 2 - out[BI.head * 3] * 0.6;
     out[BI.tail * 3 + 2] = -out[BI.head * 3 + 2] * 0.5;
