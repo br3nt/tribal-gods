@@ -71,7 +71,7 @@ import {
 import { breakChant, tickChant } from './chant';
 import { initObjectives, ObjectiveMemory, tickObjectives } from './objectives';
 import { findNearestWalkable, findPath, flowField, obstaclesOf, pathStats, tileIndex, walkable } from './pathfinding';
-import { isMajor, regionAt, regionNear } from './regions';
+import { isMajor, regionAt } from './regions';
 import { UnitGrid } from './spatial';
 import { Rng } from './rng';
 import { ALL_BUILDINGS, skirmishRules, STARTER_SPELLS } from './rules';
@@ -1289,12 +1289,12 @@ export class World implements SimQueries {
       }
       case 'garrison': {
         const b = this.getBuilding(u.targetBuilding);
-        // Only from beside the building, on the same ground as its door —
-        // never from a shore across the water. (The door tile itself may be
-        // too steep to stand on, so the route can end a step or two away.)
+        // Only from beside the building. The route to the door was planned
+        // with no "nearest shore" allowance (orderGarrison), so getting here
+        // means the door's side; the door tile itself may be too steep to
+        // stand on, so the route can end a step or two away from it.
         const door = b ? this.doorOf(b) : null;
-        const atDoor = !!b && !!door && this.distTo(u, door.x, door.z) < half(b) + 2.5 &&
-          regionNear(this.map, door.x, door.z, 2) === regionNear(this.map, u.x, u.z, 2);
+        const atDoor = !!b && !!door && this.distTo(u, door.x, door.z) < half(b) + 2.5;
         if (b && atDoor && b.progress >= 1 && b.garrison.length < this.garrisonCap(b) && this.fitsGarrison(u, b)) {
           this.enter(u, b);
           b.garrison.push(u.id);
