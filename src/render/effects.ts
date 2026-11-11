@@ -32,7 +32,6 @@
 
 import * as THREE from 'three';
 import { TILE, WORLD_SIZE } from '../config';
-import { boom, chime, denied, rumble, thud, zap } from '../core/audio';
 import { wrapDelta } from '../core/util';
 import { World } from '../sim/world-state';
 import { curvatureDrop, curvatureGlsl, curvatureUniforms } from '../world/curvature';
@@ -1175,12 +1174,10 @@ const C = {
 
 const HANDLERS: Record<string, Handler> = {
   explosion(fx, x, z) {
-    boom(1);
     fx.shake(0.7);
     fx.impact(x, z, 1);
   },
   lightning(fx, x, z) {
-    zap();
     fx.shake(0.35);
     fx.bolt(x, z);
     fx.flash(x, z, 0xcfe0ff, 3000, 0.35, 8, 70);
@@ -1191,12 +1188,10 @@ const HANDLERS: Record<string, Handler> = {
     fx.scorch(x, z, 1.4, 0.9);
   },
   convert(fx, x, z) {
-    chime();
     fx.ring(x, z, 0x88eaff, 5, 0.8, 3);
     fx.motes(x, z, 22, C.cyan, { radius: 1.5, rise: 3, swirl: 3, life: 1.6 });
   },
   unlock(fx, x, z) {
-    chime();
     fx.ring(x, z, 0xffd75e, 9, 1.1, 4);
     fx.ring(x, z, 0xffe9a8, 5, 0.8, 3);
     fx.column(x, z, 0xffd36a, 1.6, 30, 2.2, 2);
@@ -1208,7 +1203,6 @@ const HANDLERS: Record<string, Handler> = {
     fx.flash(x, z, 0xcfe8ff, 200, 0.3, 2, 15);
   },
   hit(fx, x, z) {
-    thud();
     fx.sparks(x, z, 7, 4, lin(0xfff0c0), 1.2, 0.25);
     fx.dust(x, z, 3, 0.6, 0xa8957a, 1.5);
   },
@@ -1225,21 +1219,18 @@ const HANDLERS: Record<string, Handler> = {
     fx.sparks(x, z, 4, 6, lin(0xff7a2a), 2);
   },
   volcanoStart(fx, x, z) {
-    rumble(9);
     fx.shake(1.2);
     fx.impact(x, z, 1.6);
     fx.ring(x, z, 0xff6a2a, 16, 1.6, 3, 0.1);
     fx.dust(x, z, 30, 8, 0x8a7a64, 6);
   },
   quakeStart(fx, x, z) {
-    rumble(4);
     fx.shake(0.8);
     fx.dust(x, z, 40, 10, 0xa08a6a, 4);
     fx.debris(x, z, 20, 7, 0x6a5a48);
     fx.ring(x, z, 0xc8b090, 18, 1.4, 1.2, 0.08);
   },
   rumbleSmall(fx, x, z) {
-    rumble(2);
     fx.dust(x, z, 6, 3, 0xa08a6a, 2);
   },
   shake(fx, _x, _z, mag) {
@@ -1250,7 +1241,6 @@ const HANDLERS: Record<string, Handler> = {
     fx.ring(x, z, 0x7a9a4a, 7, 0.9, 1.2, 0.12);
   },
   denied(fx, x, z) {
-    denied();
     fx.ring(x, z, 0xff4a3a, 1.6, 0.4, 2);
   },
   fireball(fx, x, z, _m, ev) {
@@ -1260,13 +1250,11 @@ const HANDLERS: Record<string, Handler> = {
 
   // --- v2 events ---
   wardCast(fx, x, z) {
-    chime();
     fx.ring(x, z, 0x8fd8ff, 12, 0.9, 3);
     fx.dome(x, z, 0x8fd8ff, 12, 1.2);
     fx.motes(x, z, 30, lin(0x9fe0ff), { radius: 8, rise: 3, life: 1.6 });
   },
   warsongCast(fx, x, z) {
-    boom(0.4);
     fx.ring(x, z, 0xff6a2a, 14, 0.9, 4);
     fx.ring(x, z, 0xffc04a, 9, 0.7, 3);
     fx.motes(x, z, 50, C.red, { radius: 10, rise: 5, life: 1.8 });
@@ -1274,7 +1262,6 @@ const HANDLERS: Record<string, Handler> = {
     fx.flash(x, z, 0xff7a3a, 400, 0.6, 3, 40);
   },
   cycloneTouch(fx, x, z) {
-    rumble(1.5);
     fx.dust(x, z, 18, 3, 0x9a8a70, 6);
     fx.debris(x, z, 10, 9, 0x5a4a32);
   },
@@ -1282,14 +1269,12 @@ const HANDLERS: Record<string, Handler> = {
     fx.launch(x, z, x, z, 'stone');
   },
   sinkRumble(fx, x, z) {
-    rumble(2);
     fx.shake(0.4);
     fx.dust(x, z, 18, 5, 0x9a8a70, 3);
     fx.spray(x, z, 24, 6);
     fx.ring(x, z, 0xd8f4ff, 10, 1.2, 1.4, 0.1);
   },
   bloomCast(fx, x, z) {
-    chime();
     fx.ring(x, z, 0x8cff6a, 12, 1.0, 3);
     fx.motes(x, z, 40, C.green, { radius: 9, rise: 3, life: 2 });
     fx.petals(x, z, 50, 10);
@@ -1300,7 +1285,6 @@ const HANDLERS: Record<string, Handler> = {
     fx.motes(x, z, 16, C.violet, { radius: 1.5, rise: 2.5, swirl: 2, life: 1.8 });
   },
   defect(fx, x, z) {
-    chime();
     fx.ring(x, z, 0xffffff, 3, 0.6, 3);
     fx.motes(x, z, 18, C.white, { radius: 0.8, rise: 4, swirl: -4, life: 1.2 });
   },
@@ -1309,7 +1293,6 @@ const HANDLERS: Record<string, Handler> = {
     fx.motes(x, z, 18, C.gold, { radius: 4, rise: 2, life: 1.2, size: 0.3, hdr: 5 });
   },
   built(fx, x, z) {
-    thud();
     fx.dust(x, z, 26, 5, 0xc2ab88, 3);
     fx.ring(x, z, 0xffe0a0, 7, 0.8, 2);
     fx.motes(x, z, 26, C.gold, { radius: 4, rise: 3, life: 1.4, size: 0.3, hdr: 5 });
@@ -1319,7 +1302,6 @@ const HANDLERS: Record<string, Handler> = {
     fx.motes(x, z, 12, C.gold, { radius: 0.8, rise: 3, life: 1, size: 0.3 });
   },
   collapse(fx, x, z) {
-    boom(0.6);
     fx.shake(0.5);
     fx.dust(x, z, 40, 6, 0x8f7c62, 4);
     fx.debris(x, z, 16, 9, 0x4a3a28, 0.3);
@@ -1332,13 +1314,11 @@ const HANDLERS: Record<string, Handler> = {
     fx.scorch(x, z, 1.5, 0.6);
   },
   giftClaimed(fx, x, z) {
-    chime();
     fx.ring(x, z, 0xffd36a, 6, 0.9, 4);
     fx.column(x, z, 0xffd36a, 1.2, 18, 1.4, 2);
     fx.motes(x, z, 40, C.gold, { radius: 1.2, rise: 7, swirl: 3, life: 1.6 });
   },
   objectiveDone(fx, x, z) {
-    chime();
     fx.column(x, z, 0xffe9a8, 2, 40, 2.5, 2);
     fx.ring(x, z, 0xffe9a8, 10, 1.2, 3);
     fx.motes(x, z, 50, C.gold, { radius: 3, rise: 6, swirl: 2, life: 2.2 });
@@ -1349,7 +1329,6 @@ const HANDLERS: Record<string, Handler> = {
     fx.dust(x, z, 10, 1.5, 0xb0a890, 2);
   },
   leaderReturn(fx, x, z) {
-    chime();
     fx.column(x, z, 0xfff0c0, 1.8, 50, 2.2, 2.2);
     fx.ring(x, z, 0xfff0c0, 6, 0.9, 4);
     fx.motes(x, z, 30, C.gold, { radius: 1.5, rise: 3, swirl: 3, life: 1.6 });
