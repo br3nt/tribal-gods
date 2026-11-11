@@ -89,6 +89,8 @@ interface Entry {
   /** Where the figure was drawn this frame (bent world space), for picking. */
   drawn: THREE.Vector3;
   drawnFrame: number;
+  /** Animation input, refilled every frame. */
+  inp: AnimInput;
 }
 
 /** Where a unit is drawn: world-space feet (bent, nearest image) and tile coords. */
@@ -121,6 +123,9 @@ const DIE_LIE = 2.1;
 const DIE_FADE = 1.1;
 const DIE_END = DIE_LIE + DIE_FADE + 1.3; // the wisp's last particles outlive the body
 const _wisp = new THREE.Vector3();
+const GHOST_DIE: AnimInput = { clip: 'die', speed: 0, turnRate: 0 };
+const GHOST_DROWN: AnimInput = { clip: 'drown', speed: 0, turnRate: 0 };
+const GHOST_CAST: AnimInput = { clip: 'cast', speed: 0, turnRate: 0 };
 
 function civOf(world: World, tribe: Tribe) {
   const t = (world.tribes as Record<string, { civ?: string } | undefined>)[tribe];
@@ -220,7 +225,7 @@ export class UnitRenderer {
         e = {
           fig, anim: new FigureAnimator(fig, u.id), ring, kind: u.kind, tribe: u.tribe, lastHp: u.hp,
           px: NaN, pz: NaN, speed: 0, yaw: u.heading, turn: 0, lodTick: u.id % 3, accDt: 0, tx: u.x, tz: u.z, inWater: false,
-          drawn: new THREE.Vector3(), drawnFrame: -1,
+          drawn: new THREE.Vector3(), drawnFrame: -1, inp: { clip: 'idle', speed: 0, turnRate: 0 },
         };
         this.entries.set(u.id, e);
       }
@@ -401,7 +406,13 @@ export class UnitRenderer {
     }
     // still moving visibly but sim says idle (end of path) → let the blend handle it
     if (clip === 'idle' && speed > 1.2 && !garrisonKind) clip = 'walk';
-    return { clip, speed, turnRate, phase, period };
+    const inp = e.inp;
+    inp.clip = clip;
+    inp.speed = speed;
+    inp.turnRate = turnRate;
+    inp.phase = phase;
+    inp.period = period;
+    return inp;
   }
 
   private updateGhosts(world: World, camTarget: THREE.Vector3, dt: number): void {
@@ -415,7 +426,7 @@ export class UnitRenderer {
       if (g.mode === 'die') {
         // fall, lie still a moment, then fade away while a wisp in the
         // tribe's colour rises from the body
-        if (g.t < DIE_LIE + DIE_FADE) g.anim.update(dt, { clip: 'die', speed: 0, turnRate: 0 });
+        if (g.t < DIE_LIE + DIE_FADE) g.anim.update(dt, GHOST_DIE);
         const k = 1 - THREE.MathUtils.clamp((g.t - DIE_LIE) / DIE_FADE, 0, 1);
         for (const m of g.fade ?? []) m.opacity = k * k;
         if (g.t > DIE_LIE) for (const m of g.fig.meshes) m.castShadow = false;
@@ -436,12 +447,12 @@ export class UnitRenderer {
         }
         done = g.t > DIE_END;
       } else if (g.mode === 'drown') {
-        g.anim.update(dt, { clip: 'drown', speed: 0, turnRate: 0 });
+        g.anim.update(dt, GHOST_DROWN);
         y = -0.9 - g.t * 1.1 - curvatureDrop(relX, relZ);
         done = g.t > 2.5;
       } else {
         // a leader rises in light and fades
-        g.anim.update(dt, { clip: g.t < 1.2 ? 'die' : 'cast', speed: 0, turnRate: 0 });
+        g.anim.update(dt, g.t < 1.2 ? GHOST_DIE : GHOST_CAST);
         y += Math.max(0, g.t - 1.0) ** 1.5 * 1.6;
         const k = 1 - THREE.MathUtils.clamp((g.t - 1.2) / 1.8, 0, 1);
         for (const m of g.fade ?? []) m.opacity = k;
