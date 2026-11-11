@@ -171,7 +171,7 @@ export class ParticlePool {
   limit: number;
 
   constructor(
-    private readonly capacity: number,
+    readonly capacity: number,
     additive: boolean,
   ) {
     this.limit = capacity;
@@ -528,7 +528,7 @@ export class EffectsRenderer {
   applyQuality(q: QualityTier): void {
     this.tier = q.name;
     this.detail = FX_DETAIL[q.name];
-    this.glow.limit = this.matter.limit = q.particles;
+    this.glow.limit = this.matter.limit = Math.min(q.particles, this.glow.capacity);
     this.life.enabled = q.name !== 'low';
   }
 
