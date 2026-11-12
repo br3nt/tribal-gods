@@ -648,7 +648,7 @@ async function speakingStones() {
       lastShot = s.t;
       await shot(`ford-${Math.round(s.t)}`);
     }
-    if (s.t > 900) throw new Error('chapter 2 not over by 900s');
+    if (s.t > 800) throw new Error("chapter 2 not over by 800s");
   }
   beat('hold the ford → victory', t1, s.t);
 }
