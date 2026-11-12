@@ -168,7 +168,10 @@ export class OrderControl {
         this.rightClick(e.clientX, e.clientY);
       } else if (e.button === 0 && toolState.tool === 'select') {
         this.dragStart = { x: e.clientX, y: e.clientY };
-        this.dragGround = null;
+        // Laid on the ground NOW, where the press was seen: picked later (on
+        // the first move past the slop) a camera still easing onto a hill
+        // would put the corner somewhere the player never pressed.
+        this.dragGround = pickSurfaceClamped(e.clientX, e.clientY, ctx.view);
         this.dragging = false;
       }
     });
@@ -370,7 +373,7 @@ export class OrderControl {
   }
 
   private drawDrag(px: number, py: number): void {
-    if (!this.dragGround) this.dragGround = pickSurfaceClamped(this.dragStart!.x, this.dragStart!.y, this.ctx.view);
+    this.dragGround ??= pickSurfaceClamped(this.dragStart!.x, this.dragStart!.y, this.ctx.view);
     const q = this.marquee.update(this.ctx.view, this.dragGround, { x: px, y: py }, 0xf2d27a);
     this.preview.clear();
     for (const u of this.unitsInQuad(q)) this.preview.add(u.id);

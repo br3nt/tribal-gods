@@ -444,17 +444,18 @@ export class UnitRenderer {
       e.burn = Math.max(0, e.burn - dt);
       const tint = statusTint(u);
       const lit = isHighlighted('unit', u.id);
-      const look = e.burn > 0 ? 'burn' : e.guardian ? 'guardian' : tint;
+      // A guardian's stone skin is its base; a status tint goes on over it.
+      const look = e.burn > 0 ? 'burn' : e.guardian ? (tint === 'none' ? 'guardian' : `guardian+${tint}`) : tint;
       if (look !== e.look || lit !== e.lit) {
         e.tint = tint;
         e.look = look;
         e.lit = lit;
         const base = e.baseMats;
         e.fig.meshes.forEach((m, i) => {
-          const worn = look === 'none' ? base[i]
-            : look === 'burn' ? tintedMaterial(base[i], 'burn', UNIT_BURN)
-              : look === 'guardian' ? tintedMaterial(base[i], 'guardian', GUARDIAN)
-                : tintedMaterial(base[i], tint, UNIT_STATUS[tint as Exclude<StatusTint, 'none'>]);
+          const skin = e.guardian ? tintedMaterial(base[i], 'guardian', GUARDIAN) : base[i];
+          const worn = look === 'burn' ? tintedMaterial(base[i], 'burn', UNIT_BURN)
+            : tint === 'none' ? skin
+              : tintedMaterial(skin, tint, UNIT_STATUS[tint as Exclude<StatusTint, 'none'>]);
           m.material = lit ? highlightMaterial(worn) : worn;
         });
       }

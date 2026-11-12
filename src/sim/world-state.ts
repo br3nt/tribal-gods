@@ -78,7 +78,7 @@ import { isMajor, regionAt, regionNear } from './regions';
 import { UnitGrid } from './spatial';
 import { Rng } from './rng';
 import { ALL_BUILDINGS, skirmishRules, STARTER_SPELLS } from './rules';
-import { EventMemory, initEventMemory, tickScenarioEvents } from './scenario-events';
+import { EventMemory, initEventMemory, PendingLanding, tickLandings, tickScenarioEvents } from './scenario-events';
 import { finishHeldObjectives } from './objectives';
 import { hasCast, manaIncome, newSpellBook, pourMana, slotState, SpellBook, spendCast } from './spellbook';
 import { Aura, castSpell, SpellJob, tickJobs } from './spells';
@@ -201,6 +201,10 @@ export interface Unit {
   home: number;
   hp: number;
   maxHp: number;
+  /** Sim time of the last blow taken (leaders mend after LEADER_MEND.after quiet seconds). Missing on old saves. */
+  hurtAt?: number;
+  /** Walking where an order sent it (orderMove): a blow on the way doesn't turn it round. Cleared on arrival or a new task. */
+  ordered?: boolean;
   castSpell: SpellId | null;
   castTarget: { x: number; z: number } | null;
   /** Building this unit is inside as a garrison/worshipper/trainee (-1 = none). */
@@ -337,6 +341,14 @@ export interface TribeState {
   ai: AiState | null;
   /** How its AI behaves (empty = the standard rival). */
   personality: AiPersonality;
+  /**
+   * A war band with no home: a tribe that never builds (personality
+   * `builds: false`) and was given no buildings. It has no home circle to
+   * draw or defend, and its spawns by a shore come in by boat. Cleared the
+   * moment it has a building of its own. (Missing on old saves: readers fall
+   * back to the personality rule.)
+   */
+  homeless?: boolean;
   /** Running tallies (see TribeStats). May be missing on an old save — read through world.statsOf(). */
   stats?: TribeStats;
 }
@@ -357,7 +369,27 @@ const SITE_CLIFF = 4.5;
 export interface HurtOptions {
   /** Damage from a spell: Wardens shrug off half. */
   spell?: boolean;
+  /** Who struck the blow (melee or a thrown ember): the struck may turn on them (standUp). */
+  by?: Unit;
 }
+
+/** A struck villager's neighbours within this many tiles come to help (at most HELPERS of them). */
+const RALLY_RADIUS = 3.5;
+const HELPERS = 4;
+/** An attacker with a fellow fighter this close is a war band: villagers run rather than mob it. */
+const BAND_RADIUS = 5;
+/** How far a fleeing villager runs (tiles) when no dwelling takes them in. */
+const FLEE_DISTANCE = 8;
+/** A leader who has taken no blow for `after` seconds mends `perSecond` hp a second. */
+export const LEADER_MEND = { after: 8, perSecond: 1.5 };
+/** A chaser this close to its target with open ground between runs straight at it. */
+const PURSUE_DIRECT = 6;
+/** Further out, a chaser re-plans when its target has moved this far off the path's end. */
+const PURSUE_REPLAN = 4;
+/** How far a holding host's fighter may chase from its mark before it turns back. */
+const HOLD_LEASH = 9;
+/** A fleeing villager shelters in a dwelling with a free bed within this many tiles (not one past the attacker). */
+const FLEE_SHELTER = 14;
 
 export class World implements SimQueries {
   readonly map = new Heightmap();
@@ -387,6 +419,8 @@ export class World implements SimQueries {
   messageSeq = 0;
   /** Running memory for rules.events (scenario-events.ts). */
   eventMemory: EventMemory[] = [];
+  /** Boats on their way in: crews that step ashore when their hulls ground (scenario-events.ts LANDING). */
+  landings: PendingLanding[] = [];
   readonly rng = new Rng(1);
 
   /** Next id for a unit or building. Public for sim/save.ts only. */
@@ -519,6 +553,7 @@ export class World implements SimQueries {
     this.messages = [];
     this.messageSeq = 0;
     this.eventMemory = [];
+    this.landings = [];
     this.tribes = {};
     this.nextId = 1;
     this.unreachable.clear();
@@ -764,6 +799,7 @@ export class World implements SimQueries {
     this.objectives = obj.states;
     this.objectiveMemory = obj.memory;
     this.eventMemory = initEventMemory(rules.events);
+    this.landings = [];
   }
 
   /**
@@ -852,6 +888,7 @@ export class World implements SimQueries {
       everBuilt: new Set(),
       ai: t.ai ? { state: 'grow', evalTimer: 2, target: null, awake: !personality.passive, castCooldown: 0, crossing: null } : null,
       personality,
+      homeless: personality.builds === false && !lo.startBuildings?.length,
       stats: World.freshStats(),
     };
     this.tribes[t.id] = state;
@@ -1011,6 +1048,10 @@ export class World implements SimQueries {
       if (u.wardTime > 0) u.wardTime = Math.max(0, u.wardTime - dt);
       if (u.warsongTime > 0) u.warsongTime = Math.max(0, u.warsongTime - dt);
       if (u.lifted > 0) u.lifted = Math.max(0, u.lifted - dt);
+      // A leader left in peace mends (a wounded leader would otherwise kneel at the next stone half-dead for good).
+      if (u.kind === 'shaman' && u.hp < u.maxHp && this.elapsed - (u.hurtAt ?? -Infinity) > LEADER_MEND.after) {
+        u.hp = Math.min(u.maxHp, u.hp + LEADER_MEND.perSecond * dt);
+      }
       switch (u.state) {
         case 'idle': this.tickIdle(u, dt); break;
         case 'moving': this.tickMoving(u, dt); break;
@@ -1027,6 +1068,7 @@ export class World implements SimQueries {
       this.tickStranded();
     }
     tickScenarioEvents(this);
+    tickLandings(this);
     tickJobs(this, dt);
     tickAi(this, dt);
 
@@ -1075,6 +1117,10 @@ export class World implements SimQueries {
     }
 
     tickObjectives(this, dt);
+    // An objective just done fires its story beat in the SAME tick (a gift,
+    // a taught spell, a line): otherwise for one tick the next objective is
+    // live while what it needs isn't there yet, and the hint says so.
+    tickScenarioEvents(this);
     if (this.events.length > MAX_EVENTS) this.events.splice(0, this.events.length - MAX_EVENTS);
   }
 
@@ -1125,7 +1171,8 @@ export class World implements SimQueries {
    * Levelled). Checked once a second; regions are cached per map version.
    */
   /** The whole second tickStranded last ran in (a counter, not elapsed − dt: float drift skips seconds). */
-  private strandedSecond = -1;
+  /** The whole second tickStranded last ran in (restoreWorld sets it, so a resumed world doesn't rerun it). */
+  strandedSecond = -1;
 
   private tickStranded(): void {
     for (const u of this.units) {
@@ -1168,7 +1215,8 @@ export class World implements SimQueries {
   }
 
   tribeAlive(id: TribeId): boolean {
-    return this.units.some((u) => u.tribe === id) || this.buildings.some((b) => b.tribe === id);
+    // Crews still in their boats count: a war band isn't destroyed during its own run-in.
+    return this.units.some((u) => u.tribe === id) || this.buildings.some((b) => b.tribe === id) || this.landings.some((l) => l.action.tribe === id);
   }
 
   // -------------------------------------------------------------------------
@@ -1201,7 +1249,8 @@ export class World implements SimQueries {
     // A host holding its beach: fights what walks into it, else drifts back to the mark.
     if (u.holdAt && (u.holdUntil ?? 0) > this.elapsed && u.task === 'none') {
       if (canSearch && isFighterKind(u.kind) && this.acquireTarget(u)) return;
-      if (u.idleTime > 2 && this.distTo(u, u.holdAt.x, u.holdAt.z) > 3.5) {
+      const off = this.distTo(u, u.holdAt.x, u.holdAt.z);
+      if ((u.idleTime > 2 || off > HOLD_LEASH) && off > 3.5) {
         u.idleTime = 0;
         this.sendTo(u, u.holdAt.x + this.random() * 3 - 1.5, u.holdAt.z + this.random() * 3 - 1.5, 1500);
       }
@@ -1399,21 +1448,80 @@ export class World implements SimQueries {
     return true;
   }
 
+  /**
+   * A host holding its beach fights what walks into it — but chases nothing
+   * that has gone further than HOLD_LEASH from its mark: chasing a villager
+   * home would carry two spears into the village a minute and a half before
+   * the host marches. A foe within weapon reach is always struck back
+   * (a holder on its march in is not a punching bag). A dropped chase walks
+   * back to the mark.
+   */
+  private holding(u: Unit): boolean {
+    return !!u.holdAt && (u.holdUntil ?? 0) > this.elapsed;
+  }
+
+  private withinLeash(u: Unit, q: Unit): boolean {
+    if (!this.holding(u)) return true;
+    return this.distTo(u, q.x, q.z) <= UNITS[u.kind].range + 0.4 || this.distTo(q, u.holdAt!.x, u.holdAt!.z) <= HOLD_LEASH;
+  }
+
+  private leashed(u: Unit): boolean {
+    if (!this.holding(u) || u.task !== 'attack') return false;
+    const target = this.unitById(u.targetUnit);
+    if (!target || this.withinLeash(u, target)) return false;
+    this.abandonTask(u);
+    this.sendTo(u, u.holdAt!.x, u.holdAt!.z, 1500);
+    return true;
+  }
+
+  /**
+   * PURSUIT. A path is planned to where the target stood; a target that
+   * keeps walking leaves the chaser trudging to an empty spot and only then
+   * re-planning — an escort three tiles from its kneeling leader took ten
+   * seconds to reach the raiders cutting her down. Close in (PURSUE_DIRECT
+   * tiles, open ground between), run straight at the target; further out,
+   * re-plan when the target has moved well off the path's end.
+   */
+  private pursue(u: Unit, target: Unit, d: number): void {
+    const tx = Math.round(target.x), tz = Math.round(target.z);
+    const g = u.goal;
+    const off = g ? Math.hypot(wrapDelta(g.x - target.x, WORLD_SIZE), wrapDelta(g.z - target.z, WORLD_SIZE)) : Infinity;
+    if (off < 1.2) return;
+    if (d < PURSUE_DIRECT && this.openLine(u.x, u.z, target.x, target.z)) {
+      u.path = [{ x: this.map.wrap(tx), z: this.map.wrap(tz) }];
+      u.pathIndex = 0;
+      u.goal = { x: this.map.wrap(tx), z: this.map.wrap(tz) };
+    } else if (off > PURSUE_REPLAN && !this.autoSendTo(u, tx, tz, `u${target.id}`)) this.abandonTask(u);
+  }
+
+  /** Walkable all the way along the straight line (sampled every half tile)? */
+  private openLine(ax: number, az: number, bx: number, bz: number): boolean {
+    const dx = wrapDelta(bx - ax, WORLD_SIZE), dz = wrapDelta(bz - az, WORLD_SIZE);
+    const n = Math.ceil(Math.hypot(dx, dz) * 2);
+    for (let i = 1; i <= n; i++) {
+      if (!walkable(this.map, this.map.wrap(Math.round(ax + (dx * i) / n)), this.map.wrap(Math.round(az + (dz * i) / n)))) return false;
+    }
+    return true;
+  }
+
   private tickMoving(u: Unit, dt: number): void {
     if (u.castSpell && this.castTargetInRange(u)) {
       this.beginCast(u);
       return;
     }
+    if (this.leashed(u)) return;
     if (u.task === 'attack') {
       const target = this.unitById(u.targetUnit);
       if (!target || target.hp <= 0 || target.hidden) {
         this.abandonTask(u);
         return;
       }
-      if (this.distTo(u, target.x, target.z) <= UNITS[u.kind].range) {
+      const d = this.distTo(u, target.x, target.z);
+      if (d <= UNITS[u.kind].range) {
         u.state = 'fighting';
         return;
       }
+      this.pursue(u, target, d);
     } else if (u.task === 'attackBuilding') {
       const b = this.getBuilding(u.targetBuilding);
       if (!b) {
@@ -1456,6 +1564,7 @@ export class World implements SimQueries {
   }
 
   private onArrive(u: Unit): void {
+    u.ordered = false;
     u.path = [];
     u.pathIndex = 0;
     u.goal = null;
@@ -1650,6 +1759,7 @@ export class World implements SimQueries {
   /** Toe to toe (or pitch range): face the target, count down, strike. */
   private tickFighting(u: Unit, dt: number): void {
     u.attackCooldown -= dt;
+    if (this.leashed(u)) return;
     const stats = UNITS[u.kind];
 
     if (u.task === 'attack') {
@@ -1669,7 +1779,7 @@ export class World implements SimQueries {
       if (u.attackCooldown <= 0) {
         u.attackCooldown = this.unitCooldown(u);
         this.strike(u, target.x, target.z, stats.range > 2);
-        this.hurtUnit(target, stats.dmg);
+        this.hurtUnit(target, stats.dmg, { by: u });
       }
       return;
     }
@@ -1713,8 +1823,8 @@ export class World implements SimQueries {
     const sight = UNITS[u.kind].sight;
     // Cheapest test first: distance (via the spatial hash), then allegiance,
     // and only for someone actually in sight the unreachable-memory lookup
-    // (which builds a string key).
-    const best = this.nearestUnit(u.x, u.z, sight, (q) => this.foes(u, q) && !this.isUnreachable(u, `u${q.id}`));
+    // (which builds a string key). A holding host only takes foes inside its leash.
+    const best = this.nearestUnit(u.x, u.z, sight, (q) => this.foes(u, q) && this.withinLeash(u, q) && !this.isUnreachable(u, `u${q.id}`));
     if (best) {
       u.task = 'attack';
       u.targetUnit = best.id;
@@ -1740,6 +1850,7 @@ export class World implements SimQueries {
   }
 
   abandonTask(u: Unit): void {
+    u.ordered = false;
     u.task = 'none';
     u.targetTree = -1;
     u.targetBuilding = -1;
@@ -1860,6 +1971,7 @@ export class World implements SimQueries {
     a *= 1 - UNITS[u.kind].armor;
     if (u.wardTime > 0) a *= BUFFS.wardFactor;
     u.hp -= a;
+    if (a > 0) u.hurtAt = this.elapsed;
     if (u.tribe !== 'wild') {
       const t = this.tribes[u.tribe];
       if (t) t.threatTimer = 8;
@@ -1869,6 +1981,84 @@ export class World implements SimQueries {
     if (kneeling && a > 0) this.abandonTask(u);
     const g = u.guardOf ?? -1;
     if (g >= 0 && u.tribe === 'wild' && a > 0 && this.monuments[g]) this.wakeGuards(this.monuments[g]);
+    if (opts.by && a > 0 && u.hp > 0) this.standUp(u, opts.by);
+  }
+
+  /**
+   * Struck by a foe, people fight back: the one hit turns on the attacker,
+   * and villagers working or standing close by down tools and join in —
+   * when the odds are theirs; otherwise a struck villager runs.
+   * Without this a single wounded raider could walk through a village
+   * killing everyone in it one by one, nobody so much as raising a hand.
+   * Who stands up: anyone who can strike (not a leader or a chanter), out
+   * in the open, not already fighting, kneeling, casting or garrisoning.
+   */
+  private standUp(victim: Unit, attacker: Unit): void {
+    if (attacker.hp <= 0 || attacker.hidden) return;
+    const willing = (q: Unit) =>
+      q.hp > 0 && !q.hidden && q.state !== 'inside' && q.tribe !== 'wild' && UNITS[q.kind].dmg > 0 && q.kind !== 'chanter' &&
+      q.task !== 'attack' && q.task !== 'attackBuilding' && q.task !== 'worship' && q.task !== 'garrison' && !q.castSpell &&
+      !q.ordered && this.foes(q, attacker);
+    const turn = (q: Unit) => {
+      this.abandonTask(q);
+      q.task = 'attack';
+      q.targetUnit = attacker.id;
+      if (this.distTo(q, attacker.x, attacker.z) <= UNITS[q.kind].range) q.state = 'fighting';
+      else if (!this.sendTo(q, attacker.x, attacker.z)) this.abandonTask(q);
+    };
+    if (victim.kind !== 'brave') {
+      if (willing(victim)) turn(victim);
+      return;
+    }
+    // A villager only stands when the odds are the village's: a lone raider
+    // with villagers close by to help (or one already badly hurt). Against a
+    // war band, or alone against a fresh spear, they run (flee): a crowd
+    // rushing three spears only feeds them.
+    const band = this.anyUnitNear(attacker.x, attacker.z, BAND_RADIUS, (q) => q !== attacker && q.hp > 0 && q.tribe === attacker.tribe && isFighterKind(q.kind));
+    const near: Unit[] = [];
+    if (!band) {
+      this.grid.forEachNear(victim.x, victim.z, RALLY_RADIUS, (q) => {
+        if (near.length >= HELPERS || q === victim || q.tribe !== victim.tribe || q.kind !== 'brave') return;
+        if (Math.hypot(wrapDelta(q.x - victim.x, WORLD_SIZE), wrapDelta(q.z - victim.z, WORLD_SIZE)) < RALLY_RADIUS && willing(q)) near.push(q);
+      });
+    }
+    const odds = !band && (near.length >= 2 || attacker.hp <= attacker.maxHp * 0.4);
+    if (!odds) {
+      if (willing(victim)) this.flee(victim, attacker);
+      return;
+    }
+    if (willing(victim)) turn(victim);
+    for (const q of near) turn(q);
+  }
+
+  /**
+   * Run from `from`: into a dwelling with a free bed that lies away from the
+   * danger (inside, nobody can reach them), else straight away from it.
+   */
+  private flee(u: Unit, from: Unit): void {
+    const ax = wrapDelta(u.x - from.x, WORLD_SIZE), az = wrapDelta(u.z - from.z, WORLD_SIZE);
+    const len = Math.hypot(ax, az) || 1;
+    this.abandonTask(u);
+    let shelter: Building | null = null;
+    let best = FLEE_SHELTER;
+    for (const b of this.buildings) {
+      if (b.tribe !== u.tribe || b.kind !== 'hut' || b.progress < 1 || b.residents >= this.dwellingCapacity(b)) continue;
+      const door = this.doorOf(b);
+      const bx = wrapDelta(door.x - u.x, WORLD_SIZE), bz = wrapDelta(door.z - u.z, WORLD_SIZE);
+      const d = Math.hypot(bx, bz);
+      if (d < best && (d < 1.5 || bx * ax + bz * az > -0.3 * d * len)) {
+        best = d;
+        shelter = b;
+      }
+    }
+    if (shelter) {
+      const door = this.doorOf(shelter);
+      u.task = 'goHome';
+      u.targetBuilding = shelter.id;
+      if (this.sendTo(u, door.x, door.z, 600)) return;
+      this.abandonTask(u);
+    }
+    this.sendTo(u, Math.round(u.x + (ax / len) * FLEE_DISTANCE), Math.round(u.z + (az / len) * FLEE_DISTANCE), 600);
   }
 
   displaceUnit(u: Unit, dx: number, dz: number): void {
@@ -2315,6 +2505,8 @@ export class World implements SimQueries {
       burning: 0,
       wardTime: 0,
     };
+    const owner = this.tribes[tribe];
+    if (owner) owner.homeless = false; // a building of its own is a home
     this.indexedBuildings();
     this.buildings.push(b);
     this.buildingIndex.set(b.id, b);
@@ -2624,6 +2816,8 @@ export class World implements SimQueries {
       units.push(u);
     }
     const refused = this.groupMove(units, tx, tz, units[0]?.tribe === 'player' ? World.PLAYER_EXPANSIONS : 4000);
+    // Walking on an order: a blow on the way doesn't turn them round (standUp).
+    for (const u of units) if (u.state === 'moving' && !refused.includes(u)) u.ordered = true;
     if (refused.length > 0 && refused[0].tribe === 'player') this.events.push({ type: 'denied', x: tx, z: tz });
   }
 

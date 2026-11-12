@@ -200,7 +200,7 @@ export class Hints {
       if (o.active !== false && !this.activatedAt.has(i)) this.activatedAt.set(i, w.elapsed);
     });
     if (activeSpell()) this.armedOnce = true;
-    if (!settings.hints) return this.hide();
+    if (!settings.hints || w.gameOver) return this.hide(); // nothing to advise on a finished game
     // Retire the one showing if it's done.
     for (const hint of this.hints) {
       if (hint.id !== OBJECTIVE_HINT && !this.seen.has(hint.id) && hint.done(this.ctx)) {

@@ -124,8 +124,52 @@ describe('chapter 1, Landfall: a human-paced player wins it beat by beat', () =>
     expect(Math.hypot(volcanoAt!.x - LAYOUT.strand.x, volcanoAt!.z - LAYOUT.strand.z)).toBeLessThan(9);
     expect(w.statsOf('violet').lostTotal - hostDeathsAtCast).toBeGreaterThanOrEqual(10); // most of the host
     expect(at.volcano - at.raiders).toBeLessThan(60 + HOST_HOLD + 120);
-    // The land is changed for good: a mountain where the beach was.
+    // The land is changed for good: a mountain where the beach was (the world runs on past the victory card).
+    run(w, 15);
     expect(w.map.heightAt(Math.round(volcanoAt!.x), Math.round(volcanoAt!.z + 3))).toBeGreaterThan(5);
     expect(w.objectives.find((o) => o.text.startsWith('Bury'))!.done).toBe(true);
   }, 60_000);
 });
+
+describe('chapter 1, Landfall: nobody is soft-locked', () => {
+  it('a Causeway thrown into the sea is lent again while the kin still wait — and only then', async () => {
+    const w = await loadScenario('c01_landfall');
+    const leader = w.leaderOf('player')!;
+    // Spend the gift on open water well short of the sandbar.
+    expect(w.orderCast('player', 'landbridge', leader.x - 4, leader.z + 6)).toBeNull();
+    run(w, 5);
+    expect(w.spellState('player', 'landbridge').gifted).toBe(0);
+    expect(w.objectives[0].done).toBe(false);
+    run(w, 20); // not at once: the kin must have waited a while with no Causeway in hand
+    expect(w.spellState('player', 'landbridge').gifted).toBe(0);
+    run(w, 12);
+    expect(w.spellState('player', 'landbridge').gifted).toBe(1);
+    expect(w.messages.some((m) => /another Causeway/.test(m.text))).toBe(true);
+    // Holding one: no more come.
+    run(w, 40);
+    expect(w.spellState('player', 'landbridge').gifted).toBe(1);
+    // The second one lands; the kin come home; the lending stops.
+    expect(w.orderCast('player', 'landbridge', LAYOUT.sandbar.x, LAYOUT.sandbar.z)).toBeNull();
+    run(w, 15);
+    expect(w.objectives[0].done).toBe(true);
+    run(w, 70);
+    expect(w.spellState('player', 'landbridge').gifted).toBe(0);
+  }, 30_000);
+
+  it('the headland stone lends its Volcano again after a cooldown', async () => {
+    const w = await loadScenario('c01_landfall');
+    const m = w.monuments[1];
+    m.asleep = false;
+    const leader = w.leaderOf('player')!;
+    leader.x = m.x;
+    leader.z = m.z + 2;
+    w.orderWorship([leader.id], 1);
+    run(w, 20);
+    expect(w.spellState('player', 'volcano').gifted).toBe(1);
+    w.tribes.player!.spells.volcano.gifted = 0; // spent (or wasted)
+    expect(w.monumentAvailable(m)).toBe(false);
+    run(w, 101);
+    expect(w.monumentAvailable(m)).toBe(true);
+  }, 30_000);
+});
+

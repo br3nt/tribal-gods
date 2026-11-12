@@ -203,13 +203,15 @@ export class WorldHover {
       `<p>A ritual of ${fmtSeconds(ritualSeconds(m))}. Damage to the leader breaks it — bring an escort.</p>`;
     const guards = stoneGuards(m);
     if (guards) html += `<div class="why">${escapeHtml(guards)}</div>`;
+    const ours = ritual?.tribe === 'player';
     if (ritual) {
-      const who = escapeHtml(tribeLabelOf(w, ritual.tribe));
+      const who = ours ? 'Your leader is' : `<b>${escapeHtml(tribeLabelOf(w, ritual.tribe))}</b> are`;
       html += ritual.communing
-        ? `<p><b>${who}</b> ${ritual.tribe === 'player' ? 'is' : 'are'} communing: ${Math.round(ritual.progress * 100)}%${ritual.contested ? ' — <b>contested</b>, held still by enemies in the ring' : ''}</p>`
-        : `<p>A broken ritual (${who}) — ${Math.round(ritual.progress * 100)}%, fading.</p>`;
+        ? `<p>${who} communing: ${Math.round(ritual.progress * 100)}%${ritual.contested ? ' — <b>contested</b>, held still by enemies in the ring' : ''}</p>`
+        : `<p>A broken ritual (${ours ? 'yours' : escapeHtml(tribeLabelOf(w, ritual.tribe))}) — ${Math.round(ritual.progress * 100)}%, fading.</p>`;
     }
-    if (blocked) html += `<div class="why">${escapeHtml(blocked)}</div>`;
+    if (ours && ritual?.communing) html += `<div class="act">Keep foes off her until it is done</div>`;
+    else if (blocked) html += `<div class="why">${escapeHtml(blocked)}</div>`;
     else if (this.leaderSelected()) html += `<div class="act">${Verb} to send your leader to commune</div>`;
     else html += `<div class="act">Select your leader, then ${Verb.toLowerCase()} the stone</div>`;
     return html;

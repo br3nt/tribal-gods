@@ -121,14 +121,17 @@ export class Spectacle {
     this.states.clear();
     this.vents = [];
     this.fleet.reset();
+    this.gather.reset();
     for (const c of this.cuts) clearWear(c.key);
     this.cuts = [];
   }
 
-  /** A landing came ashore: boats beach at (x, z). Called from the effects registry. */
-  landing(x: number, z: number, count: number, tribe: string | undefined): void {
-    this.fleet.landing(x, z, count, tribe);
-  }
+  /**
+   * The `landing` event (boats set off for the beach). The boats themselves
+   * come from world.landings in Fleet.sync, so a Continue mid-run keeps
+   * them; nothing more to do here.
+   */
+  landing(_x: number, _z: number, _count: number, _tribe: string | undefined): void {}
 
   sync(world: World, dt: number): void {
     for (const s of this.states.values()) s.seen = false;

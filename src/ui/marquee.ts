@@ -174,8 +174,9 @@ export class GroundMarquee {
   quad: [Pt, Pt, Pt, Pt] | null = null;
 
   constructor(scene: THREE.Scene) {
-    this.fill = new Drape(scene, 0.2, 5000, 18);
-    this.rim = new Drape(scene, 0.95, 3000, 19);
+    // On the land: the people and stones inside stand ON the area, drawn over it.
+    this.fill = new Drape(scene, 0.2, 5000, 18, true);
+    this.rim = new Drape(scene, 0.95, 3000, 19, true);
   }
 
   /** Redraw from the drag's ground start `s` (tile coords, picked once) to the pointer. */

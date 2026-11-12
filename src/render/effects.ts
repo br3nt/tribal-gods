@@ -56,7 +56,7 @@ import { TerrainMesh } from '../world/terrain-mesh';
 import { AmbientLife } from './ambient-life';
 import { CameraRig } from './camera-rig';
 import { Lighting } from './lighting';
-import { FX_DETAIL, QualityTier, SPELL_LOOK, SPELL_LOOK_DEFAULT } from './look';
+import { FX_DETAIL, QUALITY, QualityTier, SPELL_LOOK, SPELL_LOOK_DEFAULT } from './look';
 import { Spectacle } from './spectacle';
 
 const WORLD_UNITS = WORLD_SIZE * TILE;
@@ -162,11 +162,19 @@ export class ParticlePool {
   private readonly gSize: THREE.BufferAttribute;
   private readonly gShape: THREE.BufferAttribute;
   readonly uniforms = { uPxScale: { value: 800 } };
+  /**
+   * How many may be alive at once (the quality tier's budget). The arrays
+   * are sized for the largest tier, so a Settings change or the automatic
+   * downgrade moves this without reallocating; particles already above a
+   * lowered limit live out their short lives.
+   */
+  limit: number;
 
   constructor(
-    private readonly capacity: number,
+    readonly capacity: number,
     additive: boolean,
   ) {
+    this.limit = capacity;
     this.pos = new Float32Array(capacity * 3);
     this.vel = new Float32Array(capacity * 3);
     this.c0 = new Float32Array(capacity * 4);
@@ -197,11 +205,11 @@ export class ParticlePool {
 
   /** Live particles / capacity (0..1): recipes thin themselves out near the top. */
   get load(): number {
-    return this.count / this.capacity;
+    return this.count / this.limit;
   }
 
   emit(e: Emit): void {
-    if (this.count >= this.capacity) return;
+    if (this.count >= this.limit) return;
     const i = this.count++;
     const M = ParticlePool.M;
     this.pos[i * 3] = e.x; this.pos[i * 3 + 1] = e.y; this.pos[i * 3 + 2] = e.z;
@@ -401,13 +409,13 @@ export class EffectsRenderer {
   readonly glow: ParticlePool;
   readonly matter: ParticlePool;
   /** Particle emission scale for the quality tier (look.ts FX_DETAIL): recipes multiply counts by it. */
-  readonly detail: number;
-  /** The quality tier's name (ambient life is off at `low`). */
-  readonly tier: QualityTier['name'];
+  detail: number;
+  /** The quality tier's name (ambient life is off at `low`). Changed by applyQuality. */
+  tier: QualityTier['name'];
   /** Spell set pieces driven by world.jobs (render/spectacle.ts). */
   private readonly spectacle: Spectacle;
   /** Birds, fish, butterflies (render/ambient-life.ts). */
-  private readonly life: AmbientLife | null;
+  private readonly life: AmbientLife;
   private bombs: Bomb[] = [];
   /** Full-screen warm/white flash (a clip-space quad drawn with the scene). */
   private readonly screenQuad: THREE.Mesh;
@@ -453,13 +461,14 @@ export class EffectsRenderer {
     private readonly lighting?: Lighting,
     quality?: QualityTier,
   ) {
-    const budget = quality?.particles ?? 3000;
-    this.glow = new ParticlePool(budget, true);
-    this.matter = new ParticlePool(budget, false);
+    // Sized for the richest tier; applyQuality sets the live budget.
+    const capacity = Math.max(...Object.values(QUALITY).map((q) => q.particles));
+    this.glow = new ParticlePool(capacity, true);
+    this.matter = new ParticlePool(capacity, false);
     this.glow.points.userData.gpuCurved = this.matter.points.userData.gpuCurved = true;
     scene.add(this.glow.points, this.matter.points);
-    this.tier = quality?.name ?? 'high';
-    this.detail = FX_DETAIL[this.tier];
+    this.tier = 'high';
+    this.detail = FX_DETAIL.high;
 
     // The screen flash: a quad already in clip space (no camera maths),
     // additive, drawn last with the scene so bloom and tone mapping see it.
@@ -483,7 +492,8 @@ export class EffectsRenderer {
     this.screenQuad.userData.gpuCurved = true; // never CPU-curved (applyLimbToCpuCurved)
     scene.add(this.screenQuad);
     this.spectacle = new Spectacle(this, scene, terrain);
-    this.life = this.tier === 'low' ? null : new AmbientLife(this, scene);
+    this.life = new AmbientLife(this, scene);
+    this.applyQuality(quality ?? QUALITY.high);
     terrain?.onWorldChange.push(() => this.reset());
 
     // Funnel: a lathe that flares from a tight base to a wide top.
@@ -508,6 +518,18 @@ export class EffectsRenderer {
   /** The terrain's surface paint (lava, basalt, wet, fissures), if any. */
   get surface(): SurfaceFx | null {
     return this.terrain?.fx ?? null;
+  }
+
+  /**
+   * A new quality tier (Settings → Graphics, or post.ts dropping a tier when
+   * frames run long): particle budgets, emission detail, and ambient life
+   * (off at `low`) follow it at once.
+   */
+  applyQuality(q: QualityTier): void {
+    this.tier = q.name;
+    this.detail = FX_DETAIL[q.name];
+    this.glow.limit = this.matter.limit = Math.min(q.particles, this.glow.capacity);
+    this.life.enabled = q.name !== 'low';
   }
 
   /** Scale a particle count by the quality tier (at least `min`). */
@@ -622,7 +644,7 @@ export class EffectsRenderer {
     this.syncAuras(world, dt);
     this.ambient(world, dt);
     this.spectacle.sync(world, dt);
-    this.life?.sync(world, this.camTarget, dt);
+    if (this.life.enabled) this.life.sync(world, this.camTarget, dt);
     this.stepProjectiles(dt);
     this.stepBombs(dt);
     this.stepBurns(dt);

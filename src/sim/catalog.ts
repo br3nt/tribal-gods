@@ -479,8 +479,14 @@ export type ScenarioTrigger =
   | { type: 'killed'; tribe: TribeId; count: number; kind?: UnitKind }
   /** A commune has begun at stone `index` (by `tribe`, if given). */
   | { type: 'commune'; index: number; tribe?: TribeId }
+  /** `tribe` (default the player) holds no cast of `spell` right now: no gift left and no charge of a known spell. */
+  | { type: 'noCasts'; spell: SpellId; tribe?: TribeId }
   /** Any of these. */
-  | { type: 'any'; of: ScenarioTrigger[] };
+  | { type: 'any'; of: ScenarioTrigger[] }
+  /** All of these. */
+  | { type: 'all'; of: ScenarioTrigger[] }
+  /** This one does not hold. */
+  | { type: 'not'; of: ScenarioTrigger };
 
 export type ScenarioAction =
   /**
@@ -489,10 +495,14 @@ export type ScenarioAction =
    * before their god may send them on — a host massing on a beach.
    * `joins`: a STRANDED group — they spawn belonging to no one ('wild') and
    * join `joins` the moment a walking route links them to its home.
+   * `by`: 'sea' = they come in by boat (a `landing` event at once, the crews
+   * ashore a few seconds later when the hulls ground — sim/scenario-events.ts
+   * LANDING); 'land' = they appear at once. Omitted: by sea when the tribe is
+   * a homeless war band marching from a shore, otherwise by land.
    */
   | {
     type: 'spawn'; tribe: Tribe; units: Partial<Record<UnitKind, number>>; x: number; z: number;
-    march?: { x: number; z: number }; hold?: number; joins?: TribeId;
+    march?: { x: number; z: number }; hold?: number; joins?: TribeId; by?: 'sea' | 'land';
   }
   /** `tribe` is now allied with exactly these tribes (both ways); everyone else is hostile to it. */
   | { type: 'allies'; tribe: TribeId; allies: TribeId[] }
@@ -502,7 +512,7 @@ export type ScenarioAction =
   | { type: 'gift'; tribe: TribeId; spell: SpellId; charges: number }
   /** The world itself casts a spell at (x, z) on `tribe`'s behalf — no leader needed. */
   | { type: 'strike'; spell: SpellId; x: number; z: number; tribe: TribeId }
-  /** Wake a stone that was `asleep`. */
+  /** Wake a stone that was `asleep` (or a gift stone resting after a lending: ready again). */
   | { type: 'openStone'; index: number }
   /** The scenario is lost, for `reason` (a fail condition written as a story beat). */
   | { type: 'defeat'; reason: string }
@@ -513,8 +523,16 @@ export interface ScenarioEvent {
   when: ScenarioTrigger;
   /** Seconds between the trigger first holding and the event firing (a visible countdown). */
   delay?: number;
-  /** Fire again every `every` seconds after the first, `times` times in all (default once). */
-  repeat?: { every: number; times: number };
+  /** If this holds when the event would fire, it is spent without firing (the story moved past it). */
+  unless?: ScenarioTrigger;
+  /**
+   * Fire again every `every` seconds after the first, `times` times in all
+   * (default once). `while`: instead, it fires each time its trigger has
+   * HELD for a whole `every` seconds (the first time too), up to `times` —
+   * a recovery that lends another cast only while one is needed, never
+   * the moment one is spent. (`delay` is ignored.)
+   */
+  repeat?: { every: number; times: number; while?: boolean };
   actions: ScenarioAction[];
   /** Shown to the player when it fires (world.messages). */
   message?: string;
@@ -625,7 +643,7 @@ export const EFFECT_EVENTS = [
   'chantStart', 'defect', 'dwellingGrow', 'trained', 'built', 'collapse', 'fireStart',
   'giftClaimed', 'objectiveDone', 'leaderDown', 'leaderReturn',
   // the opening + the ritual (fb-opening)
-  /** A spawn with `march` came ashore (magnitude = how many). */
+  /** Boats are running in to the beach at (x, z) (magnitude = how many aboard); the crews step ashore LANDING.seconds later. */
   'landing',
   /** A stranded person joined their tribe (tribe = who they joined). */
   'rescued',

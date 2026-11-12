@@ -204,7 +204,7 @@ export class BuildingRenderer {
       const t = world.tribes[id]!;
       let built = 0;
       for (const b of world.buildings) if (b.tribe === id) built++;
-      if (hasHomeCircle(t as typeof t & { homeless?: boolean }, built)) active.add(id);
+      if (hasHomeCircle(t, built)) active.add(id);
     }
     for (const id of active) {
       const civ = civOf(world, id);

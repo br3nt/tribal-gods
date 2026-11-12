@@ -33,7 +33,12 @@ export class Drape {
   private readonly max: number;
   private readonly c = new THREE.Color();
 
-  constructor(scene: THREE.Scene, opacity: number, maxTriangles = 6000, renderOrder = 20) {
+  /**
+   * `onGround`: depth-tested (with a polygon offset so it never fights the
+   * terrain) — paint that lies UNDER what stands on it, people and stones
+   * drawn over it, like the drag area. Default off: reticles read through hills.
+   */
+  constructor(scene: THREE.Scene, opacity: number, maxTriangles = 6000, renderOrder = 20, onGround = false) {
     this.max = maxTriangles * 3;
     this.pos = new Float32Array(this.max * 3);
     this.col = new Float32Array(this.max * 3);
@@ -46,8 +51,11 @@ export class Drape {
       vertexColors: true,
       transparent: true,
       opacity,
-      depthTest: false,
+      depthTest: onGround,
       depthWrite: false,
+      polygonOffset: onGround,
+      polygonOffsetFactor: -2,
+      polygonOffsetUnits: -4,
       side: THREE.DoubleSide,
       toneMapped: false,
       fog: false,

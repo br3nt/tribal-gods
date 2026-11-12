@@ -41,6 +41,13 @@ export const LAYOUT = {
   ],
 };
 
+/**
+ * Seconds to weather. Eight minutes, not ten: both stones fall by ~3 min for
+ * a prompt player, and three raids 2 min apart keep the leader striking at
+ * the ford to the end instead of waiting out an empty last stretch.
+ */
+const SURVIVE = 480;
+
 const raid = (at: number, warriors: number, message: string) => ({
   when: { type: 'time' as const, at },
   message,
@@ -90,7 +97,7 @@ export const scenario: CampaignScenario = {
         objectives: [
           { objective: { type: 'claimMonument', index: 0 }, text: 'Learn Bloom at the west-bank stone' },
           { objective: { type: 'claimMonument', index: 1 }, text: 'Learn Level at the stone across the river' },
-          { objective: { type: 'survive', seconds: 600 }, text: 'Weather the raids (10 minutes)' },
+          { objective: { type: 'survive', seconds: SURVIVE }, text: 'Weather the raids (8 minutes)' },
           { objective: { type: 'buildCount', kind: 'tower', count: 1 }, text: 'Raise a Watchtower by the ford', optional: true },
           { objective: { type: 'reachPopulation', count: 30 }, text: 'Grow the tribe to 30', optional: true },
           { objective: { type: 'convertWanderers', count: 4 }, text: 'Kindle the wanderers by the shore', optional: true },
@@ -104,10 +111,13 @@ export const scenario: CampaignScenario = {
             focus: LAYOUT.cove,
             actions: [{ type: 'spawn', tribe: 'violet', units: { warrior: 2 }, x: LAYOUT.cove.x, z: LAYOUT.cove.z, march: LAYOUT.level, hold: 40 }],
           },
-          raid(170, 2, 'Sails on the eastern beach — the Unmoored are coming for the ford.'),
-          raid(340, 3, 'More Unmoored boats. They smell the smoke of your hearths.'),
-          raid(510, 4, 'The largest boat yet. Hold the ford!'),
-          { when: { type: 'time', at: 600 }, actions: [{ type: 'message', text: 'The raiders turn back to the sea. Riverholm is yours.' }] },
+          // The first raid waits for the knoll: it comes 20 s after the Level stone is learned, or at 3:20
+          // at the latest. At a fixed 2:40 it landed on top of a slower player's knoll ritual, drew the
+          // escort off after it, and the boat crew cut the kneeling leader down.
+          { ...raid(0, 2, 'Sails on the eastern beach — the Unmoored are coming for the ford.'), when: { type: 'any', of: [{ type: 'objective', index: 1 }, { type: 'time', at: 180 }] }, delay: 20 },
+          raid(290, 3, 'More Unmoored boats. They smell the smoke of your hearths.'),
+          raid(410, 4, 'The largest boat yet. Hold the ford!'),
+          { when: { type: 'time', at: SURVIVE }, actions: [{ type: 'message', text: 'The raiders turn back to the sea. Riverholm is yours.' }] },
         ],
         briefing: {
           title: 'The Speaking Stones',

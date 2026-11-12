@@ -47,6 +47,16 @@ export class AmbientLife {
   private fishAcc = 0;
   private flutterAcc = 0;
   private clock = 0;
+  private on = true;
+
+  /** Off (the `low` tier): the flocks are hidden and nothing is simulated. */
+  get enabled(): boolean {
+    return this.on;
+  }
+  set enabled(v: boolean) {
+    this.on = v;
+    this.left.visible = this.right.visible = v;
+  }
 
   constructor(
     private readonly fx: EffectsRenderer,

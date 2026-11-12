@@ -7,6 +7,8 @@ import { describe, expect, it } from 'vitest';
 import type { ScenarioRules } from '../src/sim/catalog';
 import { scriptedDefeats } from '../src/ui/campaign-screens';
 import { currentObjective, isGuided, objectiveAdvice } from '../src/ui/objective-advice';
+import { World } from '../src/sim/world-state';
+import { victoryBeat } from '../src/ui/victory-beat';
 import { flatWorld, rulesFor } from './helpers';
 
 describe('scriptedDefeats', () => {
@@ -57,5 +59,51 @@ describe('objective advice', () => {
     t.spells.landbridge.charges = 1;
     const ready = objectiveAdvice(w, { type: 'castSpell', spell: 'landbridge', x: 10, z: 10, radius: 4 }, true)!;
     expect(ready).toMatch(/^Pick Causeway <span class="kbd">J<\/span> and click the marked place/);
+  });
+
+  it('a stone objective follows the ritual: kneeling (with progress), held still, broken and fading', () => {
+    const w = flatWorld();
+    const l = w.leaderOf('player') ?? w.spawnNearWalkable('shaman', 'player', 40, 40);
+    w.monuments = [World.monumentFrom({ x: 44, z: 40, spell: 'volcano', mode: 'gift', charges: 1 })];
+    const o = { type: 'claimMonument' as const, index: 0 };
+    expect(objectiveAdvice(w, o, true)).toMatch(/Select your leader .* click the Volcano stone/);
+    l.hp = l.maxHp * 0.3;
+    expect(objectiveAdvice(w, o, true)).toMatch(/wounded \(30%\).*mends on her own/);
+    l.hp = l.maxHp;
+    const m = w.monuments[0];
+    m.communing = true;
+    m.communer = 'player';
+    m.communerId = l.id;
+    m.communeProgress = 0.42;
+    expect(objectiveAdvice(w, o, true)).toMatch(/kneeling at the Volcano stone \(42%\)/);
+    m.contested = true;
+    expect(objectiveAdvice(w, o, true)).toMatch(/held still \(42%\)/);
+    m.communing = false;
+    m.contested = false;
+    m.communer = null;
+    expect(objectiveAdvice(w, o, true)).toMatch(/broke at 42%.*kneel again/);
+    // No leader (fallen, returning): never "select your leader".
+    w.units = w.units.filter((u) => u.kind !== 'shaman');
+    expect(objectiveAdvice(w, o, true)).toMatch(/has fallen and returns/);
+    expect(objectiveAdvice(w, o, true)).not.toMatch(/Select your leader/);
+  });
+
+  it('waiting for raiders with a stone open: the chip points at the stone, like the narrator', () => {
+    const w = flatWorld(rulesFor([{ id: 'player', ai: false }, { id: 'violet', ai: false }]));
+    if (!w.leaderOf('player')) w.spawnNearWalkable('shaman', 'player', 40, 40);
+    w.monuments = [World.monumentFrom({ x: 44, z: 40, spell: 'lightning', mode: 'gift', charges: 3 })];
+    const o = { type: 'killUnits' as const, tribe: 'violet' as const, count: 3 };
+    expect(objectiveAdvice(w, o, true)).toMatch(/Use the time: select your leader .* the Lightning stone/);
+    w.monuments[0].asleep = true;
+    expect(objectiveAdvice(w, o, true)).toMatch(/None of them in sight yet/);
+  });
+
+  it('a victory waits a beat before its card, longer while a great spell is erupting', () => {
+    const w = flatWorld();
+    expect(victoryBeat(w)).toBe(2.5);
+    w.jobs.push({ spell: 'volcano', x: 1, z: 1, t: 1, duration: 14, angle: 0, fromX: 0, fromZ: 0, seed: 1, tribe: 'player', timer: 0 });
+    expect(victoryBeat(w)).toBe(7);
+    w.jobs[0].t = 12;
+    expect(victoryBeat(w)).toBe(2.5);
   });
 });

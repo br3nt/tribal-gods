@@ -100,10 +100,22 @@ const clickText = async (text, sel = 'button') => {
 const screenOf = (x, z, h = 0) => tg(([x, z, h]) => window.__tg.screenOf(x, z, h), [x, z, h]);
 /** Point the camera at a tile (setup only). */
 const lookAt = (x, z) => tg(([x, z]) => window.__tg.rig.target.set(x * 2, 0, z * 2), [x, z]);
-/** Centre the view on a tile and give the camera a few frames to settle. */
+/**
+ * Centre the view on a tile and let the camera settle: the rig eases its
+ * height toward the ground under the target (and its zoom toward the goal),
+ * so for a moment after a jump onto a hill every pixel still maps to a
+ * different spot than it will a beat later.
+ */
 const focus = async (x, z) => {
   await lookAt(x, z);
-  await wait(250);
+  await wait(150);
+  let prev = null;
+  for (let i = 0; i < 30; i++) {
+    const now = await tg(() => [window.__tg.rig.target.y, window.__tg.rig.distance]);
+    if (prev && Math.abs(now[0] - prev[0]) < 0.005 && Math.abs(now[1] - prev[1]) < 0.005) break;
+    prev = now;
+    await wait(60);
+  }
 };
 /**
  * Click a person the way a player would: on their body, at a point where
@@ -334,31 +346,67 @@ await step('wanderer: a click shows a read-only card, never a selection; a drag 
 });
 
 await step('ground marquee: a drag lays an area on the land and selects exactly your people inside it', async () => {
-  // Three villagers in a tight knot, one well outside.
-  const ids = await tg(([x, z]) => {
-    const w = window.__tg.world;
-    const made = [];
-    for (const [dx, dz] of [[0, 0], [1.5, 0.5], [0.5, 1.5], [9, 0]]) {
-      const u = w.spawnNearWalkable('brave', 'player', x + dx, z + dz);
-      w.abandonTask(u);
-      made.push({ id: u.id, x: u.x, z: u.z });
+  // The area is a rectangle ON THE GROUND, square to the camera (ui/marquee.ts),
+  // not the screen rectangle between the two corners — on a slope seen in
+  // perspective those differ by more than any pixel margin. So the drag is
+  // laid out the way a player aims it: the two ground corners a tile and a
+  // half outside a knot of three villagers along the camera's own
+  // right/forward axes, pressed and released where those spots are drawn.
+  // A spot hidden behind a hill can't be pressed, so try a few places.
+  const SITES = [[-10, -9], [9, -8], [-9, 9], [10, 10], [0, -14], [0, 14], [-14, 0], [14, 0]];
+  let setup = null;
+  const tried = [];
+  for (const [ox, oz] of SITES) {
+    const ids = await tg(([x, z]) => {
+      const w = window.__tg.world;
+      const made = [];
+      for (const [dx, dz] of [[0, 0], [1.5, 0.5], [0.5, 1.5], [9, 0]]) {
+        const u = w.spawnNearWalkable('brave', 'player', x + dx, z + dz);
+        w.abandonTask(u);
+        made.push({ id: u.id, x: u.x, z: u.z });
+      }
+      return made;
+    }, [home.x + ox, home.z + oz]);
+    const knot = ids.slice(0, 3);
+    await focus(knot[0].x, knot[0].z);
+    const plan = await tg(([knot, out]) => {
+      const e = window.__tg.rig.camera.matrixWorld.elements;
+      const len = Math.hypot(e[0], e[2]);
+      const r = { x: e[0] / len, z: e[2] / len }, f = { x: -r.z, z: r.x };
+      const wd = (d) => { let v = d % 128; if (v < -64) v += 128; if (v >= 64) v -= 128; return v; };
+      const o = knot[0];
+      const rf = (u) => { const dx = wd(u.x - o.x), dz = wd(u.z - o.z); return { r: dx * r.x + dz * r.z, f: dx * f.x + dz * f.z }; };
+      const pts = knot.map(rf);
+      const M = 1.5;
+      const lo = { r: Math.min(...pts.map((p) => p.r)) - M, f: Math.min(...pts.map((p) => p.f)) - M };
+      const hi = { r: Math.max(...pts.map((p) => p.r)) + M, f: Math.max(...pts.map((p) => p.f)) + M };
+      const at = (p) => ({ x: o.x + r.x * p.r + f.x * p.f, z: o.z + r.z * p.r + f.z * p.f });
+      const op = rf(out);
+      return { s: at(lo), c: at(hi), outside: op.r < lo.r || op.r > hi.r || op.f < lo.f || op.f > hi.f };
+    }, [knot, ids[3]]);
+    const a = await screenOf(plan.s.x, plan.s.z);
+    const b = await screenOf(plan.c.x, plan.c.z);
+    let why = !plan.outside ? 'the fourth villager is inside' : !a || !b ? 'a corner is off screen' : '';
+    for (const [p, g] of why ? [] : [[a, plan.s], [b, plan.c]]) {
+      const hit = await tg(([x, y]) => window.__tg.groundAt(x, y), [p.x, p.y]);
+      if (!hit || Math.hypot(hit.x - g.x, hit.z - g.z) > 0.6) why = `corner ${g.x.toFixed(1)},${g.z.toFixed(1)} is drawn at ${hit ? `${hit.x.toFixed(1)},${hit.z.toFixed(1)}` : 'sky'}`;
     }
-    return made;
-  }, [home.x - 10, home.z - 9]);
-  const knot = ids.slice(0, 3);
-  const cx = knot.reduce((s, u) => s + u.x, 0) / 3, cz = knot.reduce((s, u) => s + u.z, 0) / 3;
-  await focus(cx, cz);
-  // The drag: corner to corner around where the knot stands on screen, with a margin.
-  const pts = [];
-  for (const u of knot) pts.push(await screenOf(u.x, u.z, 0.5));
-  const a = { x: Math.min(...pts.map((p) => p.x)) - 50, y: Math.min(...pts.map((p) => p.y)) - 45 };
-  const b = { x: Math.max(...pts.map((p) => p.x)) + 50, y: Math.max(...pts.map((p) => p.y)) + 45 };
+    if (!why) {
+      setup = { ids, knot, a, b };
+      break;
+    }
+    tried.push(why);
+    await tg((ids) => { const w = window.__tg.world; w.units = w.units.filter((u) => !ids.includes(u.id)); }, ids.map((u) => u.id));
+  }
+  expect(setup, `no site where the drag's corners can be pressed: ${tried.join('; ')}`);
+  const { ids, knot, a, b } = setup;
   await page.mouse.move(a.x, a.y);
   await page.mouse.down();
   await page.mouse.move((a.x + b.x) / 2, (a.y + b.y) / 2, { steps: 4 });
   await page.mouse.move(b.x, b.y, { steps: 4 });
   await wait(100);
   const drawn = await tg(() => window.__tg.scene.children.some((o) => o.isMesh && o.visible && o.renderOrder === 18));
+  const ringed = await tg(() => [...window.__tg.ui.orders.preview]);
   await shot('01d-ground-marquee');
   await page.mouse.up();
   await wait(120);
@@ -367,8 +415,9 @@ await step('ground marquee: a drag lays an area on the land and selects exactly 
   const missing = knot.filter((u) => !sel.includes(u.id));
   expect(missing.length === 0, `left out ${missing.map((u) => u.id).join(',')} (selected ${sel.join(',')})`);
   expect(!sel.includes(ids[3].id), 'took the villager standing outside the area');
+  expect(knot.every((u) => ringed.includes(u.id)), `the drag's preview rings [${ringed.join(',')}] did not match the knot`);
   await deselect();
-  return `${sel.length} selected`;
+  return `${sel.length} selected${tried.length ? ` (after ${tried.length} hidden site${tried.length > 1 ? 's' : ''})` : ''}`;
 });
 
 await step('commune: select your leader, click a standing stone — the leader goes; hovering says what it holds', async () => {
@@ -697,16 +746,18 @@ await step('save: Esc opens the menu (autosaves); reload; Continue resumes the s
   await page.keyboard.press('Escape');
   await page.keyboard.press('Escape');
   await wait(300);
-  const before = await tg(() => ({ t: window.__tg.world.elapsed, units: window.__tg.world.units.length, b: window.__tg.world.buildings.length }));
+  const before = await tg(() => ({ t: window.__tg.world.elapsed, units: window.__tg.world.units.length, b: window.__tg.world.buildings.length, ids: window.__tg.world.buildings.map((b) => `${b.id}:${b.kind}`) }));
   const saved = await tg(() => !!localStorage.getItem('tg.save.v1'));
   expect(saved, 'nothing saved when the menu opened');
   await page.reload({ waitUntil: 'load' });
   await wait(2500);
   await clickText('Continue');
   await wait(800);
-  const after = await tg(() => ({ t: window.__tg.world.elapsed, units: window.__tg.world.units.length, b: window.__tg.world.buildings.length, mode: window.__tg.appState.mode }));
+  const after = await tg(() => ({ t: window.__tg.world.elapsed, units: window.__tg.world.units.length, b: window.__tg.world.buildings.length, mode: window.__tg.appState.mode, ids: window.__tg.world.buildings.map((b) => `${b.id}:${b.kind}`) }));
   expect(after.mode === 'game', `mode ${after.mode}`);
-  expect(Math.abs(after.t - before.t) < 2 && after.b === before.b, `restored t=${after.t.toFixed(1)}/${before.t.toFixed(1)} buildings ${after.b}/${before.b}`);
+  // The game runs on after Continue (a rival may lay a new site in that moment): every saved building must be back, as itself.
+  const lost = before.ids.filter((id) => !after.ids.includes(id));
+  expect(Math.abs(after.t - before.t) < 2 && lost.length === 0, `restored t=${after.t.toFixed(1)}/${before.t.toFixed(1)}; missing ${lost.join(', ') || 'none'} (buildings ${after.b}/${before.b})`);
   await shot('04-continued');
   return `t=${after.t.toFixed(0)}s, ${after.units} units, ${after.b} buildings`;
 });

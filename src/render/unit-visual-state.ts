@@ -38,8 +38,8 @@ export function figureTribe(u: Pick<Unit, 'tribe'> & Partial<Pick<Unit, 'joins'>
 }
 
 /**
- * Does this tribe get a home stone circle? An explicit `homeless` flag
- * (if the sim ever sets one) decides; otherwise a war band (personality
+ * Does this tribe get a home stone circle? The sim's `homeless` flag
+ * (TribeState) decides; on a save from before it existed, a war band (personality
  * builds: false) that has no buildings and never completed one has no home
  * to mark — raiders on a beach. Settling tribes keep theirs from the start.
  */

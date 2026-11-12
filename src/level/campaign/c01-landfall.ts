@@ -21,6 +21,11 @@
  *      host's scouts may come for you) and it lends ONE Volcano. Wake the
  *      mountain under the host — the strand becomes a mountain for good.
  *
+ * Nobody is soft-locked: a Causeway that missed is lent again while the kin
+ * wait; Level and Kindle are taught and recharge; both stones lend again
+ * after a cooldown; a host that marches before the Volcano lands can still
+ * be broken with Lightning, Blast and the villagers, who fight back.
+ *
  * Fail: ten villagers dead (a scripted `killed` → `defeat`). Optional:
  * lose nobody, Kindle every wanderer, bury the host with the Volcano,
  * win inside twelve minutes.
@@ -66,10 +71,15 @@ const WALL_SLOPE = 2.4;
 const SHINGLE = 1.8;
 const WAVE = 4;
 export const HUTS = 4;
-const HOST = { warrior: 12, firewarrior: 2 };
+/** The great fleet: big enough to read as a host on the strand, small enough to be broken without the Volcano by a player who missed it. */
+const HOST = { warrior: 10, firewarrior: 2 };
 export const HOST_HOLD = 95;
 /** Seconds from the first raid's end to the host coming ashore (the fleet is on the horizon meanwhile). */
 const FLEET_DELAY = 60;
+/** A spent Causeway that left the kin stranded is lent again after this long. */
+const CAUSEWAY_AGAIN = 30;
+/** The headland stone lends its Volcano again after this long (a missed or wasted cast is not the end). */
+const VOLCANO_AGAIN = 100;
 
 /** Objective indices (events refer to them). */
 const O = { kin: 0, kindle: 1, level: 2, huts: 3, raid: 4, stone: 5, host: 6 };
@@ -121,6 +131,16 @@ export const scenario: CampaignScenario = {
     const events: ScenarioEvent[] = [
       { when: { type: 'time', at: 2 }, message: 'Kin on the sandbar! The last boat ran aground across the channel. Raise a Causeway to them.', focus: sandbar, actions: [] },
       { when: { type: 'time', at: 20 }, message: 'Wanderers on the north meadow. Kindle them into the tribe.', focus: meadow, actions: [] },
+      // Recovery: a Causeway that missed (or was spent elsewhere) leaves the kin
+      // stranded for good — so while they still wait and no Causeway is in
+      // hand, the tide-song lends another.
+      {
+        when: { type: 'all', of: [{ type: 'not', of: { type: 'objective', index: O.kin } }, { type: 'noCasts', spell: 'landbridge' }] },
+        repeat: { every: CAUSEWAY_AGAIN, times: 8, while: true },
+        message: 'The kin still wait across the channel. The tide-song gives you another Causeway — from the shore, straight at the sandbar.',
+        focus: sandbar,
+        actions: [{ type: 'gift', tribe: 'player', spell: 'landbridge', charges: 1 }],
+      },
       {
         when: { type: 'objective', index: O.kin },
         message: 'The kin are home — and they remember the Levelling chant. Cut shelves into the hillside so the village can rise.',
@@ -135,7 +155,7 @@ export const scenario: CampaignScenario = {
         focus: strand,
         actions: [{ type: 'openStone', index: 0 }],
       },
-      { when: { type: 'objective', index: O.huts }, delay: 45, message: 'They are ashore. Blast them into the sea!', focus: landing, actions: [raid(WAVE)] },
+      { when: { type: 'objective', index: O.huts }, delay: 45, message: 'Their boats are running in to the Black Strand! Blast them as they step ashore.', focus: landing, actions: [raid(WAVE)] },
       // The host.
       {
         when: { type: 'objective', index: O.raid },
@@ -152,11 +172,14 @@ export const scenario: CampaignScenario = {
         actions: [{ type: 'spawn', tribe: 'violet', units: HOST, x: landing.x, z: landing.z, march: strand, hold: HOST_HOLD }],
       },
       {
+        // The host was not buried: it is about to march. The strand stone wakes again so the
+        // village is not left to spears alone (a missed or late Volcano is not the end).
         when: { type: 'objective', index: O.raid },
         delay: FLEET_DELAY + HOST_HOLD - 15,
-        message: 'Drums on the strand. The host is about to march on the village.',
+        unless: { type: 'spellCast', spell: 'volcano', x: strand.x, z: strand.z, radius: 9 },
+        message: 'Drums on the strand — the host is about to march on the village! Both stones wake again: Lightning above the strand, the mountain on the headland.',
         focus: strand,
-        actions: [],
+        actions: [{ type: 'openStone', index: 0 }, { type: 'openStone', index: 1 }],
       },
       { when: { type: 'spellCast', spell: 'volcano', x: strand.x, z: strand.z, radius: 9 }, delay: 3, message: 'The Black Strand is a mountain now. Let the Unmoored tell their children.', focus: strand, actions: [] },
       // Fail: too many of us fall.
@@ -169,7 +192,7 @@ export const scenario: CampaignScenario = {
       homes: { player: home, violet: landing },
       monuments: [
         { x: lightning.x, z: lightning.z, spell: 'lightning', mode: 'gift', charges: 3, cooldown: 75, asleep: true },
-        { x: headland.x, z: headland.z, spell: 'volcano', mode: 'gift', charges: 1, cooldown: 9999, asleep: true, communeSeconds: 14 },
+        { x: headland.x, z: headland.z, spell: 'volcano', mode: 'gift', charges: 1, cooldown: VOLCANO_AGAIN, asleep: true, communeSeconds: 14 },
       ],
       units: [
         { tribe: 'player', joins: 'player', kind: 'brave', x: sandbar.x, z: sandbar.z, count: KIN.brave },
@@ -198,7 +221,7 @@ export const scenario: CampaignScenario = {
           { objective: { type: 'buildCount', kind: 'hut', count: HUTS }, text: `Raise ${HUTS} Dwellings`, after: O.level },
           { objective: { type: 'killUnits', tribe: 'violet', count: WAVE - 1 }, text: 'Drive the raiders off the Black Strand', after: O.huts },
           { objective: { type: 'claimMonument', index: 1 }, text: 'Kneel at the headland stone', after: O.raid },
-          { objective: { type: 'killUnits', tribe: 'violet', count: 10 }, text: 'Break the Unmoored host', after: O.raid },
+          { objective: { type: 'killUnits', tribe: 'violet', count: 9 }, text: 'Break the Unmoored host', after: O.raid },
           { objective: { type: 'castSpell', spell: 'volcano', x: strand.x, z: strand.z, radius: 9 }, text: 'Bury the host under a mountain', optional: true, after: O.raid },
           { objective: { type: 'loseAtMost', count: 0, kind: 'brave' }, text: 'Lose no villagers', optional: true },
           { objective: { type: 'convertWanderers', count: 8 }, text: 'Kindle every wanderer on the Hook', optional: true },

@@ -1,9 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { EFFECT_EVENTS } from '../src/sim/catalog';
-import { RateLimiter, Soundscape, attenuation, tileDistance } from '../src/core/sfx';
+import { RateLimiter, Soundscape, attenuation, hasSoundRule, tileDistance } from '../src/core/sfx';
 import * as audio from '../src/core/audio';
 
 describe('sfx router', () => {
+  it('maps every effect event the sim emits to a sound or to explicit silence', () => {
+    expect(EFFECT_EVENTS.filter((e) => !hasSoundRule(e))).toEqual([]);
+  });
+
   it('attenuates with distance and is silent beyond 70 tiles', () => {
     expect(attenuation(0)).toBe(1);
     expect(attenuation(10)).toBe(1);

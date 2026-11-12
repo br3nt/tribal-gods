@@ -101,7 +101,19 @@ const RULES: Record<string, Rule | null> = {
   objectiveDone: { play: (v) => audio.fanfare(v) },
   leaderDown: { play: (v) => audio.leaderDownSound(v) },
   leaderReturn: { play: (v) => audio.leaderReturnSound(v) },
+
+  // the opening + the ritual (fb-opening)
+  landing: { play: (v) => audio.rumble(2, v * 0.5), max: 1, windowMs: 800 },
+  rescued: { play: (v) => audio.chime(v * 0.8), max: 1, windowMs: 400 },
+  communeStart: { play: (v) => audio.giftChime(v * 0.5), max: 1, windowMs: 600 },
+  communeInterrupted: { play: (v) => audio.denied(v) },
+  siteLevel: SILENT,
 };
+
+/** Is this event mapped (to a sound or to explicit silence)? Tests check every EFFECT_EVENTS entry is. */
+export function hasSoundRule(type: string): boolean {
+  return type in RULES;
+}
 
 /** Events that are always heard at full volume regardless of distance. */
 const GLOBAL = new Set(['objectiveDone', 'leaderDown', 'leaderReturn', 'denied', 'unlock', 'giftClaimed']);

@@ -71,6 +71,8 @@ export interface SaveData {
   messages: World['messages'];
   messageSeq: number;
   eventMemory: World['eventMemory'];
+  /** Boats still running in (absent in saves from before landings had a lead). */
+  landings?: World['landings'];
   rng: number;
   nextId: number;
   unreachable: Array<[string, number]>;
@@ -170,6 +172,7 @@ export function saveWorld(world: World): SaveData {
     messages: plain(world.messages),
     messageSeq: world.messageSeq,
     eventMemory: plain(world.eventMemory),
+    landings: plain(world.landings),
     rng: world.rng.s,
     nextId: world.nextId,
     unreachable: [...world.unreachable],
@@ -236,6 +239,8 @@ export function restoreWorld(world: World, data: SaveData): void {
   world.messages = d.messages;
   world.messageSeq = d.messageSeq;
   world.eventMemory = d.eventMemory;
+  world.landings = d.landings ?? [];
+  world.strandedSecond = Math.floor(d.elapsed);
   world.events = [];
   world.rng.s = d.rng >>> 0;
   world.nextId = d.nextId;
@@ -302,6 +307,7 @@ export function validateSave(x: unknown): x is SaveData {
     if (!isArr(x.jobs) || !x.jobs.every((j) => validJob(j, (x.auras as unknown[]).length))) return false;
     if (!pairs(x.swamp, isNum) || !pairs(x.unreachable, isStr)) return false;
     if (!isArr(x.objectives) || !isArr(x.objectiveMemory) || !isArr(x.eventMemory) || !isArr(x.messages)) return false;
+    if (x.landings !== undefined && !(isArr(x.landings) && x.landings.every((l) => isObj(l) && isNum(l.at) && isNum(l.orderedAt) && isObj(l.action)))) return false;
     if (x.gameOver !== null && x.gameOver !== 'victory' && x.gameOver !== 'defeat') return false;
     if (!isNum(x.elapsed) || !isNum(x.messageSeq) || !isNum(x.rng) || !isNum(x.nextId)) return false;
     if (!numArr(x.obstacles)) return false;
