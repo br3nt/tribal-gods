@@ -201,6 +201,8 @@ export interface Unit {
   home: number;
   hp: number;
   maxHp: number;
+  /** Sim time of the last blow taken (leaders mend after LEADER_MEND.after quiet seconds). Missing on old saves. */
+  hurtAt?: number;
   castSpell: SpellId | null;
   castTarget: { x: number; z: number } | null;
   /** Building this unit is inside as a garrison/worshipper/trainee (-1 = none). */
@@ -376,6 +378,8 @@ const HELPERS = 4;
 const BAND_RADIUS = 5;
 /** How far a fleeing villager runs (tiles) when no dwelling takes them in. */
 const FLEE_DISTANCE = 8;
+/** A leader who has taken no blow for `after` seconds mends `perSecond` hp a second. */
+export const LEADER_MEND = { after: 8, perSecond: 1.5 };
 /** A chaser this close to its target with open ground between runs straight at it. */
 const PURSUE_DIRECT = 6;
 /** Further out, a chaser re-plans when its target has moved this far off the path's end. */
@@ -1042,6 +1046,10 @@ export class World implements SimQueries {
       if (u.wardTime > 0) u.wardTime = Math.max(0, u.wardTime - dt);
       if (u.warsongTime > 0) u.warsongTime = Math.max(0, u.warsongTime - dt);
       if (u.lifted > 0) u.lifted = Math.max(0, u.lifted - dt);
+      // A leader left in peace mends (a wounded leader would otherwise kneel at the next stone half-dead for good).
+      if (u.kind === 'shaman' && u.hp < u.maxHp && this.elapsed - (u.hurtAt ?? -Infinity) > LEADER_MEND.after) {
+        u.hp = Math.min(u.maxHp, u.hp + LEADER_MEND.perSecond * dt);
+      }
       switch (u.state) {
         case 'idle': this.tickIdle(u, dt); break;
         case 'moving': this.tickMoving(u, dt); break;
@@ -1942,6 +1950,7 @@ export class World implements SimQueries {
     a *= 1 - UNITS[u.kind].armor;
     if (u.wardTime > 0) a *= BUFFS.wardFactor;
     u.hp -= a;
+    if (a > 0) u.hurtAt = this.elapsed;
     if (u.tribe !== 'wild') {
       const t = this.tribes[u.tribe];
       if (t) t.threatTimer = 8;

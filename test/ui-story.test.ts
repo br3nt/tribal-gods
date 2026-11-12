@@ -67,6 +67,9 @@ describe('objective advice', () => {
     w.monuments = [World.monumentFrom({ x: 44, z: 40, spell: 'volcano', mode: 'gift', charges: 1 })];
     const o = { type: 'claimMonument' as const, index: 0 };
     expect(objectiveAdvice(w, o, true)).toMatch(/Select your leader .* click the Volcano stone/);
+    l.hp = l.maxHp * 0.3;
+    expect(objectiveAdvice(w, o, true)).toMatch(/wounded \(30%\).*mends on her own/);
+    l.hp = l.maxHp;
     const m = w.monuments[0];
     m.communing = true;
     m.communer = 'player';

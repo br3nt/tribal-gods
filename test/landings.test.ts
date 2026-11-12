@@ -186,5 +186,19 @@ describe('villagers fight back', () => {
     expect(w.distTo(spear, 60, 60)).toBeLessThan(12);
     expect(villager.hp).toBeGreaterThan(0);
   });
+
+  it('a wounded leader left in peace mends; a fresh blow stops it', () => {
+    const w = flatWorld(rulesFor([{ id: 'player', ai: false }, { id: 'violet', ai: false }], { objectives: [{ objective: { type: 'survive', seconds: 99999 }, text: 'wait' }] }));
+    const l = w.spawn('shaman', 'player', 30, 30);
+    w.hurtUnit(l, 20);
+    run(w, 5);
+    expect(l.hp).toBeCloseTo(l.maxHp - 20, 1);
+    run(w, 10);
+    expect(l.hp).toBeGreaterThan(l.maxHp - 20 + 5);
+    w.hurtUnit(l, 1);
+    const h = l.hp;
+    run(w, 4);
+    expect(l.hp).toBeCloseTo(h, 1);
+  });
 });
 

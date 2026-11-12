@@ -101,7 +101,7 @@ async function snap() {
       objectives: w.objectives.map((o) => ({ text: o.text, done: o.done, active: o.active !== false, optional: o.optional, failed: o.failed })),
       seq: w.messageSeq,
       msgs: w.messages.slice(-3).map((m) => ({ text: m.text, focus: m.focus ?? null, at: m.at })),
-      leader: l ? { id: l.id, x: l.x, z: l.z, state: l.state, task: l.task, hp: l.hp, cast: l.castSpell } : null,
+      leader: l ? { id: l.id, x: l.x, z: l.z, state: l.state, task: l.task, hp: l.hp, maxHp: l.maxHp, cast: l.castSpell } : null,
       spells: Object.fromEntries(['blast', 'convert', 'flatten', 'lightning', 'landbridge', 'volcano', 'bloom', 'ward'].map((id) => [id, sp(id)])),
       monuments: w.monuments.map((m) => ({ x: m.x, z: m.z, spell: m.spell, asleep: !!m.asleep, communing: !!m.communing, progress: m.communeProgress ?? 0, communer: m.communer ?? null, claimer: m.claimer ?? null, available: w.monumentAvailable(m) })),
       foes: w.units.filter((u) => u.tribe !== 'player' && u.tribe !== 'wild' && !u.hidden).map((u) => ({ id: u.id, x: u.x, z: u.z, kind: u.kind, hold: (u.holdUntil ?? 0) > w.elapsed })),
@@ -588,6 +588,13 @@ async function speakingStones() {
   // The Level stone across the river: the spears go first, then she kneels; a boat comes.
   t1 = s.t;
   await think(REACT);
+  // The keepers hurt her: the hint says so — Bloom heals her (or let her mend) before she kneels again.
+  s = await snap();
+  if (s.leader && s.leader.hp < s.leader.maxHp * 0.6) {
+    log(`  leader wounded (${Math.round((s.leader.hp / s.leader.maxHp) * 100)}%); hint: "${s.hint.slice(0, 90)}"`);
+    if (s.spells.bloom > 0) await cast('KeyU', 'bloom', s.leader.x + 1, s.leader.z, { tol: 2.5, shot: 'bloom-heal' });
+    await until((q) => !q.leader || q.leader.hp >= q.leader.maxHp * 0.8, 60, 'the leader to heal');
+  }
   await page.keyboard.press('Comma');
   await wait(150);
   await look(L.level.x - 2, L.level.z + 3);

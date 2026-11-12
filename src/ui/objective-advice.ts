@@ -120,6 +120,12 @@ export function objectiveAdvice(world: World, o: Objective, leftClickOrders: boo
       if (m && (m.communeProgress ?? 0) > 0.02 && m.communer !== 'player') {
         return `The ritual broke at ${pct(m.communeProgress)} and is fading. Select your leader${k('select-leader')} and ${click} the ${name}stone to kneel again.`;
       }
+      const l = world.leaderOf('player')!;
+      if (l.hp < l.maxHp * 0.6) {
+        const bloom = world.spellState('player', 'bloom');
+        const heal = bloom.gifted > 0 || (bloom.known && bloom.charges > 0) ? ` Bloom${k('spell:bloom')} on her heals her now;` : '';
+        return `Your leader is wounded (${Math.round((l.hp / l.maxHp) * 100)}%), and a kneeling leader takes extra blows.${heal} out of the fight she mends on her own. Then select her${k('select-leader')} and ${click} the ${name}stone.`;
+      }
       return `Select your leader${k('select-leader')} and ${click} the ${name}stone. Bring warriors: the ritual breaks if she's hit.`;
     }
     case 'leaderReach':
