@@ -55,7 +55,7 @@ export class SpellAim {
     uiRoot().appendChild(this.note);
 
     ctx.canvas.addEventListener('pointerdown', (e) => {
-      if (appState.mode !== 'game' || e.button !== 0) return;
+      if (appState.mode !== 'game' || e.button !== 0 || (e.ctrlKey && !e.metaKey)) return; // Ctrl+click is a right-click (ui/orders.ts): it cancels
       const spell = activeSpell();
       if (!spell) return;
       e.stopImmediatePropagation();

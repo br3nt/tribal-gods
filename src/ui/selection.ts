@@ -3,9 +3,12 @@
  *
  * The player selects exactly one KIND of thing at a time:
  *
- *   units     — any number of your own people (or one enemy, read-only)
+ *   units     — any number of YOUR OWN people (only they take orders)
  *   building  — one building (yours: full controls; theirs: read-only)
  *   monument  — one standing stone
+ *   inspect   — one person who is NOT yours (a wanderer, a rival): a
+ *               read-only card. Never in `units`, so never ordered, never
+ *               box-selected, never ringed as yours.
  *
  * `units` stays a Set<number> of unit ids because the unit renderer draws
  * selection rings straight from it. The rest is pure logic — grouping a
@@ -24,14 +27,17 @@ export class Selection {
   readonly units = new Set<number>();
   building: number | null = null;
   monument: number | null = null;
+  /** A wanderer or rival being looked at (read-only; see the header). */
+  inspect: number | null = null;
   /** Bumped on every change so panels know to rebuild. */
   version = 0;
 
   clear(): void {
-    if (this.units.size === 0 && this.building === null && this.monument === null) return;
+    if (this.units.size === 0 && this.building === null && this.monument === null && this.inspect === null) return;
     this.units.clear();
     this.building = null;
     this.monument = null;
+    this.inspect = null;
     this.version++;
   }
 
@@ -40,6 +46,7 @@ export class Selection {
     if (mode === 'replace') this.clear();
     this.building = null;
     this.monument = null;
+    this.inspect = null;
     mergeIds(this.units, list, mode);
     this.version++;
   }
@@ -56,6 +63,13 @@ export class Selection {
     this.version++;
   }
 
+  /** Look at someone who isn't yours (read-only card; your selection is dropped). */
+  inspectUnit(id: number): void {
+    this.clear();
+    this.inspect = id;
+    this.version++;
+  }
+
   /** Drop ids the predicate says no longer exist. Returns true if anything changed. */
   prune(alive: (id: number) => boolean, buildingAlive: (id: number) => boolean): boolean {
     let changed = false;
@@ -64,6 +78,10 @@ export class Selection {
         this.units.delete(id);
         changed = true;
       }
+    }
+    if (this.inspect !== null && !alive(this.inspect)) {
+      this.inspect = null;
+      changed = true;
     }
     if (this.building !== null && !buildingAlive(this.building)) {
       this.building = null;
@@ -74,7 +92,7 @@ export class Selection {
   }
 
   get empty(): boolean {
-    return this.units.size === 0 && this.building === null && this.monument === null;
+    return this.units.size === 0 && this.building === null && this.monument === null && this.inspect === null;
   }
 }
 

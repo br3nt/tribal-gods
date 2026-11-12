@@ -3,7 +3,7 @@ import { spellDef } from '../src/sim/catalog';
 import { flatWorld, rulesFor, run } from './helpers';
 
 const twoSpells = rulesFor([
-  { id: 'player', ai: false, loadout: { spells: ['blast', 'convert'], startUnits: { brave: 4 } } },
+  { id: 'player', ai: false, loadout: { spells: ['blast', 'convert'], startUnits: { brave: 4 }, startCharges: { blast: 0, convert: 0 } } },
   { id: 'red', ai: false },
 ]);
 

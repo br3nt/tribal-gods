@@ -313,6 +313,40 @@ export interface MonumentDef {
   cooldown?: number;
   /** The stone sleeps (nobody can commune) until this many seconds into the scenario. */
   opensAt?: number;
+  /** The stone sleeps until a scripted `openStone` action wakes it. */
+  asleep?: boolean;
+  /** Seconds of uninterrupted ritual to commune (default by tier: see COMMUNE). */
+  communeSeconds?: number;
+  /**
+   * Guardians: fighters that belong to no tribe, stand around the stone and
+   * do nothing — until someone starts a commune here (or hurts one). Then
+   * they fight every tribe in reach, the communer first.
+   */
+  guards?: Partial<Record<UnitKind, number>>;
+}
+
+/**
+ * THE RITUAL. Communing is not a click: the leader kneels at the stone for
+ * `seconds[tier]` (gift stones take `giftFactor` of that), takes
+ * `vulnerability`× damage while she does, and any hurt or shove breaks it.
+ * A broken ritual keeps its progress but it drains away at `decayPerSecond`
+ * of the full ritual per second, so a guarded leader can resume. While a
+ * fighter hostile to the communer stands inside `ring` tiles of the stone
+ * the ritual pauses (contested). One tribe at a stone at a time.
+ */
+export const COMMUNE = {
+  seconds: { 1: 10, 2: 20, 3: 35 } as Record<SpellTier, number>,
+  giftFactor: 0.6,
+  vulnerability: 1.5,
+  decayPerSecond: 1 / 60,
+  ring: 6,
+};
+
+/** Seconds of ritual a stone asks for. */
+export function communeSecondsFor(m: Pick<MonumentDef, 'spell' | 'mode' | 'communeSeconds'>): number {
+  if (m.communeSeconds !== undefined) return m.communeSeconds;
+  const base = COMMUNE.seconds[spellDef(m.spell).tier];
+  return Math.round(m.mode === 'gift' ? base * COMMUNE.giftFactor : base);
 }
 
 // ---------------------------------------------------------------------------
@@ -329,7 +363,26 @@ export type Objective =
   | { type: 'leaderReach'; x: number; z: number; radius: number }
   | { type: 'holdPoint'; x: number; z: number; radius: number; seconds: number }
   /** The spell holds at least `charges` (default 1) real charges at once. */
-  | { type: 'chargeSpell'; spell: SpellId; charges?: number };
+  | { type: 'chargeSpell'; spell: SpellId; charges?: number }
+  /**
+   * The leader casts `spell` `count` times (default 1), landing inside the
+   * circle if one is given. Counting starts when the objective becomes active.
+   */
+  | { type: 'castSpell'; spell: SpellId; count?: number; x?: number; z?: number; radius?: number }
+  /** Kindle `count` wanderers into the tribe (counted from activation). */
+  | { type: 'convertWanderers'; count: number }
+  /** `count` of `tribe`'s people die (counted from activation). */
+  | { type: 'killUnits'; tribe: TribeId; count: number }
+  /** `count` stranded people (units with `joins`) reach the tribe (counted from activation). */
+  | { type: 'rescueStranded'; count: number }
+  /**
+   * HELD objectives (meant to be optional): true until broken, and only
+   * scored at victory. `failed` latches when broken.
+   *   loseAtMost — no more than `count` of your people (of `kind`, if given) die;
+   *   winWithin  — the scenario is won before `seconds`.
+   */
+  | { type: 'loseAtMost'; count: number; kind?: UnitKind }
+  | { type: 'winWithin'; seconds: number };
 
 export type FailCondition =
   | { type: 'tribeDestroyed' } // always implied
@@ -338,6 +391,7 @@ export type FailCondition =
   | { type: 'buildingLost'; kind: BuildingKind }
   /** Another tribe communed at monument `index` before you did. */
   | { type: 'monumentTaken'; index: number };
+// (Losing "too many people" is a scripted event: trigger `killed` on the player + action `defeat`.)
 
 export interface ObjectiveState {
   objective: Objective;
@@ -347,6 +401,13 @@ export interface ObjectiveState {
   /** 0..1 where it makes sense (population, survive, hold). */
   progress: number;
   optional: boolean;
+  /**
+   * False while the objective waits on an earlier one (`after`): the UI
+   * hides it (or shows it greyed) and the sim doesn't evaluate it yet.
+   */
+  active: boolean;
+  /** A held objective (loseAtMost, winWithin) that was broken — it can no longer be met. */
+  failed: boolean;
 }
 
 /** What a tribe may use in a scenario. Omitted lists = everything. */
@@ -363,7 +424,15 @@ export interface Loadout {
   gifts?: Partial<Record<SpellId, number>>;
   /** Complete buildings stood up around the home circle at the start. */
   startBuildings?: BuildingKind[];
+  /**
+   * Charges each known spell holds at t=0. Omitted spells start with the
+   * default (START_CHARGES by tier: the first seconds are always playable).
+   */
+  startCharges?: Partial<Record<SpellId, number>>;
 }
+
+/** Charges a known spell holds at the start, by tier, unless the loadout says otherwise. */
+export const START_CHARGES: Record<SpellTier, number> = { 1: 2, 2: 1, 3: 0 };
 
 /**
  * How an AI god behaves (all optional; omitted = the standard rival).
@@ -395,14 +464,46 @@ export interface AiPersonality {
 /** When a scripted scenario event fires. */
 export type ScenarioTrigger =
   | { type: 'time'; at: number }
-  /** Any unit of `tribe` (default the player) stands within the circle. */
-  | { type: 'zone'; x: number; z: number; radius: number; tribe?: TribeId }
+  /**
+   * At least `count` (default 1) visible units of `tribe` (default the
+   * player; 'wild' allowed), of `kind` if given, stand within the circle.
+   */
+  | { type: 'zone'; x: number; z: number; radius: number; tribe?: Tribe; count?: number; kind?: UnitKind }
   /** Objective `index` is done. */
-  | { type: 'objective'; index: number };
+  | { type: 'objective'; index: number }
+  /** `tribe` (default the player) has cast `spell` (any, if omitted), landing in the circle if one is given. */
+  | { type: 'spellCast'; spell?: SpellId; tribe?: TribeId; x?: number; z?: number; radius?: number }
+  /** At least `count` stranded people have joined `tribe` (default the player). */
+  | { type: 'joined'; count: number; tribe?: TribeId }
+  /** At least `count` of `tribe`'s people (of `kind`, if given; leaders never count in the total) have died. */
+  | { type: 'killed'; tribe: TribeId; count: number; kind?: UnitKind }
+  /** A commune has begun at stone `index` (by `tribe`, if given). */
+  | { type: 'commune'; index: number; tribe?: TribeId }
+  /** `tribe` (default the player) holds no cast of `spell` right now: no gift left and no charge of a known spell. */
+  | { type: 'noCasts'; spell: SpellId; tribe?: TribeId }
+  /** Any of these. */
+  | { type: 'any'; of: ScenarioTrigger[] }
+  /** All of these. */
+  | { type: 'all'; of: ScenarioTrigger[] }
+  /** This one does not hold. */
+  | { type: 'not'; of: ScenarioTrigger };
 
 export type ScenarioAction =
-  /** Units appear near (x, z); with `march` they set off for it at once. */
-  | { type: 'spawn'; tribe: Tribe; units: Partial<Record<UnitKind, number>>; x: number; z: number; march?: { x: number; z: number } }
+  /**
+   * Units appear near (x, z); with `march` they set off for it at once.
+   * `hold`: they wait at the march point that many seconds (from spawning)
+   * before their god may send them on — a host massing on a beach.
+   * `joins`: a STRANDED group — they spawn belonging to no one ('wild') and
+   * join `joins` the moment a walking route links them to its home.
+   * `by`: 'sea' = they come in by boat (a `landing` event at once, the crews
+   * ashore a few seconds later when the hulls ground — sim/scenario-events.ts
+   * LANDING); 'land' = they appear at once. Omitted: by sea when the tribe is
+   * a homeless war band marching from a shore, otherwise by land.
+   */
+  | {
+    type: 'spawn'; tribe: Tribe; units: Partial<Record<UnitKind, number>>; x: number; z: number;
+    march?: { x: number; z: number }; hold?: number; joins?: TribeId; by?: 'sea' | 'land';
+  }
   /** `tribe` is now allied with exactly these tribes (both ways); everyone else is hostile to it. */
   | { type: 'allies'; tribe: TribeId; allies: TribeId[] }
   /** A passive AI wakes up. */
@@ -411,21 +512,46 @@ export type ScenarioAction =
   | { type: 'gift'; tribe: TribeId; spell: SpellId; charges: number }
   /** The world itself casts a spell at (x, z) on `tribe`'s behalf — no leader needed. */
   | { type: 'strike'; spell: SpellId; x: number; z: number; tribe: TribeId }
-  | { type: 'message'; text: string };
+  /** Wake a stone that was `asleep` (or a gift stone resting after a lending: ready again). */
+  | { type: 'openStone'; index: number }
+  /** The scenario is lost, for `reason` (a fail condition written as a story beat). */
+  | { type: 'defeat'; reason: string }
+  /** `focus`: where the narrator points (camera nudge / minimap ping). */
+  | { type: 'message'; text: string; focus?: { x: number; z: number } };
 
 export interface ScenarioEvent {
   when: ScenarioTrigger;
-  /** Fire again every `every` seconds after the first, `times` times in all (default once). */
-  repeat?: { every: number; times: number };
+  /** Seconds between the trigger first holding and the event firing (a visible countdown). */
+  delay?: number;
+  /** If this holds when the event would fire, it is spent without firing (the story moved past it). */
+  unless?: ScenarioTrigger;
+  /**
+   * Fire again every `every` seconds after the first, `times` times in all
+   * (default once). `while`: instead, it fires each time its trigger has
+   * HELD for a whole `every` seconds (the first time too), up to `times` —
+   * a recovery that lends another cast only while one is needed, never
+   * the moment one is spent. (`delay` is ignored.)
+   */
+  repeat?: { every: number; times: number; while?: boolean };
   actions: ScenarioAction[];
   /** Shown to the player when it fires (world.messages). */
   message?: string;
+  /** Where `message` points (copied onto the world.messages entry). */
+  focus?: { x: number; z: number };
+}
+
+/** A narrator line. `focus` = the spot it is about: the UI may pan there / ping the minimap. */
+export interface WorldMessage {
+  at: number;
+  text: string;
+  focus?: { x: number; z: number };
 }
 
 export interface ScenarioRules {
   /** `name` is what the story calls the people ("the Ashmark"); omitted = "the Red tribe". */
   tribes: Array<{ id: TribeId; name?: string; ai: boolean; loadout?: Loadout; allies?: TribeId[]; personality?: AiPersonality }>;
-  objectives: Array<{ objective: Objective; text: string; optional?: boolean }>;
+  /** `after`: index of an objective that must be done before this one appears (a story in steps). */
+  objectives: Array<{ objective: Objective; text: string; optional?: boolean; after?: number }>;
   fail?: FailCondition[];
   /** Shown before play: a title, a few sentences, and tips. */
   briefing: { title: string; body: string; tips: string[] };
@@ -516,5 +642,16 @@ export const EFFECT_EVENTS = [
   'wardCast', 'warsongCast', 'cycloneTouch', 'emberStrike', 'sinkRumble', 'bloomCast',
   'chantStart', 'defect', 'dwellingGrow', 'trained', 'built', 'collapse', 'fireStart',
   'giftClaimed', 'objectiveDone', 'leaderDown', 'leaderReturn',
+  // the opening + the ritual (fb-opening)
+  /** Boats are running in to the beach at (x, z) (magnitude = how many aboard); the crews step ashore LANDING.seconds later. */
+  'landing',
+  /** A stranded person joined their tribe (tribe = who they joined). */
+  'rescued',
+  /** A commune began (tribe = communer, magnitude = the spell's tier). Rivals hear it. */
+  'communeStart',
+  /** A commune broke off before it finished (tribe = communer, magnitude = progress 0..1). */
+  'communeInterrupted',
+  /** A building site's footprint is being levelled (magnitude = size). */
+  'siteLevel',
 ] as const;
 export type EffectEvent = (typeof EFFECT_EVENTS)[number];

@@ -41,6 +41,7 @@ import { UnitRenderer } from './render/unit-renderer';
 import { restoreWorld, saveWorld } from './sim/save';
 import { World } from './sim/world-state';
 import './ui/theme.css';
+import { installMaterials } from './ui/materials';
 import { SculptBrush } from './ui/brush';
 import { appState } from './ui/app-state';
 import { clearSave, clock, readSave, savedTally, writeSave } from './ui/autosave';
@@ -72,6 +73,7 @@ world.reset(querySeed ?? Math.floor(Math.random() * 1e9));
 // --- Renderer & scene (the look: render/look.ts, sky.ts, lighting.ts, post.ts) ---
 writeQualityToUrl(true); // the player's saved graphics setting becomes ?q= before the renderer reads it
 applyUiScale();
+installMaterials(); // the HUD's wood, hide, stone and bark (ui/materials.ts)
 let quality = initialQuality();
 const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
 renderer.setSize(innerWidth, innerHeight);
@@ -123,6 +125,7 @@ const post = new PostChain(renderer, scene, rig.camera, quality);
 post.onQualityChange = (q) => {
   quality = q;
   lighting.applyQuality(q);
+  effects.applyQuality(q);
 };
 /** Settings → Graphics, applied live. True if the terrain mesh still wants a reload for it. */
 const bootTerrain = { subdiv: quality.terrainSubdiv, detail: quality.terrainDetail };
@@ -131,6 +134,7 @@ function applyQuality(q: QualitySetting): boolean {
   quality = tier;
   post.setQuality(tier);
   lighting.applyQuality(tier);
+  effects.applyQuality(tier);
   if (groundCover) groundCover.mesh.visible = tier.name !== 'low';
   return tier.terrainSubdiv !== bootTerrain.subdiv || tier.terrainDetail !== bootTerrain.detail;
 }

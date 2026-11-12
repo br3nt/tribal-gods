@@ -18,6 +18,7 @@
  * When silhouettes overlap, whatever is nearest the camera wins — the
  * same rule the depth buffer uses to decide what you see.
  */
+import { spellDef, type SpellId } from '../sim/catalog';
 
 import * as THREE from 'three';
 import { BUILDINGS, UNITS } from '../sim/catalog';
@@ -121,6 +122,29 @@ export function buildingAtScreen(view: View, buildings: Iterable<Building>, px: 
       best = b;
     }
   }
+  return best;
+}
+
+/** How tall a standing stone stands (world units), for picking and the marker above it. */
+export const STONE_HEIGHT = 5;
+/** Drawn height of a standing stone by its spell's tier (matches assets/models/buildings/landmarks.ts). */
+export const stoneHeight = (spell: SpellId): number => [5.0, 6.3, 8.0][spellDef(spell).tier - 1];
+
+/** Index of the standing stone whose silhouette is under (px, py), nearest the camera; -1 if none. */
+export function monumentAtScreen(view: View, monuments: ReadonlyArray<{ x: number; z: number; spell?: SpellId }>, px: number, py: number, vp = screenViewport()): number {
+  let best = -1;
+  let bestDepth = Infinity;
+  monuments.forEach((m, i) => {
+    const foot = probeScreen(view, m.x, m.z, 0, vp);
+    const top = probeScreen(view, m.x, m.z, m.spell ? stoneHeight(m.spell) : STONE_HEIGHT, vp);
+    if (!foot || !top) return;
+    const halfW = Math.max(12, (foot.y - top.y) * 0.4);
+    if (px < foot.x - halfW || px > foot.x + halfW || py < top.y - 6 || py > foot.y + 8) return;
+    if (foot.depth < bestDepth) {
+      bestDepth = foot.depth;
+      best = i;
+    }
+  });
   return best;
 }
 

@@ -68,9 +68,10 @@ export function tip(el: HTMLElement, content: () => string): void {
   el.addEventListener('pointerdown', () => current?.el === el && place());
 }
 
-/** A short-lived message at a screen point (cursor), red by default. */
-export function toast(text: string, x: number, y: number): void {
+/** A short-lived message at a screen point (cursor): red for a refusal, 'info' for "not yet". */
+export function toast(text: string, x: number, y: number, tone: 'bad' | 'info' = 'bad'): void {
   const t = h('div.tg-toast', { text });
+  if (tone === 'info') t.classList.add('info');
   t.style.left = `${x}px`;
   t.style.top = `${y - 34}px`;
   uiRoot().appendChild(t);

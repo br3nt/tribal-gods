@@ -23,6 +23,12 @@
  *   circle count against it), and keeps world-shapers for a real town. A
  *   hurt leader with soldiers near walks home instead of dying for nothing.
  *
+ *   A RITUAL IS AN OPENING — a rival leader kneeling at a stone is
+ *   helpless for half a minute. An awake, aggressive god sends a raiding
+ *   party at her (once per ritual) and its own leader casts at her if she
+ *   is in reach. And its own leader never walks to a great (tier 2–3) or
+ *   guarded stone without an escort of fighters, if it has any to send.
+ *
  *   AN ANSWER TO WATER — if the rival lives across a strait (or up a
  *   cliff), the leader learns or charges Causeway (Level for cliffs),
  *   walks to the narrowest gap (sim/crossing.ts) and bridges it, cast by
@@ -107,7 +113,8 @@ function think(world: World, id: TribeId, tribe: TribeState): void {
     if (tribe.known.has(s.id)) world.setSpellCharging(id, s.id, !UNUSED.includes(s.id));
   }
 
-  const army = world.units.filter((u) => u.tribe === id && !u.hidden && (isFighter(u) || u.kind === 'chanter'));
+  // A host holding its beach (spawn `hold`) is the scenario's, not the god's, until its hour comes.
+  const army = world.units.filter((u) => u.tribe === id && !u.hidden && (isFighter(u) || u.kind === 'chanter') && !((u.holdUntil ?? 0) > world.elapsed));
   const p = tribe.personality;
   const harassAt = p.harassAt ?? HARASS_ARMY;
   const assaultAt = p.assaultAt ?? ASSAULT_ARMY;
@@ -186,9 +193,10 @@ function think(world: World, id: TribeId, tribe: TribeState): void {
     }
     case 'grow':
       garrisonTowers(world, id, tribe);
-      if (!bridging && !retreating && (p.seeksStones ?? true)) seekMonuments(world, id);
+      if (!bridging && !retreating && (p.seeksStones ?? true)) seekMonuments(world, id, army);
       break;
   }
+  if (ai.awake) answerRituals(world, id, tribe, army);
 
   // A passive god keeps its hands down: no spells at anyone until it wakes.
   if (ai.awake && !retreating) leaderCasts(world, id, tribe);
@@ -310,15 +318,61 @@ function staffShrines(world: World, id: TribeId): void {
   }
 }
 
-/** The knowledge race: an idle leader walks to the nearest open stone. */
-function seekMonuments(world: World, id: TribeId): void {
+/** Aggressive = awake, not passive, and quick to raid (harass threshold ≤ 6). */
+function aggressive(tribe: TribeState): boolean {
+  const p = tribe.personality;
+  return !p.passive && (p.harassAt ?? HARASS_ARMY) <= 6;
+}
+
+/**
+ * A hostile leader is kneeling at a stone: send a party at her (once per
+ * ritual), if she is within marching distance of home.
+ */
+function answerRituals(world: World, id: TribeId, tribe: TribeState, army: Unit[]): void {
+  if (!aggressive(tribe)) return;
+  const ai = tribe.ai!;
+  world.monuments.forEach((m, i) => {
+    if (!m.communing || typeof m.communer !== 'string' || m.communer === id || !world.hostile(id, m.communer)) return;
+    const key = `${i}:${m.communerId}`;
+    if (ai.answered?.includes(key)) return;
+    if (dist(m.x, m.z, tribe.home.x, tribe.home.z) > 70) return;
+    const squad = army.filter((u) => isFighter(u) && u.task === 'none' && u.state === 'idle' && u.garrison < 0).slice(0, 4);
+    if (squad.length === 0) return;
+    (ai.answered ??= []).push(key);
+    if (ai.answered.length > 20) ai.answered.shift();
+    world.groupMove(squad, m.x, m.z + 1);
+  });
+}
+
+const guardCount = (m: World['monuments'][number]) => Object.values(m.guards ?? {}).reduce((n, k) => n + (k ?? 0), 0);
+
+/** Stones that need an escort: a great spell, or guardians. */
+const needsEscort = (m: World['monuments'][number]) =>
+  spellDef(m.spell).tier >= 2 || Object.keys(m.guards ?? {}).length > 0;
+
+/** The knowledge race: an idle leader walks to the nearest open stone (with an escort, to a great one). */
+function seekMonuments(world: World, id: TribeId, army: Unit[] = []): void {
   const leader = world.leaderOf(id);
   if (!leader || leader.task !== 'none' || leader.state !== 'idle' || leader.castSpell) return;
+  const tribe = world.tribes[id]!;
+  const canTrain = [...tribe.allowed].some((k) => BUILDINGS[k].trains);
+  const fighters = army.filter((u) => isFighter(u) && u.garrison < 0);
+  const villages = new Set(world.buildings.map((b) => b.tribe));
   let bestIdx = -1;
   let bestD = 55;
   for (let i = 0; i < world.monuments.length; i++) {
     const m = world.monuments[i];
-    if (!world.monumentAvailable(m)) continue;
+    if (!world.canCommune(m, id)) continue;
+    // Early on, a rival village's doorstep stone is that rival's errand, not ours.
+    if (world.elapsed < 600 && world.activeTribes().some((o) => o !== id && world.hostile(id, o) && villages.has(o) &&
+      dist(m.x, m.z, world.tribes[o]!.home.x, world.tribes[o]!.home.z) < dist(m.x, m.z, tribe.home.x, tribe.home.z))) continue;
+    // A great or guarded stone waits for an escort (unless this god can never raise one).
+    // Guardians: only with spears enough to beat them (their number and two more).
+    const guards = guardCount(m);
+    if (guards > 0 && fighters.length < guards + 2 && (canTrain || fighters.length > 0)) continue;
+    if (needsEscort(m) && fighters.length < 2) {
+      if (canTrain && world.elapsed < 600) continue; // early on, wait for spears
+    }
     // A taught spell we already know is worth nothing to us.
     if (m.mode === 'teach' && world.tribes[id]!.known.has(m.spell)) continue;
     const d = world.distTo(leader, m.x, m.z);
@@ -327,7 +381,13 @@ function seekMonuments(world: World, id: TribeId): void {
       bestIdx = i;
     }
   }
-  if (bestIdx >= 0) world.orderWorship([leader.id], bestIdx);
+  if (bestIdx < 0) return;
+  const m = world.monuments[bestIdx];
+  if (needsEscort(m) && fighters.length > 0) {
+    const free = fighters.filter((u) => u.task === 'none' || u.state === 'idle').slice(0, Math.max(4, guardCount(m) + 2));
+    if (free.length) world.groupMove(free, m.x, m.z + 2.5);
+  }
+  world.orderWorship([leader.id], bestIdx);
 }
 
 const ready = (world: World, id: TribeId, spell: SpellId) => {
@@ -409,6 +469,16 @@ function leaderCasts(world: World, id: TribeId, tribe: TribeState): void {
     ai.castCooldown = gap * (spellDef(spell).tier === 3 ? 1.6 : 1);
     return true;
   };
+
+  // A rival leader kneeling at a stone, in reach: break the ritual.
+  for (const m of world.monuments) {
+    if (!m.communing || typeof m.communer !== 'string' || m.communer === id || !world.hostile(id, m.communer)) continue;
+    const kneeler = world.unitById(m.communerId ?? -1);
+    if (!kneeler || kneeler.hidden) continue;
+    for (const spell of ['lightning', 'blast'] as SpellId[]) {
+      if (ready(world, id, spell) && world.distTo(leader, kneeler.x, kneeler.z) <= spellDef(spell).range && cast(spell, kneeler.x, kneeler.z)) return;
+    }
+  }
 
   // Kindle wanderers: two or more are always worth a charge; one only when
   // the flock is thin (villagers do all the chopping, building and breeding).

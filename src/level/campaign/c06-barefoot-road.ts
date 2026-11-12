@@ -74,7 +74,7 @@ export const scenario: CampaignScenario = {
       civs: { red: 'north' },
       monuments: [
         { x: lightning.x, z: lightning.z, spell: 'lightning', mode: 'gift', charges: 3, cooldown: 600 },
-        { x: cairn.x, z: cairn.z, spell: 'emberfall', mode: 'teach' },
+        { x: cairn.x, z: cairn.z, spell: 'emberfall', mode: 'teach', communeSeconds: 25 },
       ],
       buildings: [
         { tribe: 'red', kind: 'tower', x: 68, z: 55, garrison: { warrior: 1, firewarrior: 1 } },
@@ -109,6 +109,15 @@ export const scenario: CampaignScenario = {
           { objective: { type: 'claimMonument', index: 0 }, text: 'Take Lightning from the side-valley stone', optional: true },
         ],
         fail: [{ type: 'leaderDies' }],
+        events: [
+          { when: { type: 'time', at: 2 }, message: 'Two Ashmark spears guard the gorge mouth. Ward the band, then Blast them off the road.', focus: { x: 38, z: 70 }, actions: [] },
+          {
+            when: { type: 'commune', index: 1, tribe: 'player' },
+            message: 'Horns from the far end of the gorge — the Ashmark garrison is coming for the kneeling leader. Hold them off!',
+            focus: { x: 112, z: 56 },
+            actions: [{ type: 'spawn', tribe: 'red', units: { warrior: 3, firewarrior: 1 }, x: 116, z: 56, march: LAYOUT.cairn }],
+          },
+        ],
         briefing: {
           title: 'The Barefoot Road',
           body:

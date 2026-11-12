@@ -47,6 +47,8 @@ export interface PlacedUnits {
   x: number;
   z: number;
   count?: number;
+  /** A STRANDED group: they stand unclaimed ('wild') until a walking route links them to this tribe's home, then join it. */
+  joins?: TribeId;
 }
 
 /**

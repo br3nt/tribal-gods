@@ -67,7 +67,7 @@ describe('objectives', () => {
 
   it('claimMonument', () => {
     const w = populated(scenario([{ type: 'claimMonument', index: 0 }]));
-    w.monuments = [{ x: 26, z: 20, spell: 'lightning', mode: 'teach', claimedBy: null, claimer: null, sleep: 0 }];
+    w.monuments = [{ x: 26, z: 20, spell: 'lightning', mode: 'teach', claimedBy: null, claimer: null, sleep: 0, communeSeconds: 6 }];
     const leader = w.units.find((u) => u.kind === 'shaman' && u.tribe === 'player')!;
     w.orderWorship([leader.id], 0);
     run(w, 15);
@@ -184,7 +184,7 @@ describe('monuments', () => {
 
   it('gift: free casts, then the stone sleeps', () => {
     const w = populated(rulesFor());
-    w.monuments = [{ x: 26, z: 20, spell: 'volcano', mode: 'gift', charges: 2, cooldown: 30, claimedBy: null, claimer: null, sleep: 0 }];
+    w.monuments = [{ x: 26, z: 20, spell: 'volcano', mode: 'gift', charges: 2, cooldown: 30, claimedBy: null, claimer: null, sleep: 0, communeSeconds: 6 }];
     const leader = w.units.find((u) => u.kind === 'shaman' && u.tribe === 'player')!;
     w.orderWorship([leader.id], 0);
     run(w, 15);

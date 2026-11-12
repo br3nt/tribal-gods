@@ -1,45 +1,89 @@
 /*
  * ui/theme.css — the design system every screen is drawn with.
  *
- * One look for the whole interface: dark "smoked glass" panels that sit on
- * top of the bright, sunny world without fighting it (blurred backdrop, a
- * thin light rim, a soft shadow), warm sunstone gold for anything active or
- * selected, mana-cyan for spells, amber for wood. Every size is in rem, and
- * the root font size follows --ui-scale, so one variable resizes the HUD.
+ * THE IDEA: the interface is made BY the tribe, from what they have. No
+ * glass, no chrome. Panels are things you could find in the village:
  *
- * CSS variables (custom properties) below are the only place colours,
- * spacing, radii, type sizes and motion timings are defined. Components
- * reference them; nothing hard-codes a hex value it could take from here.
+ *   TIMBER   oiled dark boards in a frame of paler wood, the corners lashed
+ *            with cord and pegged along the sides (top bar, build tablets,
+ *            minimap hoop, buttons);
+ *   HIDE     tanned skin stretched in that frame, written on in charcoal
+ *            (selection card, objectives scroll, tooltips, briefings, the
+ *            narrator's banner, hint tags);
+ *   STONE    a slab with rune-stones set into it (the spell book);
+ *   BARK     strips of bark painted with a stripe and hung (alerts);
+ *   BONE     small tags for hotkeys and numbers that must be read at once;
+ *   PIGMENT  ochre for what is active or chosen, red ochre for danger, a
+ *            pale spirit-turquoise for mana and charges, leaf green for
+ *            health, and the player's own tribe colour as woven cloth.
+ *
+ * Textures (wood, hide, stone, bark) and the 9-slice frames are grown at
+ * startup by ui/materials.ts and arrive here as custom properties
+ * (--tex-*, --frame-*, --tribe). The display lettering for titles and
+ * panel heads is drawn by ui/lettering.ts.
+ *
+ * LEGIBILITY RULES, because a themed HUD that can't be read is worse than
+ * a plain one: every panel is opaque; text on dark wood/stone/bark is bone
+ * (#f4e8cf, contrast > 10:1), on hide it is charcoal (#24160c, > 11:1);
+ * secondary text stays above 4.5:1 on its face; numbers use the plain body
+ * face, bold, tabular where the font has it.
+ *
+ * Every size is in rem and the root font size follows --ui-scale, so one
+ * variable resizes the whole HUD. Components reference the custom
+ * properties below; the hide-faced panels re-declare the colour set at the
+ * bottom of this file, so any component text reads on either face.
  */
 
 :root {
   --ui-scale: 1;
 
-  /* Colour */
-  --ink-0: rgba(13, 17, 24, 0.82);
-  --ink-1: rgba(16, 20, 28, 0.8);
-  --ink-2: rgba(255, 255, 255, 0.06);
-  --ink-3: rgba(255, 255, 255, 0.11);
-  --ink-solid: #141a24;
-  --rim: rgba(255, 255, 255, 0.12);
-  --rim-strong: rgba(255, 255, 255, 0.24);
-  --text: #eef1f5;
-  --text-2: #b4bccb;
-  --text-3: #7f8a9c;
-  --gold: #f4c66a;
-  --gold-soft: rgba(244, 198, 106, 0.18);
-  --mana: #72d8ff;
-  --mana-soft: rgba(114, 216, 255, 0.18);
-  --wood: #e2a564;
-  --good: #7fdc8c;
-  --warn: #ffb54d;
-  --bad: #ff6a5c;
-  --bad-soft: rgba(255, 106, 92, 0.18);
+  /* Pigments and materials */
+  --charcoal: #1a110a;
+  --umber: #2c1b10;
+  --bone: #f4e8cf;
+  --bone-2: #dfcda9;
+  --bone-3: #bba582;
+  --ochre: #d39537;
+  --ochre-hi: #f2c56a;
+  --red-ochre: #c2462c;
+  --woad: #3d6fa8;
+  --spirit: #86e3ea;
+  --leaf: #9ed27a;
+  --ink: #24160c;
+  --cord: #c7a15f;
+  --tribe: #2f7fe6;
+  --tribe-dark: #1a4680;
+  --tribe-light: #84b5f0;
+  --frame: 0.4375rem;
+
+  /* The component colour set (dark faces: timber, stone, bark) */
+  --ink-0: #20140b;
+  --ink-1: #2a1a0f;
+  --ink-2: rgba(255, 228, 186, 0.07);
+  --ink-3: rgba(255, 228, 186, 0.14);
+  --ink-solid: #22150c;
+  --rim: rgba(255, 226, 180, 0.18);
+  --rim-strong: rgba(255, 226, 180, 0.36);
+  --text: var(--bone);
+  --text-2: var(--bone-2);
+  --text-3: var(--bone-3);
+  --gold: var(--ochre-hi);
+  --gold-soft: rgba(242, 197, 106, 0.2);
+  --mana: var(--spirit);
+  --mana-soft: rgba(134, 227, 234, 0.16);
+  --wood: #e9a95c;
+  --good: var(--leaf);
+  --warn: #f3ab45;
+  --bad: #ff8466;
+  --bad-soft: rgba(194, 70, 44, 0.28);
   --tribe-player: #2f7fe6;
   --tribe-red: #d9483b;
   --tribe-gold: #e2a72e;
   --tribe-violet: #9a5fd6;
   --tribe-wild: #8a8273;
+  --carve-paint: var(--ochre-hi);
+  --carve-cut: rgba(14, 7, 2, 0.9);
+  --carve-edge: rgba(255, 238, 200, 0.5);
 
   /* Space, radius, type, motion */
   --s1: 0.25rem;
@@ -48,23 +92,23 @@
   --s4: 1rem;
   --s5: 1.5rem;
   --s6: 2rem;
-  --r1: 0.375rem;
-  --r2: 0.625rem;
-  --r3: 0.875rem;
+  --r1: 0.2rem;
+  --r2: 0.3rem;
+  --r3: 0.4rem;
   --r-pill: 999px;
   --t-xs: 0.6875rem;
-  --t-sm: 0.75rem;
+  --t-sm: 0.78rem;
   --t-md: 0.875rem;
   --t-lg: 1.0625rem;
   --t-xl: 1.5rem;
   --t-xxl: 3.25rem;
-  --font: "Inter", "SF Pro Text", -apple-system, system-ui, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
-  --font-display: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+  --font: "Optima", "Candara", "Segoe UI", "Avenir Next", system-ui, sans-serif;
+  --font-display: "Herculanum", "Copperplate", "Copperplate Gothic Bold", "Trattatello", Georgia, serif;
   --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
   --fast: 120ms;
   --med: 220ms;
-  --shadow: 0 0.5rem 1.75rem rgba(0, 0, 0, 0.35), 0 0.0625rem 0 rgba(255, 255, 255, 0.06) inset;
-  --blur: blur(16px) saturate(0.55) brightness(0.85);
+  --shadow: 0 0.2rem 0 rgba(10, 5, 2, 0.75), 0 0.5rem 1.25rem rgba(0, 0, 0, 0.45);
+  --blur: none;
   --edge: var(--s3);
 }
 
@@ -75,10 +119,15 @@ body {
   font-family: var(--font);
   color: var(--text);
   -webkit-font-smoothing: antialiased;
-  font-feature-settings: "tnum" 1, "cv11" 1;
+  font-feature-settings: "tnum" 1, "lnum" 1;
   user-select: none;
   -webkit-user-select: none;
 }
+
+/* Visually hidden, still read (carved lettering keeps its words here). */
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.carve { display: inline-flex; vertical-align: -0.12em; line-height: 0; }
+.carve svg { overflow: visible; }
 
 /* Everything the UI draws lives in #ui, which never eats world clicks
    itself; only its panels do. */
@@ -93,29 +142,40 @@ body {
 .passthrough { pointer-events: none !important; }
 [hidden] { display: none !important; }
 
-/* ---------- Panels ------------------------------------------------------- */
+/* ---------- Panels: oiled boards in a lashed timber frame ---------------- */
 
 .tg-panel {
-  background: var(--ink-1);
-  backdrop-filter: var(--blur);
-  -webkit-backdrop-filter: var(--blur);
-  border: 1px solid var(--rim);
-  border-radius: var(--r3);
-  box-shadow: var(--shadow);
   color: var(--text);
+  background:
+    radial-gradient(130% 120% at 50% 0%, rgba(255, 214, 160, 0.07), rgba(0, 0, 0, 0.28)),
+    var(--tex-wood) 0 0 / 14rem;
+  background-clip: padding-box;
+  border: var(--frame) solid #6b4527;
+  border-image: var(--frame-wood) 48 / var(--frame) round;
+  border-radius: 0;
+  box-shadow: inset 0 0.35rem 0.6rem -0.35rem rgba(0, 0, 0, 0.75), inset 0 -0.2rem 0.4rem -0.2rem rgba(0, 0, 0, 0.5), var(--shadow);
 }
 .tg-panel-head {
   display: flex;
   align-items: center;
   gap: var(--s2);
-  font-size: var(--t-xs);
-  font-weight: 600;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
+  font-size: 1.05rem;
   color: var(--text-3);
+  line-height: 1;
+}
+.tg-panel-head svg:not(.carve svg) { color: var(--ochre-hi); }
+/* A strip of woven tribe cloth: twill in the tribe's colour, a pale weft, frayed ends. */
+.cloth {
+  height: 0.5rem;
+  background:
+    repeating-linear-gradient(45deg, rgba(0, 0, 0, 0.3) 0 2px, transparent 2px 4px),
+    repeating-linear-gradient(-45deg, rgba(255, 255, 255, 0.16) 0 1px, transparent 1px 4px),
+    linear-gradient(var(--tribe-light), var(--tribe) 35%, var(--tribe-dark));
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  clip-path: polygon(0 15%, 3% 0, 97% 0, 100% 20%, 98.5% 50%, 100% 85%, 97% 100%, 3% 100%, 0 80%, 1.5% 50%);
 }
 
-/* ---------- Buttons ------------------------------------------------------ */
+/* ---------- Buttons: carved wooden tablets ------------------------------- */
 
 .tg-btn {
   appearance: none;
@@ -125,37 +185,61 @@ body {
   gap: var(--s2);
   padding: var(--s2) var(--s3);
   min-height: 2rem;
-  border-radius: var(--r2);
-  border: 1px solid var(--rim);
-  background: var(--ink-2);
-  color: var(--text);
-  font: 500 var(--t-sm) / 1 var(--font);
+  border: 0;
+  border-radius: 0.22rem 0.35rem 0.28rem 0.4rem / 0.35rem 0.25rem 0.4rem 0.28rem;
+  background:
+    linear-gradient(180deg, rgba(255, 226, 180, 0.2), rgba(255, 226, 180, 0) 40%, rgba(0, 0, 0, 0.22)),
+    var(--tex-wood-light) 0 0 / 9rem;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 236, 200, 0.45),
+    inset 0 -2px 0 rgba(0, 0, 0, 0.35),
+    0 0 0 1px #1d1008,
+    0 2px 0 1px #1d1008;
+  color: var(--bone);
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.8);
+  font: 600 var(--t-sm) / 1.1 var(--font);
   cursor: pointer;
-  transition: background var(--fast) var(--ease), border-color var(--fast) var(--ease), transform var(--fast) var(--ease);
+  transition: filter var(--fast) var(--ease), transform var(--fast) var(--ease), box-shadow var(--fast) var(--ease);
 }
-.tg-btn:hover { background: var(--ink-3); border-color: var(--rim-strong); }
-.tg-btn:active { transform: translateY(1px); }
-.tg-btn:disabled { opacity: 0.45; cursor: default; }
+.tg-btn:hover { filter: brightness(1.14); }
+.tg-btn:active {
+  transform: translateY(2px);
+  box-shadow: inset 0 2px 3px rgba(0, 0, 0, 0.5), 0 0 0 1px #1d1008;
+}
+.tg-btn:disabled { filter: grayscale(0.7) brightness(0.75); cursor: default; transform: none; }
 .tg-btn.primary {
-  background: linear-gradient(180deg, #ffd889, #eab454);
-  border-color: rgba(255, 230, 170, 0.9);
-  color: #2a1d06;
-  font-weight: 650;
+  /* Painted with ochre: the one thing on the screen that says "this way". */
+  background:
+    linear-gradient(180deg, rgba(255, 246, 220, 0.5), rgba(255, 246, 220, 0) 45%, rgba(110, 50, 0, 0.28)),
+    repeating-linear-gradient(100deg, rgba(120, 60, 10, 0.08) 0 3px, transparent 3px 9px),
+    linear-gradient(#f4c463, #d3922f);
+  color: #2a1404;
+  text-shadow: 0 1px 0 rgba(255, 236, 190, 0.7);
+  font-weight: 700;
 }
-.tg-btn.primary:hover { background: linear-gradient(180deg, #ffe29f, #f1c066); }
-.tg-btn.danger { color: var(--bad); }
-.tg-btn.danger:hover { background: var(--bad-soft); border-color: var(--bad); }
+.tg-btn.primary svg { filter: none; }
+.tg-btn.danger { color: #ffb4a0; }
+.tg-btn.danger:hover { color: #ffd0c2; }
 .tg-btn.icon-only { padding: var(--s1); min-width: 2rem; }
-.tg-btn.on { background: var(--gold-soft); border-color: var(--gold); color: var(--gold); }
-.tg-btn svg { flex: none; }
+/* Chosen / on: wrapped in the tribe's cloth, pressed in. */
+.tg-btn.on {
+  background:
+    repeating-linear-gradient(90deg, rgba(0, 0, 0, 0.25) 0 2px, transparent 2px 5px),
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.14) 0 1px, transparent 1px 3px),
+    linear-gradient(var(--tribe-light), var(--tribe) 40%, var(--tribe-dark));
+  color: #fff;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.45), 0 0 0 1px #0f1a2b, 0 0 0 2px rgba(242, 197, 106, 0.55);
+}
+.tg-btn.danger.on { background: linear-gradient(#d0583c, #8e2a17); color: #fff; }
+.tg-btn svg { flex: none; filter: drop-shadow(0 1px 0 rgba(0, 0, 0, 0.6)); }
 
 :focus { outline: none; }
 :focus-visible {
-  outline: 2px solid var(--gold);
+  outline: 2px solid var(--ochre-hi);
   outline-offset: 2px;
 }
 
-/* A hotkey badge, used on every control that has one. */
+/* A hotkey badge: a little bone tag, used on every control that has one. */
 .kbd {
   display: inline-flex;
   align-items: center;
@@ -163,50 +247,52 @@ body {
   min-width: 1.05rem;
   height: 1.05rem;
   padding: 0 0.22rem;
-  border-radius: 0.3rem;
-  background: rgba(0, 0, 0, 0.45);
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  color: var(--text-2);
-  font: 600 0.625rem/1 var(--font);
+  border-radius: 0.18rem 0.3rem 0.22rem 0.32rem;
+  background: linear-gradient(180deg, #fbf3df, #ddc9a2);
+  box-shadow: 0 0 0 1px rgba(30, 16, 6, 0.75), 0 1px 0 1px rgba(0, 0, 0, 0.35);
+  color: #24160c;
+  font: 700 0.625rem/1 var(--font);
   letter-spacing: 0.02em;
+  text-shadow: none;
   box-sizing: border-box;
 }
 
-/* Bars (hp, progress) */
+/* Bars: a groove cut in the wood, filled with pigment. The fill is
+   `transform: scaleX(f)` (ui/bar-fill.ts) — never a width — so it can only
+   ever show the value. */
 .bar {
   position: relative;
-  height: 0.375rem;
-  border-radius: var(--r-pill);
-  background: rgba(255, 255, 255, 0.1);
+  height: 0.4rem;
+  border-radius: 1px 2px 1px 2px;
+  background: #1a100a;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.8), 0 1px 0 rgba(255, 226, 180, 0.2);
   overflow: hidden;
 }
 .bar > i {
   position: absolute;
-  inset: 0 auto 0 0;
-  width: 0;
-  border-radius: inherit;
-  background: var(--good);
-  transition: width var(--fast) linear;
+  inset: 0;
+  transform-origin: 0 50%;
+  transform: scaleX(0);
+  background: linear-gradient(180deg, #b6e58a, #6aa843 60%, #457a2a);
 }
-.bar.mana > i { background: linear-gradient(90deg, #47b8e8, var(--mana)); }
-.bar.gold > i { background: linear-gradient(90deg, #d9a443, var(--gold)); }
-.bar.warn > i { background: var(--warn); }
-.bar.bad > i { background: var(--bad); }
+.bar.mana > i { background: linear-gradient(180deg, #d4fbfd, var(--spirit) 50%, #3aa3ad); }
+.bar.gold > i { background: repeating-linear-gradient(-55deg, #f2c56a 0 4px, #d39537 4px 7px); }
+.bar.warn > i { background: linear-gradient(180deg, #ffd27a, #c98316); }
+.bar.bad > i { background: linear-gradient(180deg, #ff9a7a, #b8392a); }
 
-/* ---------- Tooltip ------------------------------------------------------ */
+/* ---------- Tooltip: a scrap of hide ----------------------------------- */
 
 .tg-tip {
   position: fixed;
   z-index: 60;
   max-width: 17.5rem;
-  padding: var(--s3);
+  padding: 0.6rem 0.75rem 0.65rem;
   pointer-events: none;
-  background: var(--ink-0);
-  backdrop-filter: var(--blur);
-  -webkit-backdrop-filter: var(--blur);
-  border: 1px solid var(--rim-strong);
-  border-radius: var(--r2);
-  box-shadow: var(--shadow);
+  background:
+    radial-gradient(120% 140% at 50% 40%, transparent 60%, rgba(120, 72, 30, 0.35)),
+    var(--tex-hide) 0 0 / 12rem;
+  border-radius: 0.3rem 0.55rem 0.35rem 0.6rem / 0.55rem 0.3rem 0.6rem 0.35rem;
+  box-shadow: 0 0 0 1.5px #4a2c14, 0 0 0 3px rgba(20, 10, 4, 0.55), 0 0.4rem 1rem rgba(0, 0, 0, 0.5);
   font-size: var(--t-sm);
   line-height: 1.45;
   color: var(--text-2);
@@ -220,40 +306,46 @@ body {
   display: flex;
   align-items: center;
   gap: var(--s2);
-  font-size: var(--t-md);
-  font-weight: 650;
+  font: 700 var(--t-md)/1.2 var(--font-display);
+  letter-spacing: 0.02em;
   color: var(--text);
 }
 .tg-tip h4 .kbd { margin-left: auto; }
-.tg-tip .sub { color: var(--text-3); font-size: var(--t-xs); text-transform: uppercase; letter-spacing: 0.08em; }
+.tg-tip .sub { color: var(--text-3); font-size: var(--t-xs); text-transform: uppercase; letter-spacing: 0.08em; font-weight: 700; }
 .tg-tip p { margin: var(--s1) 0 var(--s2); }
 .tg-tip .stats {
   display: grid;
   grid-template-columns: auto 1fr;
   gap: 0.125rem var(--s3);
   font-size: var(--t-xs);
+  margin: 0;
+  padding-top: 0.3rem;
+  border-top: 1px dashed rgba(74, 44, 20, 0.45);
 }
-.tg-tip .stats dt { color: var(--text-3); }
-.tg-tip .stats dd { margin: 0; color: var(--text); }
-.tg-tip .why { margin-top: var(--s2); color: var(--bad); font-weight: 600; }
-.tg-tip .note { margin-top: var(--s2); color: var(--gold); }
+.tg-tip .stats dt { color: var(--text-3); font-weight: 600; }
+.tg-tip .stats dd { margin: 0; color: var(--text); font-weight: 700; }
+.tg-tip .why { margin-top: var(--s2); color: var(--bad); font-weight: 700; }
+.tg-tip .note { margin-top: var(--s2); color: var(--gold); font-weight: 700; }
 .tg-tip .hint { margin-top: var(--s2); color: var(--text-3); font-size: var(--t-xs); }
+.tg-tip .kbd { box-shadow: 0 0 0 1px rgba(30, 16, 6, 0.75); }
 
-/* ---------- Toasts near the cursor -------------------------------------- */
+/* ---------- Toasts near the cursor: a red-ochre bark tag ---------------- */
 
 .tg-toast {
   position: fixed;
   z-index: 55;
   pointer-events: none;
-  padding: 0.3rem 0.6rem;
-  border-radius: var(--r1);
-  background: rgba(40, 10, 8, 0.86);
-  border: 1px solid rgba(255, 106, 92, 0.6);
-  color: #ffd9d4;
-  font: 600 var(--t-sm)/1.2 var(--font);
+  padding: 0.32rem 0.65rem 0.36rem;
+  border-radius: 0.2rem 0.4rem 0.25rem 0.45rem;
+  background: linear-gradient(rgba(140, 34, 16, 0.85), rgba(96, 22, 10, 0.92)), var(--tex-bark) 0 0 / 10rem;
+  box-shadow: 0 0 0 1px #1a0904, 0 3px 8px rgba(0, 0, 0, 0.45);
+  color: #ffe6dc;
+  font: 700 var(--t-sm)/1.2 var(--font);
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.6);
   white-space: nowrap;
   animation: tg-toast 1.6s var(--ease) forwards;
 }
+.tg-toast.info { background: linear-gradient(rgba(40, 26, 14, 0.82), rgba(28, 18, 10, 0.92)), var(--tex-bark) 0 0 / 10rem; color: var(--spirit); }
 @keyframes tg-toast {
   0% { opacity: 0; transform: translate(-50%, 4px); }
   12% { opacity: 1; transform: translate(-50%, 0); }
@@ -261,32 +353,65 @@ body {
   100% { opacity: 0; transform: translate(-50%, -10px); }
 }
 
-/* Cursor-following hint while aiming or placing */
+/* Cursor-following note while aiming or placing: a bark tag. */
 .tg-cursor-note {
   position: fixed;
   z-index: 54;
   pointer-events: none;
-  padding: 0.25rem 0.5rem;
-  border-radius: var(--r1);
-  background: var(--ink-0);
-  border: 1px solid var(--rim-strong);
-  font: 600 var(--t-xs)/1.2 var(--font);
-  color: var(--text);
+  padding: 0.28rem 0.55rem 0.3rem;
+  border-radius: 0.2rem 0.35rem 0.25rem 0.4rem;
+  background: linear-gradient(rgba(30, 19, 11, 0.6), rgba(30, 19, 11, 0.75)), var(--tex-bark) 0 0 / 10rem;
+  box-shadow: 0 0 0 1px #120a04, 0 3px 8px rgba(0, 0, 0, 0.4);
+  font: 700 var(--t-xs)/1.2 var(--font);
+  color: var(--bone);
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.7);
   white-space: nowrap;
   transform: translate(14px, 14px);
 }
-.tg-cursor-note.bad { color: #ffd9d4; border-color: rgba(255, 106, 92, 0.7); background: rgba(40, 10, 8, 0.86); }
+.tg-cursor-note.bad { color: #ffe0d6; background: linear-gradient(rgba(140, 34, 16, 0.85), rgba(96, 22, 10, 0.92)), var(--tex-bark) 0 0 / 10rem; }
 .tg-cursor-note .kbd { margin-left: var(--s1); }
 
-/* Marquee */
-.tg-marquee {
-  position: fixed;
-  z-index: 5;
-  pointer-events: none;
-  border: 1px solid var(--gold);
-  background: rgba(244, 198, 106, 0.1);
-  border-radius: 2px;
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.25);
+/* ---------- Hide-faced panels: re-declare the colour set for charcoal ink */
+
+.tg-tip, .mat-hide {
+  --text: #24160c;
+  --text-2: #43301f;
+  --text-3: #654c35;
+  --gold: #8a4c0c;
+  --gold-soft: rgba(176, 108, 24, 0.18);
+  --mana: #176a74;
+  --mana-soft: rgba(23, 106, 116, 0.13);
+  --wood: #84440f;
+  --good: #2c6a1c;
+  --warn: #8f5204;
+  --bad: #a3271a;
+  --bad-soft: rgba(163, 39, 26, 0.13);
+  --ink-2: rgba(70, 40, 15, 0.08);
+  --ink-3: rgba(70, 40, 15, 0.15);
+  --rim: rgba(70, 40, 15, 0.25);
+  --rim-strong: rgba(70, 40, 15, 0.45);
+  --carve-paint: #7a3a10;
+  --carve-cut: rgba(60, 32, 10, 0.35);
+  --carve-edge: rgba(255, 246, 225, 0.75);
+}
+.tg-panel.mat-hide {
+  background:
+    radial-gradient(130% 120% at 50% 45%, transparent 55%, rgba(110, 64, 24, 0.38)),
+    var(--tex-hide) 0 0 / 14rem;
+  background-clip: padding-box;
+  box-shadow: inset 0 0 0 1px rgba(60, 34, 12, 0.5), inset 0 0.25rem 0.5rem -0.25rem rgba(60, 34, 12, 0.6), var(--shadow);
+}
+.mat-hide .tg-btn { color: var(--bone); }
+.mat-hide .tg-btn.primary { color: #2a1606; }
+
+/* Stone-faced: the spell book slab. */
+.tg-panel.mat-stone {
+  background:
+    radial-gradient(140% 120% at 30% 0%, rgba(255, 245, 225, 0.12), rgba(0, 0, 0, 0.3)),
+    var(--tex-stone) 0 0 / 13rem;
+  background-clip: padding-box;
+  border-image: var(--frame-stone) 48 / var(--frame) round;
+  border-color: #6f6a62;
 }
 
 @media (prefers-reduced-motion: reduce) {

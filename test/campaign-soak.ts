@@ -52,7 +52,8 @@ export function soakScenarios(chapters: number[]): void {
         const allowed = t.loadout?.buildings;
         if (p.builds === false || (allowed && allowed.length === 0)) {
           // War bands / raiders: they must at least have shown up.
-          if ((w.rules.events ?? []).some((e) => e.actions.some((a) => a.type === 'spawn' && a.tribe === t.id))) {
+          // (Only raids on the clock: a raid the story holds back until an objective may never come for the bot.)
+          if ((w.rules.events ?? []).some((e) => e.when.type === 'time' && e.actions.some((a) => a.type === 'spawn' && a.tribe === t.id))) {
             expect(seen.has(t.id), `${t.id} raiders arrived`).toBe(true);
           }
           continue;

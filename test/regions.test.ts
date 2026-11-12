@@ -83,7 +83,7 @@ describe('regions', () => {
     for (const s of CAMPAIGN) {
       const w = await loadScenario(s.id);
       for (const u of w.units) {
-        if (u.hidden) continue;
+        if (u.hidden || u.joins) continue; // (stranded kin are stranded on purpose: chapter 1's sandbar)
         const r = regionAt(w.map, Math.round(u.x), Math.round(u.z));
         expect(regionSize(w.map, r), `${s.id}: ${u.kind} of ${u.tribe} at ${u.x.toFixed(0)},${u.z.toFixed(0)}`).toBeGreaterThanOrEqual(MAJOR_REGION);
       }

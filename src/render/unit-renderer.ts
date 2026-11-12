@@ -16,10 +16,13 @@
  *    them below the horizon; outside the camera frustum nobody can see
  *    them. Either way: no animation, no draw.
  *
- * 4. CURVE — terrain bends down with distance in its vertex shader; figures
- *    are small, so we drop the whole figure by curvatureDrop() on the CPU —
- *    the FULL drop, limb included, so far figures sit on the planet's edge
- *    (sub-pixel error at this size, and no per-vertex shader patch needed).
+ * 4. CURVE — figures are placed at their TRUE (unbent) world position and
+ *    every vertex is bent on the GPU exactly like the ground under it
+ *    (curveObject), shadows included — feet meet the ground identically
+ *    from every camera position. Feet stand on the DRAWN surface
+ *    (world/surface.ts, the terrain shader's own bicubic filter).
+ *    curvatureDrop() is used only to report where a figure is DRAWN
+ *    (picking, culling).
  *
  * 5. ANIMATE — pick a clip from the unit's state/task (chooseClip), feed
  *    the animator the MEASURED ground speed (foot sync) and turn rate (lean
@@ -47,6 +50,16 @@
  *   u.warsongTime — Warsong: a shared red-gold variant; movers run.
  *   u.garrison    — tower lookouts on the platform, shrine worshippers
  *                   kneeling round the altar.
+ *   u.joins       — stranded kin: built in the colours of the tribe they
+ *                   will join (figureTribe), beckoning while they wait.
+ *   u.guardOf     — a stone's guardian: stone-grey skin and cloth, cold
+ *                   glowing eyes; kneels dormant while its stone sleeps
+ *                   (monument.guardsAwake false).
+ *   volcano heat  — people hurt inside a running volcano (world.jobs) char
+ *                   and trail embers; if it kills them the body is flung
+ *                   from the mountain, smoking.
+ *   casting       — the leader's staff light and ground glow take the
+ *                   spell's colour and swell as the cast gathers.
  *   Chanters with task 'chant' chant; idle villagers cheer near a recruit
  *   trained or an objective met (world.events, read before effects drains
  *   them), and on world.gameOver for the winning side.
@@ -54,17 +67,23 @@
 
 import * as THREE from 'three';
 import { CIVS, TILE, WORLD_SIZE } from '../config';
-import { curvatureDrop } from '../world/curvature';
+import { curvatureDrop, curveObject } from '../world/curvature';
+import { surfaceHeight } from '../world/surface';
+import { buildingBaseY, communers } from './building-renderer';
+import { isHighlighted } from './highlight';
+import { highlightMaterial } from '../assets/models/buildings/index';
 import { wrapDelta } from '../core/util';
 import { buildUnitModel, FigureModel } from '../assets/models/registry';
 import { decalMaterial, disposeModelMaterial, fadeCopy, tickModelMaterials, tintedMaterial } from '../assets/models/materials';
 import { garrisonSpot } from '../assets/models/buildings/index';
 import { spellDef, TRIBE_COLORS, Tribe, UNITS, UnitKind } from '../sim/catalog';
 import { AnimInput, FigureAnimator, runThreshold } from './figure-animator';
-import { UNIT_STATUS } from './look';
+import { GUARDIAN, SPELL_LOOK, SPELL_LOOK_DEFAULT, UNIT_BURN, UNIT_STATUS } from './look';
+import { glowTexture } from '../assets/models/people/figure';
+import { BI } from '../assets/models/people/rig';
 import { ParticlePool } from './model-particles';
 import { Building, Unit, World } from '../sim/world-state';
-import { cheerersFor, ClipContext, pickClip, StatusTint, statusTint } from './unit-visual-state';
+import { cheerersFor, ClipContext, figureTribe, pickClip, StatusTint, statusTint } from './unit-visual-state';
 
 const WORLD_UNITS = WORLD_SIZE * TILE;
 /** Beyond this (world units from the camera target) figures are over the horizon. */
@@ -111,6 +130,21 @@ interface Entry {
   /** The figure's own materials, and which status variant it wears. */
   baseMats: THREE.Material[];
   tint: StatusTint;
+  /** Wearing the hover highlight (render/highlight.ts). */
+  lit: boolean;
+  /** Thrown by a blast: seconds into the hop (-1 = not hopping). */
+  hop: number;
+  /** Seconds of burning left (volcano heat), and the ember emission owed. */
+  burn: number;
+  emberAcc: number;
+  /** Which material variant is worn (status tint, burn, guardian). */
+  look: string;
+  /** A stone's guardian (built with eyes). */
+  guardian: boolean;
+  eyes: THREE.Sprite[];
+  /** The leader's staff light / ground glow at rest (restored after a cast). */
+  focusColor: number;
+  focusScale: number;
 }
 
 /** Where a unit is drawn: world-space feet (bent, nearest image) and tile coords. */
@@ -136,6 +170,8 @@ interface Ghost {
   tribe: Tribe;
   /** Fractional wisp emission carried between frames. */
   wispAcc: number;
+  /** Burned to death: flung from the mountain (tiles/s, world units/s), charred, smoking. */
+  fly: { vx: number; vz: number; vy: number; y: number } | null;
 }
 
 /** Ordinary death timeline (seconds): fall, lie still, fade out with a wisp. */
@@ -172,12 +208,28 @@ export class UnitRenderer {
   private readonly clipCtx: ClipContext = { garrisonKind: null, inWater: false, speed: 0, runSpeed: 0, cheering: false, winner: null };
   /** Tribe-coloured wisps rising from the dead. */
   private readonly wisps: ParticlePool;
+  /** Embers off burning people, and the smoke of the flung dead (world-space anchor). */
+  private readonly embers: ParticlePool;
+  private readonly smokePuffs: ParticlePool;
+  private readonly worldAnchor = new THREE.Object3D();
+  private readonly eyeMat: THREE.SpriteMaterial;
+  /** Running volcanoes this frame: tile x, z, radius (reused). */
+  private readonly hot: number[] = [];
+  private world: World | null = null;
 
   constructor(private readonly scene: THREE.Scene) {
     // Selection ring: a soft-edged band on the ground, tinted by tribe.
     this.ringGeo = new THREE.RingGeometry(0.85, 1.15, 32, 1);
     this.ringGeo.rotateX(-Math.PI / 2);
     this.wisps = new ParticlePool(scene, 400, true);
+    this.embers = new ParticlePool(scene, 500, true);
+    this.smokePuffs = new ParticlePool(scene, 300, false);
+    this.worldAnchor.userData.gpuCurved = true;
+    scene.add(this.worldAnchor); // particles die with an unparented anchor
+    this.eyeMat = new THREE.SpriteMaterial({
+      map: glowTexture(), color: GUARDIAN.eyes, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false,
+    });
+    this.eyeMat.color.multiplyScalar(4); // HDR: the bloom pass makes them burn
   }
 
   /** Give the renderer the camera so it can frustum-cull (optional; main.ts may not call it). */
@@ -198,6 +250,7 @@ export class UnitRenderer {
   /** Called once per render frame. */
   sync(world: World, camTarget: THREE.Vector3, alpha: number, dt: number, selected: Set<number>): void {
     this.frame++;
+    this.world = world;
     tickModelMaterials(dt);
     if (!this.camera) this.camera = findCamera(this.scene);
     if (this.camera) {
@@ -216,13 +269,19 @@ export class UnitRenderer {
       for (const id of cheerersFor(world.events, world.units, world.buildings)) this.cheerUntil.set(id, this.clock + CHEER_SECONDS);
     }
     const winner = world.gameOver;
+    const hot = this.hot;
+    hot.length = 0;
+    for (const j of world.jobs) if (j.spell === 'volcano') hot.push(j.x, j.z, spellDef('volcano').radius * 0.85);
 
     for (const u of world.units) {
       live.add(u.id);
       let e = this.entries.get(u.id);
 
-      // Converted units change costume: rebuild.
-      if (e && (e.kind !== u.kind || e.tribe !== u.tribe)) {
+      // Converted units change costume: rebuild. (Stranded kin already wear
+      // their new tribe's colours, so joining doesn't.)
+      const dress = figureTribe(u);
+      const guardian = u.tribe === 'wild' && (u.guardOf ?? -1) >= 0;
+      if (e && (e.kind !== u.kind || e.tribe !== dress || e.guardian !== guardian)) {
         this.dispose(e);
         this.entries.delete(u.id);
         e = undefined;
@@ -244,18 +303,33 @@ export class UnitRenderer {
       }
 
       if (!e) {
-        const fig = buildUnitModel(u.kind, u.tribe, civOf(world, u.tribe), u.id);
+        const fig = buildUnitModel(u.kind, dress, civOf(world, dress), u.id);
+        const eyes: THREE.Sprite[] = [];
+        if (guardian) {
+          // cold eyes, on the head bone so they turn with the face
+          for (const sx of [1, -1]) {
+            const eye = new THREE.Sprite(this.eyeMat);
+            eye.position.set(sx * 0.09, 0.225, 0.21);
+            eye.scale.setScalar(0.16);
+            fig.bones[BI.head].add(eye);
+            eyes.push(eye);
+          }
+        }
         const ring = new THREE.Mesh(this.ringGeo, this.ringMat(u.tribe));
         ring.renderOrder = 1;
         ring.visible = false;
         ring.scale.setScalar(fig.height * 0.36);
+        curveObject(fig.root);
+        curveObject(ring);
         this.scene.add(fig.root, ring);
         e = {
-          fig, anim: new FigureAnimator(fig, u.id), ring, kind: u.kind, tribe: u.tribe, lastHp: u.hp,
+          fig, anim: new FigureAnimator(fig, u.id), ring, kind: u.kind, tribe: dress, lastHp: u.hp,
           px: NaN, pz: NaN, speed: 0, yaw: u.heading, turn: 0, lodTick: u.id % 3, accDt: 0, tx: u.x, tz: u.z, inWater: false,
           drawn: new THREE.Vector3(), drawnFrame: -1, inp: { clip: 'idle', speed: 0, turnRate: 0 },
           lift: 0, liftV: 0, ox: 0, oz: 0, simX: u.x, simZ: u.z,
-          baseMats: fig.meshes.map((m) => m.material as THREE.Material), tint: 'none',
+          baseMats: fig.meshes.map((m) => m.material as THREE.Material), tint: 'none', lit: false,
+          burn: 0, emberAcc: 0, look: 'none', guardian, eyes, hop: -1,
+          focusColor: fig.focus ? fig.focus.material.color.getHex() : 0, focusScale: fig.focus ? fig.focus.scale.x : 1,
         };
         this.entries.set(u.id, e);
       }
@@ -273,9 +347,15 @@ export class UnitRenderer {
       if (spot) {
         e.lift = e.liftV = e.ox = e.oz = 0;
       } else {
-        if ((u.lifted > 0 || e.lift > 0) && jx * jx + jz * jz > 0.25) {
+        const jump = jx * jx + jz * jz;
+        if ((u.lifted > 0 || e.lift > 0) && jump > 0.25) {
           e.ox -= jx;
           e.oz -= jz;
+        } else if (jump > 0.25 && jump < 64 && u.hp < e.lastHp - 0.01) {
+          // hurt AND moved in one tick: a blast threw it — glide the jump as a flight
+          e.ox -= jx;
+          e.oz -= jz;
+          e.hop = 0;
         }
         const glide = Math.exp(-dt * UNIT_STATUS.flingGlide);
         e.ox *= glide;
@@ -305,14 +385,21 @@ export class UnitRenderer {
       const d2 = relX * relX + relZ * relZ;
       const wx = camTarget.x + relX;
       const wz = camTarget.z + relZ;
-      const ground = world.map.sampleHeight(ix, iz);
+      const ground = surfaceHeight(world.map, ix, iz);
       const inWater = ground < -0.25 && !spot && e.lift < 0.05;
       e.inWater = inWater;
-      let y = spot ? world.map.heightAt(Math.round(gb!.x), Math.round(gb!.z)) + spot.y : Math.max(ground, inWater ? -0.9 - 0.1 * Math.sin(this.frame * 0.1 + u.id) : 0);
-      // 4. CURVE
-      y -= curvatureDrop(relX, relZ);
+      const spotBase = spot ? buildingBaseY.get(gb!.id) ?? world.map.heightAt(Math.round(gb!.x), Math.round(gb!.z)) : 0;
+      let y = spot ? spotBase + spot.y : Math.max(ground, inWater ? -0.9 - 0.1 * Math.sin(this.frame * 0.1 + u.id) : 0);
+      // 4. CURVE: placed unbent; `bend` is how far the GPU will drop it.
+      const bend = curvatureDrop(relX, relZ);
       const groundY = y;
       if (e.lift > 0) y += e.lift * (UNIT_STATUS.liftHeight + 0.35 * Math.sin(this.clock * 3.1 + u.id));
+      if (e.hop >= 0) {
+        e.hop += dt;
+        const k = e.hop / 0.75;
+        if (k >= 1) e.hop = -1;
+        else y += Math.sin(k * Math.PI) * 2.4;
+      }
 
       // measured speed (world units/s) for foot sync
       if (dt > 0 && !Number.isNaN(e.px)) {
@@ -322,13 +409,13 @@ export class UnitRenderer {
       }
       e.px = wx;
       e.pz = wz;
-      e.drawn.set(wx, y, wz);
+      e.drawn.set(wx, y - bend, wz); // where it is DRAWN (bent), for picking
       e.drawnFrame = this.frame;
 
-      // 3. CULL
+      // 3. CULL (against the drawn, bent position)
       let visible = d2 < VIEW_RADIUS * VIEW_RADIUS;
       if (visible && this.camera) {
-        this.sphere.center.set(wx, y + e.fig.height * 0.5, wz);
+        this.sphere.center.set(wx, y - bend + e.fig.height * 0.5, wz);
         this.sphere.radius = e.fig.height;
         visible = this.frustum.intersectsSphere(this.sphere);
       }
@@ -349,18 +436,38 @@ export class UnitRenderer {
       }
       e.fig.root.rotation.y = e.yaw;
 
-      // Stone Ward / Warsong: swap to a shared tinted variant.
+      // Stone Ward / Warsong: swap to a shared tinted variant; the hover
+      // highlight goes on top of whichever is worn.
+      // Volcano heat: hurt inside a running volcano = burning for a moment.
+      const hurt = u.hp < e.lastHp - 0.01;
+      if (hurt && hot.length && this.inHeat(u.x, u.z)) e.burn = UNIT_BURN.seconds;
+      e.burn = Math.max(0, e.burn - dt);
       const tint = statusTint(u);
-      if (tint !== e.tint) {
+      const lit = isHighlighted('unit', u.id);
+      // A guardian's stone skin is its base; a status tint goes on over it.
+      const look = e.burn > 0 ? 'burn' : e.guardian ? (tint === 'none' ? 'guardian' : `guardian+${tint}`) : tint;
+      if (look !== e.look || lit !== e.lit) {
         e.tint = tint;
+        e.look = look;
+        e.lit = lit;
         const base = e.baseMats;
         e.fig.meshes.forEach((m, i) => {
-          m.material = tint === 'none' ? base[i] : tintedMaterial(base[i], tint, UNIT_STATUS[tint]);
+          const skin = e.guardian ? tintedMaterial(base[i], 'guardian', GUARDIAN) : base[i];
+          const worn = look === 'burn' ? tintedMaterial(base[i], 'burn', UNIT_BURN)
+            : tint === 'none' ? skin
+              : tintedMaterial(skin, tint, UNIT_STATUS[tint as Exclude<StatusTint, 'none'>]);
+          m.material = lit ? highlightMaterial(worn) : worn;
         });
+      }
+      if (e.burn > 0) this.emitEmbers(e, wx, y, wz, dt);
+      if (e.eyes.length) {
+        const awake = !!world.monuments[u.guardOf!]?.guardsAwake;
+        const k = awake ? 1 : 0.55 + 0.15 * Math.sin(this.clock * 1.3 + u.id);
+        for (const eye of e.eyes) eye.scale.setScalar((awake ? 0.34 : 0.22) * k);
       }
 
       // hit flinch
-      if (u.hp < e.lastHp - 0.01) e.anim.flinch();
+      if (hurt) e.anim.flinch();
       e.lastHp = u.hp;
 
       // 5. ANIMATE (with LOD)
@@ -379,8 +486,19 @@ export class UnitRenderer {
         e.fig.setProp('hammer', c === 'build');
       }
       if (e.fig.aura) {
+        // casting: the staff light and ground glow take the spell's colour and swell as it gathers
+        const casting = inp.clip === 'cast' && u.castSpell ? u.castSpell : null;
+        const prog = casting ? Math.min(1, Math.max(0, 1 - u.workTimer / Math.max(0.05, spellDef(casting).castSeconds))) : 0;
         const k = 0.9 + 0.1 * Math.sin(this.frame * 0.05 + u.id);
-        e.fig.aura.scale.setScalar(k * (inp.clip === 'cast' ? 1.5 : 1));
+        e.fig.aura.scale.setScalar(k * (casting ? 1.4 + 1.2 * prog : 1));
+        const am = e.fig.aura.material as THREE.MeshBasicMaterial;
+        const col = casting ? (SPELL_LOOK[casting] ?? SPELL_LOOK_DEFAULT).glow : e.focusColor;
+        if (am.color.getHex() !== col) am.color.setHex(col);
+        if (e.fig.focus) {
+          const fm = e.fig.focus.material;
+          if (fm.color.getHex() !== col) fm.color.setHex(col);
+          e.fig.focus.scale.setScalar(e.focusScale * (casting ? 1.6 + 2.6 * prog + 0.3 * Math.sin(this.clock * 30) * prog : 1));
+        }
       }
 
       if (e.ring.visible) {
@@ -410,13 +528,65 @@ export class UnitRenderer {
             return mm;
           });
         }
-        this.ghosts.push({ fig: e.fig, anim: e.anim, t: 0, mode, tx: e.tx, tz: e.tz, yaw: e.yaw, fade, tribe: e.tribe, wispAcc: 0 });
+        for (const eye of e.eyes) eye.visible = false; // the light goes out of a fallen guardian
+        let fly: Ghost['fly'] = null;
+        if (e.burn > 0 && mode === 'die') {
+          // burned to death on the mountain: thrown clear of it, smoking
+          const away = this.awayFromHeat(e.tx, e.tz);
+          const sp = 2.5 + Math.random() * 2;
+          fly = { vx: away.x * sp, vz: away.z * sp, vy: 9 + Math.random() * 5, y: 0 };
+        }
+        this.ghosts.push({ fig: e.fig, anim: e.anim, t: 0, mode, tx: e.tx, tz: e.tz, yaw: e.yaw, fade, tribe: e.tribe, wispAcc: 0, fly });
       } else {
         this.disposeFig(e.fig);
       }
     }
     this.updateGhosts(world, camTarget, dt);
     this.wisps.update(dt, 0.1);
+    this.embers.update(dt, 0.1);
+    this.smokePuffs.update(dt, 0.1);
+  }
+
+  /** Inside a running volcano's reach? */
+  private inHeat(x: number, z: number): boolean {
+    const h = this.hot;
+    for (let i = 0; i < h.length; i += 3) {
+      const dx = wrapDelta(x - h[i], WORLD_SIZE), dz = wrapDelta(z - h[i + 1], WORLD_SIZE);
+      if (dx * dx + dz * dz < h[i + 2] * h[i + 2]) return true;
+    }
+    return false;
+  }
+
+  /** Unit vector away from the nearest running volcano (tiles). */
+  private awayFromHeat(x: number, z: number): { x: number; z: number } {
+    const h = this.hot;
+    let best = Infinity, ox = 1, oz = 0;
+    for (let i = 0; i < h.length; i += 3) {
+      const dx = wrapDelta(x - h[i], WORLD_SIZE), dz = wrapDelta(z - h[i + 1], WORLD_SIZE);
+      const d = Math.hypot(dx, dz);
+      if (d < best && d > 0.01) {
+        best = d;
+        ox = dx / d;
+        oz = dz / d;
+      }
+    }
+    return { x: ox, z: oz };
+  }
+
+  /** Embers streaming off a burning figure (world-anchored, so they trail behind it). */
+  private emitEmbers(e: Entry, wx: number, y: number, wz: number, dt: number): void {
+    e.emberAcc += dt * 40 * (e.burn / UNIT_BURN.seconds);
+    for (; e.emberAcc >= 1; e.emberAcc--) {
+      _wisp.set(wx + (Math.random() - 0.5) * 0.6, y + Math.random() * e.fig.height, wz + (Math.random() - 0.5) * 0.6);
+      this.embers.emit(this.worldAnchor, _wisp, {
+        vy: 1.2 + Math.random() * 2, vx: (Math.random() - 0.5) * 1.2, vz: (Math.random() - 0.5) * 1.2,
+        life: 0.5 + Math.random() * 0.5, size: 0.22 + Math.random() * 0.2, grow: -0.6,
+        color: Math.random() < 0.3 ? 0xffd070 : 0xff6a18, alpha: 1, spread: 0.2,
+      });
+      if (Math.random() < 0.15) {
+        this.smokePuffs.emit(this.worldAnchor, _wisp, { vy: 1.4, life: 1.2, size: 0.6, grow: 1.6, color: 0x2a2420, alpha: 0.45, spread: 0.3 });
+      }
+    }
   }
 
   /**
@@ -445,9 +615,11 @@ export class UnitRenderer {
     c.runSpeed = runThreshold(e.fig);
     c.cheering = (this.cheerUntil.get(u.id) ?? -1) >= this.clock;
     c.winner = winner;
+    c.dormant = e.guardian && !this.world?.monuments[u.guardOf!]?.guardsAwake;
     const pick = pickClip(u, c);
     const inp = e.inp;
-    inp.clip = pick.clip;
+    // A leader communing at a standing stone kneels in prayer (whatever the sim calls the task).
+    inp.clip = e.hop >= 0 ? 'tumble' : communers.has(u.id) && e.speed < 0.4 ? 'pray' : pick.clip;
     inp.speed = e.speed;
     inp.turnRate = e.turn;
     inp.phase = pick.phase;
@@ -461,8 +633,26 @@ export class UnitRenderer {
       g.t += dt;
       const relX = wrapDelta(g.tx * TILE - camTarget.x, WORLD_UNITS);
       const relZ = wrapDelta(g.tz * TILE - camTarget.z, WORLD_UNITS);
-      let y = Math.max(0, world.map.sampleHeight(g.tx, g.tz)) - curvatureDrop(relX, relZ);
+      let y = Math.max(0, surfaceHeight(world.map, g.tx, g.tz));
       let done = false;
+      if (g.fly && g.t < 3) {
+        // flung: a ballistic arc until it lands, spinning; smoke all the way
+        const f = g.fly;
+        if (f.y > 0 || f.vy > 0) {
+          f.vy -= 22 * dt;
+          f.y = Math.max(0, f.y + f.vy * dt);
+          g.tx += f.vx * dt;
+          g.tz += f.vz * dt;
+          if (f.y === 0) f.vy = 0;
+          g.yaw += dt * 6;
+        }
+        y += f.y;
+        if (Math.random() < dt * 30) {
+          _wisp.set(camTarget.x + relX, y + 0.8, camTarget.z + relZ);
+          this.smokePuffs.emit(this.worldAnchor, _wisp, { vy: 1.2, life: 1.6, size: 0.9, grow: 1.8, color: 0x2a2420, alpha: 0.55, spread: 0.4 });
+          this.embers.emit(this.worldAnchor, _wisp, { vy: 1.5, life: 0.6, size: 0.3, grow: -0.5, color: 0xff7a20, alpha: 1, spread: 0.5 });
+        }
+      }
       if (g.mode === 'die') {
         // fall, lie still a moment, then fade away while a wisp in the
         // tribe's colour rises from the body
@@ -488,7 +678,7 @@ export class UnitRenderer {
         done = g.t > DIE_END;
       } else if (g.mode === 'drown') {
         g.anim.update(dt, GHOST_DROWN);
-        y = -0.9 - g.t * 1.1 - curvatureDrop(relX, relZ);
+        y = -0.9 - g.t * 1.1;
         done = g.t > 2.5;
       } else {
         // a leader rises in light and fades

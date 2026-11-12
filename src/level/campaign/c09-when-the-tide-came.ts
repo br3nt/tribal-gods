@@ -101,7 +101,10 @@ export const scenario: CampaignScenario = {
           { objective: { type: 'destroyTribe', tribe: 'gold' }, text: 'Drive the Saltborn into the sea', optional: true },
         ],
         fail: [{ type: 'timeLimit', seconds: 1500 }],
-        events: tide,
+        events: [
+          { when: { type: 'time', at: 2 }, message: 'Level a terrace on the Last Hill now, while the lowlands are still dry.', focus: LAYOUT.summit, actions: [] },
+          ...tide,
+        ],
         briefing: {
           title: 'When the Tide Came',
           body:

@@ -56,7 +56,7 @@ export const scenario: CampaignScenario = {
         { x: pass.x, z: pass.z, spell: 'lightning', mode: 'teach' },
         { x: ward.x, z: ward.z, spell: 'ward', mode: 'gift', charges: 2, cooldown: 240 },
       ],
-      wildmen: wanderers(t.map, 31, 40, 84, 8, 4).concat(wanderers(t.map, 32, 88, 44, 8, 4)),
+      wildmen: wanderers(t.map, 31, 36, 76, 3, 4).concat(wanderers(t.map, 32, 88, 44, 8, 4), wanderers(t.map, 33, 44, 86, 6, 3)),
       rules: {
         tribes: [
           {
@@ -83,6 +83,12 @@ export const scenario: CampaignScenario = {
           { objective: { type: 'destroyTribe', tribe: 'red' }, text: 'Drive the Ashmark from Twofold' },
           { objective: { type: 'claimMonument', index: 0 }, text: 'Learn Lightning at the stone in the pass', optional: true },
           { objective: { type: 'buildCount', kind: 'tower', count: 2 }, text: 'Raise 2 Watchtowers', optional: true },
+          { objective: { type: 'castSpell', spell: 'lightning', count: 3 }, text: 'Call the lightning down three times', optional: true },
+        ],
+        events: [
+          { when: { type: 'time', at: 2 }, message: 'Wanderers by the stream below the village. Kindle them — every pair of hands counts against the Ashmark.', focus: { x: 36, z: 76 }, actions: [] },
+          { when: { type: 'time', at: 40 }, message: 'The stone in the pass teaches the lightning. Kneel there before the Ashmark leader does — she will come with spears.', focus: LAYOUT.pass, actions: [] },
+          { when: { type: 'time', at: 470 }, message: 'Smoke and drums over the ridge. The Ashmark are done hiding.', focus: LAYOUT.red, actions: [] },
         ],
         briefing: {
           title: 'Smoke Over the Ridge',

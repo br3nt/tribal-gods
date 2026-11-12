@@ -67,7 +67,7 @@ export const scenario: CampaignScenario = {
         { x: wedge.x, z: wedge.z, spell: 'warsong', mode: 'teach' },
         { x: mire.x, z: mire.z, spell: 'swamp', mode: 'gift', charges: 2, cooldown: 200 },
       ],
-      wildmen: wanderers(t.map, 71, wedge.x, wedge.z, 8, 6),
+      wildmen: wanderers(t.map, 71, wedge.x, wedge.z, 8, 6).concat(wanderers(t.map, 72, 78, 30, 3, 4)),
       rules: {
         tribes: [
           {
@@ -102,8 +102,10 @@ export const scenario: CampaignScenario = {
           { objective: { type: 'destroyAll' }, text: 'Bring down both banners' },
           { objective: { type: 'buildCount', kind: 'chantHall', count: 1 }, text: 'Raise a Chant Hall', optional: true },
           { objective: { type: 'claimMonument', index: 0 }, text: 'Learn Warsong in the fen', optional: true },
+          { objective: { type: 'castSpell', spell: 'swamp' }, text: 'Mire a ford under an army', optional: true },
         ],
         events: [
+          { when: { type: 'time', at: 2 }, message: 'Wanderers on the slope east of the village. Kindle them, then fetch the Mire from the western stone — the fords are where they must cross.', focus: { x: 78, z: 30 }, actions: [] },
           {
             when: { type: 'time', at: 900 },
             message: 'The Saltborn have had enough of the Ashmark’s war. The alliance is broken — they fight each other now.',

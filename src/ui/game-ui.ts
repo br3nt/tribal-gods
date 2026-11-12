@@ -21,6 +21,9 @@
 
 import * as THREE from 'three';
 import type { LoopStats } from '../core/loop';
+import { setHighlight } from '../render/highlight';
+import { TILE, WORLD_SIZE } from '../config';
+import { wrapDelta } from '../core/util';
 import { BuildingKind, SpellId, UNITS } from '../sim/catalog';
 import type { World } from '../sim/world-state';
 import { AlertFeed } from './alerts';
@@ -43,7 +46,9 @@ import { SelectionPanel } from './selection-panel';
 import { SpellAim } from './spell-aim';
 import { SpellBook } from './spell-book';
 import { TopBar } from './top-bar';
+import { WorldHover } from './world-hover';
 import { WorldOverlay } from './world-overlay';
+import { victoryBeat } from './victory-beat';
 import { activeBuilding, activeSpell, resetTool, toolState } from './tools';
 import { hideTip } from './tooltip';
 
@@ -51,9 +56,12 @@ css('game-ui', `
 .hud-right { position: absolute; top: calc(var(--edge) + 3.4rem); right: var(--edge); display: flex; flex-direction: column; gap: 0.5rem; align-items: flex-end; }
 .hud-dock { position: absolute; left: var(--edge); right: var(--edge); bottom: var(--edge); display: flex; align-items: flex-end; gap: 0.5rem; }
 .hud-dock .mid { flex: 1; min-width: 0; display: flex; justify-content: center; }
-.hud-dock .mid > .sp { max-width: 100%; }
+.hud-dock .mid > .sp { max-width: min(27rem, 100%); }
 .hud-rally { position: fixed; z-index: 54; pointer-events: none; }
 `);
+
+/** ms without player input before a narrated line may drift the camera to its place. */
+const IDLE_BEFORE_DRIFT = 1200;
 
 export interface GameUiHooks {
   openMenu(): void;
@@ -83,11 +91,14 @@ export class GameUi {
   private heardMessages = 0;
   private readonly debug: DebugOverlay;
   private readonly overlay: WorldOverlay;
+  private readonly worldHover: WorldHover;
   private readonly root: HTMLDivElement;
   private slow = 0;
   private lastIdle: number | null = null;
   private lastRecall: { n: number; t: number } | null = null;
   private shownGameOver = false;
+  /** Seconds left before the game-over card shows (null = not counting). */
+  private overBeat: number | null = null;
 
   constructor(
     world: World,
@@ -110,7 +121,7 @@ export class GameUi {
     const actions = this.makeActions(world, view);
     this.ctx = {
       world, view, scene, canvas, stats, selection: this.selection, groups: new ControlGroups(), pointer, actions,
-      hover: { unit: null, building: null },
+      hover: { unit: null, building: null, monument: null },
     };
 
     // --- Panels ---
@@ -144,14 +155,24 @@ export class GameUi {
       return true;
     };
     this.overlay = new WorldOverlay(this.ctx);
+    this.worldHover = new WorldHover(this.ctx);
+    this.worldHover.preview = this.orders.preview;
     // One calm column at top-centre: the narrator's line, then the hint chip.
-    const centre = h('div.hud-centre', {}, this.narrator.el);
+    const centre = h('div.hud-centre', {}, this.topBar.pausedBanner, this.narrator.el);
     this.root.appendChild(centre);
     this.hints = new Hints(this.ctx, centre);
     this.debug = new DebugOverlay(stats, world, brushRadius);
     this.gameOver = new GameOverScreen({ onRestart: () => hooks.restart(), onMenu: () => hooks.quitToMenu() });
 
     addEventListener('keydown', (e) => this.onKey(e));
+    // The player taking the camera cancels a narrated drift.
+    // (A moving mouse counts: a hand on the mouse is about to click something where it is.)
+    for (const ev of ['keydown', 'wheel', 'pointerdown', 'pointermove'] as const) {
+      addEventListener(ev, () => {
+        this.panTo = null;
+        this.lastInput = performance.now();
+      }, { capture: true, passive: true });
+    }
     // A mouse click on a HUD button must not leave it focused (Space would
     // then also "click" it). Keyboard users still Tab to buttons normally.
     this.root.addEventListener('mousedown', (e) => {
@@ -301,9 +322,11 @@ export class GameUi {
     this.objectives.reset();
     this.hints.reset();
     this.narrator.reset();
+    this.panTo = null;
     this.heardMessages = this.ctx.world.messageSeq;
     this.gameOver.hide();
     this.shownGameOver = false;
+    this.overBeat = null;
     this.lastIdle = null;
     this.lastRecall = null;
     this.ctx.groups.clear(); // unit ids restart at 1 in a new world
@@ -317,6 +340,10 @@ export class GameUi {
     this.root.style.display = inGame ? '' : 'none';
     if (!inGame) {
       if (activeSpell() || activeBuilding()) resetTool();
+      setHighlight(null);
+      this.orders.hideMarks();
+      this.ctx.hover.unit = this.ctx.hover.building = this.ctx.hover.monument = null;
+      this.worldHover.update(dt);
       this.aim.update();
       this.placer.update();
       return;
@@ -325,11 +352,13 @@ export class GameUi {
     this.aim.update();
     this.placer.update();
     this.orders.update(dt);
+    this.worldHover.update(dt);
     this.minimap.update(dt);
     this.debug.update(dt, this.selection.units.size);
     this.hints.update(dt);
     this.alerts.update();
     this.hearScenario();
+    this.drift(dt);
     this.narrator.update(dt);
 
     this.slow -= dt;
@@ -344,6 +373,12 @@ export class GameUi {
 
     const w = this.ctx.world;
     if (w.gameOver && !this.shownGameOver) {
+      // A victory lets the world have its moment first: the card waits a
+      // beat, longer while a great spell is still erupting on screen.
+      if (this.overBeat === null) this.overBeat = w.gameOver === 'victory' ? victoryBeat(w) : 0;
+      this.overBeat -= dt;
+      if (this.overBeat > 0) return;
+      this.overBeat = null;
       this.shownGameOver = true;
       resetTool();
       this.gameOver.show(w.gameOver, w.gameOverReason, {
@@ -353,6 +388,7 @@ export class GameUi {
         buildings: w.buildings.filter((b) => b.tribe === 'player' && b.progress >= 1).length,
       });
     }
+    if (!w.gameOver) this.overBeat = null;
     if (!w.gameOver && this.shownGameOver) {
       this.shownGameOver = false;
       this.gameOver.hide();
@@ -365,8 +401,40 @@ export class GameUi {
     if (w.messageSeq < this.heardMessages) this.heardMessages = 0; // a new world
     if (w.messageSeq === this.heardMessages) return;
     const fresh = w.messages.slice(-Math.min(w.messages.length, w.messageSeq - this.heardMessages));
-    for (const m of fresh) this.narrator.say(m.text);
+    for (const m of fresh) {
+      this.narrator.say(m.text);
+      if (m.focus) {
+        // The line is about a place: ping it, and drift the camera there unless the player is busy.
+        this.minimap.ping(m.focus.x, m.focus.z, 'info');
+        if (performance.now() - this.lastInput > IDLE_BEFORE_DRIFT) this.panTo = { x: m.focus.x, z: m.focus.z };
+      }
+    }
     this.heardMessages = w.messageSeq;
+  }
+
+  /**
+   * A gentle camera drift toward a narrated place (world.messages[].focus).
+   * Only when the player's hands are still (no input for IDLE_BEFORE_DRIFT)
+   * and never while aiming, placing or dragging; any key, click, wheel or
+   * mouse movement cancels it — the camera is theirs. The minimap ping
+   * always happens, so a busy player still sees where the line points.
+   */
+  private panTo: { x: number; z: number } | null = null;
+  private lastInput = 0;
+  private drift(dt: number): void {
+    if (!this.panTo) return;
+    if (activeSpell() || activeBuilding() || this.orders.busy) return; // wait: don't move the ground under the cursor
+    const t = this.ctx.view.target;
+    const dx = wrapDelta(this.panTo.x * TILE - t.x, WORLD_SIZE * TILE);
+    const dz = wrapDelta(this.panTo.z * TILE - t.z, WORLD_SIZE * TILE);
+    const d = Math.hypot(dx, dz);
+    if (d < 0.5) {
+      this.panTo = null;
+      return;
+    }
+    const k = 1 - Math.exp(-dt * 1.6); // ~1.5 s to settle, eases out
+    t.x += dx * k;
+    t.z += dz * k;
   }
 
   /** The world overlay runs after the renderers have moved everyone. */

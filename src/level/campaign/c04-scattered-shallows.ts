@@ -94,6 +94,10 @@ export const scenario: CampaignScenario = {
           { objective: { type: 'destroyTribe', tribe: 'red' }, text: 'Drive the Ashmark from the eastern isle' },
           { objective: { type: 'reachPopulation', count: 35 }, text: 'Grow the tribe to 35', optional: true },
         ],
+        events: [
+          { when: { type: 'time', at: 2 }, message: 'The stone on our shore lends Causeway — two roads out of the sea. Kneel there, then bridge to the Holm.', focus: LAYOUT.causewayStone, actions: [] },
+          { when: { type: 'spellCast', spell: 'landbridge' }, message: 'The sea gives way. One road left before the stone sleeps — spend it well.', actions: [] },
+        ],
         briefing: {
           title: 'The Scattered Shallows',
           body:
