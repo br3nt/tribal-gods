@@ -139,6 +139,7 @@ async function until(cond, max, what) {
   const t0 = (await snap()).t;
   for (;;) {
     const s = await snap();
+    if (s.over === 'victory') return s; // won while waiting: the caller's loop sees `over`
     if (s.over && !cond(s)) throw new Error(`game over (${s.over}: ${s.reason}) while waiting for ${what}`);
     if (cond(s)) return s;
     if (s.t - t0 > max) throw new Error(`timed out after ${max}s waiting for ${what} (t=${s.t.toFixed(0)}; objectives: ${s.objectives.filter((o) => o.active && !o.done).map((o) => o.text).join(' / ')}; hint "${s.hint}")`);
