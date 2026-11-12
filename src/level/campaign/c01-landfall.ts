@@ -177,9 +177,9 @@ export const scenario: CampaignScenario = {
         when: { type: 'objective', index: O.raid },
         delay: FLEET_DELAY + HOST_HOLD - 15,
         unless: { type: 'spellCast', spell: 'volcano', x: strand.x, z: strand.z, radius: 9 },
-        message: 'Drums on the strand — the host is about to march on the village! The stone above the strand wakes again: Lightning.',
+        message: 'Drums on the strand — the host is about to march on the village! Both stones wake again: Lightning above the strand, the mountain on the headland.',
         focus: strand,
-        actions: [{ type: 'openStone', index: 0 }],
+        actions: [{ type: 'openStone', index: 0 }, { type: 'openStone', index: 1 }],
       },
       { when: { type: 'spellCast', spell: 'volcano', x: strand.x, z: strand.z, radius: 9 }, delay: 3, message: 'The Black Strand is a mountain now. Let the Unmoored tell their children.', focus: strand, actions: [] },
       // Fail: too many of us fall.

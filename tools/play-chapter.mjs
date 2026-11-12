@@ -36,8 +36,11 @@ let speed = 2;
 let size = [1440, 900];
 /** Never kneel at the headland: the host must be beaten without the Volcano (c01's recovery path). */
 let skipVolcano = false;
+/** Ignore the headland until the drums: kneel then, and bury the host as it marches (the dawdler's path). */
+let lateVolcano = false;
 for (let i = 1; i < args.length; i++) {
   if (args[i] === '--skip-volcano') skipVolcano = true;
+  else if (args[i] === '--late-volcano') lateVolcano = true;
   if (args[i] === '--chapter') chapter = args[++i];
   else if (args[i] === '--pace') pace = args[++i];
   else if (args[i] === '--shots') shotDir = args[++i];
@@ -107,6 +110,7 @@ async function snap() {
       huts: w.buildings.filter((b) => b.tribe === 'player' && b.kind === 'hut').map((b) => ({ x: b.x, z: b.z, done: b.progress >= 1 })),
       home: w.tribes.player.home,
       lost: w.statsOf('player').lostTotal,
+      foesLost: w.tribes.violet ? w.statsOf('violet').lostTotal : 0,
       wood: w.tribes.player.wood,
       pop: w.tribePopulation('player'),
       landings: w.landings.length,
@@ -435,6 +439,12 @@ async function landfall() {
   await shot('raid-beaten');
 
   if (skipVolcano) return defendWithoutVolcano();
+  if (lateVolcano) {
+    // The dawdler: busy elsewhere until the drums say the host is about to march.
+    s = await until((q) => q.msgs.some((m) => /Drums/.test(m.text)), 300, 'the drums');
+    await shot('drums');
+    await think(Math.min(REACT, 10));
+  }
 
   // 6. The headland stone: one Volcano.
   t1 = s.t;
@@ -451,15 +461,16 @@ async function landfall() {
   beat('headland ritual', t1, s.t);
   log(`  walk ${(kneelAt - t1).toFixed(0)}s incl. reaction; ritual done at ${s.t.toFixed(0)}s`);
 
-  // 7. The host lands and masses; wake the mountain under it.
+  // 7. The host lands and masses; wake the mountain under it (the dawdler: wherever it has got to).
   t1 = s.t;
-  s = await until((q) => q.foes.filter((f) => f.hold).length >= 8, 200, 'the host to mass on the strand');
+  s = await until((q) => q.foes.filter((f) => f.hold).length >= 8 || (lateVolcano && q.foes.length >= 6), 200, 'the host to mass on the strand');
   const hostAt = s.t;
   await look(L.strand.x, L.strand.z);
   await shot('host-massing');
-  await think(Math.min(REACT, 10));
+  if (!lateVolcano) await think(Math.min(REACT, 10));
   s = await snap();
-  const host = s.foes.filter((f) => f.hold);
+  const massed = s.foes.filter((f) => f.hold);
+  const host = massed.length >= 6 ? massed : s.foes;
   const cx = host.reduce((a, f) => a + f.x, 0) / host.length;
   const cz = host.reduce((a, f) => a + f.z, 0) / host.length;
   if (!(await cast('KeyM', 'volcano', cx, cz, { shot: 'volcano-aim', tol: 2.5 }))) throw new Error('Volcano not taken');
@@ -497,11 +508,12 @@ async function defendWithoutVolcano() {
   for (;;) {
     s = await snap();
     if (s.over) break;
-    const near = loose(s, s.home, 22);
+    // Meet the host on the way in (Lightning reaches 16 tiles: strike as they cross the slope).
+    const near = loose(s, s.home, 32);
     if (s.leader && !s.leader.cast && s.leader.task !== 'worship') {
       if (near.length && (s.spells.lightning > 0 || s.spells.blast > 0)) {
-        if (await strikeRaiders(s, s.home, 22)) await until((q) => !q.leader || !q.leader.cast, 30, 'the strike');
-      } else if (!near.length && s.spells.lightning <= 0 && s.monuments[0].available) {
+        if (await strikeRaiders(s, s.home, 32)) await until((q) => !q.leader || !q.leader.cast, 30, 'the strike');
+      } else if (!near.length && s.spells.lightning < 3 && s.monuments[0].available) {
         await commune(0);
       } else await think(1);
     } else await think(1);
@@ -645,7 +657,7 @@ try {
   await shot('FAILED');
 }
 s = await snap();
-log(`result: ${s.over ?? 'still playing'}${s.reason ? ` (${s.reason})` : ''}; lost ${s.lost}; objectives: ${s.objectives.map((o) => `${o.done ? '✓' : o.failed ? '✗' : '·'} ${o.text}`).join(' | ')}`);
+log(`result: ${s.over ?? 'still playing'}${s.reason ? ` (${s.reason})` : ''}; lost ${s.lost}, foes lost ${s.foesLost}; objectives: ${s.objectives.map((o) => `${o.done ? '✓' : o.failed ? '✗' : '·'} ${o.text}`).join(' | ')}`);
 if (s.over === 'victory') {
   await wait(1600);
   await shot('victory');
