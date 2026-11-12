@@ -36,9 +36,11 @@ let speed = 2;
 let size = [1440, 900];
 /** Never kneel at the headland: the host must be beaten without the Volcano (c01's recovery path). */
 let skipVolcano = false;
-/** Ignore the headland until the drums: kneel then, and bury the host as it marches (the dawdler's path). */
+/** The dawdler: answers the headland line only after DAWDLE game seconds (and is idle meanwhile). */
 let lateVolcano = false;
+let DAWDLE = 75;
 for (let i = 1; i < args.length; i++) {
+  if (args[i] === '--dawdle') DAWDLE = Number(args[++i]);
   if (args[i] === '--skip-volcano') skipVolcano = true;
   else if (args[i] === '--late-volcano') lateVolcano = true;
   if (args[i] === '--chapter') chapter = args[++i];
@@ -440,10 +442,10 @@ async function landfall() {
 
   if (skipVolcano) return defendWithoutVolcano();
   if (lateVolcano) {
-    // The dawdler: busy elsewhere until the drums say the host is about to march.
-    s = await until((q) => q.msgs.some((m) => /Drums/.test(m.text)), 300, 'the drums');
-    await shot('drums');
-    await think(Math.min(REACT, 10));
+    // The dawdler: reads the headland line, does nothing about it for a long while.
+    s = await until((q) => !q.monuments[1].asleep, 30, 'the headland stone to wake');
+    await think(DAWDLE);
+    await shot('dawdler-sets-out');
   }
 
   // 6. The headland stone: one Volcano.

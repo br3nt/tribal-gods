@@ -55,7 +55,7 @@ css('world-overlay', `
 .wo .mk.song { color: var(--ochre-hi); }
 .wo .mk.gar { color: var(--spirit); }
 
-.stone-mk { position: fixed; left: 0; top: 0; z-index: 3; pointer-events: none; width: 2.1rem; height: 2.1rem; display: grid; place-items: center;
+.stone-mk { position: fixed; left: 0; top: 0; z-index: 3; pointer-events: none; width: 2.7rem; height: 2.7rem; display: grid; place-items: center;
   transform: translate(-50%, -100%); will-change: transform; }
 .stone-mk .disc { position: absolute; inset: 0.2rem; border-radius: 46% 54% 50% 50% / 52% 48% 52% 48%;
   background: radial-gradient(circle at 40% 30%, #8d877c, #5a554d 60%, #3b3833);
@@ -216,7 +216,9 @@ export class WorldOverlay {
       const burning = b.burning > 0;
       const ours = b.tribe === 'player';
       if (!sel && !burning && !(showHurt && (hurt || (ours && (building || training || garrison > 0))))) continue;
-      const p = toScreen(view, b.x, b.z, BUILDINGS[b.kind].height + 0.8);
+      // A site's bar sits just over what has been raised so far, not in the air where the roof will be.
+      const raised = building ? Math.max(2, BUILDINGS[b.kind].height * b.progress) : BUILDINGS[b.kind].height;
+      const p = toScreen(view, b.x, b.z, raised + 0.8);
       if (!p || this.covered(p)) continue;
       const it = this.item(`b${b.id}`, true);
       this.place(it.el, p);
@@ -272,7 +274,7 @@ export class WorldOverlay {
       if (s.spell !== m.spell) {
         s.spell = m.spell;
         s.el.querySelector('svg')?.remove();
-        s.el.insertAdjacentHTML('beforeend', spellIcon(m.spell, 18));
+        s.el.insertAdjacentHTML('beforeend', spellIcon(m.spell, 24));
         s.el.style.setProperty('--tier', TIER_COLORS[spellDef(m.spell).tier] ?? '#ccc');
       }
       this.place(s.el, p);
