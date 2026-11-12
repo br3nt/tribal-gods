@@ -118,10 +118,10 @@ check('Leader has an errand at once (wanderers, a nearby stone)', errand,
 const stone = st.stones.find((s) => s.avail) ?? st.stones[0];
 await look(stone.x, stone.z);
 await wait(300);
-const mk = await tg(() => [...document.querySelectorAll('.stone-mk')].filter((e) => !e.hidden).map((e) => { const r = e.getBoundingClientRect(); return { w: r.width, h: r.height, icon: !!e.querySelector('svg') }; }));
+const mk = await tg(() => { const rem = parseFloat(getComputedStyle(document.documentElement).fontSize); return [...document.querySelectorAll('.stone-mk')].filter((e) => !e.hidden).map((e) => { const r = e.getBoundingClientRect(); return { w: r.width, rem, icon: !!e.querySelector('svg') }; }); });
 const p03 = await shot('04-stone-default-zoom');
-check('Stones show the spell they hold at default zoom', mk.length > 0 && mk.every((m) => m.icon && m.w >= 40),
-  `${mk.length} stone marker(s) on screen, ${mk[0]?.w.toFixed(0)}px across with the spell's icon (raised from 34px); rune glows on the stone; ${p03.split('/').pop()}`);
+check('Stones show the spell they hold at default zoom', mk.length > 0 && mk.every((m) => m.icon && m.w >= 2.6 * m.rem),
+  `${mk.length} stone marker(s) on screen, ${mk[0]?.w.toFixed(0)}px across (2.7rem at the UI scale; was 2.1rem) with the spell's icon; rune glows on the stone; ${p03.split('/').pop()}`);
 
 // --- Hover feedback everywhere -------------------------------------------------------
 const tags = {};
@@ -138,6 +138,7 @@ for (const lift of [2, 3, 1.2, 4]) {
 await shot('05-hover-stone');
 // a villager
 await look(st.home.x, st.home.z);
+await tg(() => (window.__tg.appState.paused = true));
 const vill = await tg(() => window.__tg.world.units.filter((u) => u.tribe === 'player' && u.kind === 'brave' && !u.hidden).map((u) => ({ id: u.id, x: u.x, z: u.z })));
 for (const v of vill) {
   const p = await screenOf(v.x, v.z, 1.1);
@@ -145,9 +146,10 @@ for (const v of vill) {
     await page.mouse.move(p.x, p.y);
     await wait(700);
     tags.villager = await hoverTag();
-    break;
+    if (tags.villager) break;
   }
 }
+await tg(() => (window.__tg.appState.paused = false));
 await shot('06-hover-villager');
 // a wanderer
 if (st.wild[0]) {

@@ -30,7 +30,7 @@ import { icon, spellIcon } from './icons';
 import { tribeCss } from './orders';
 import { stoneHeight } from './picking';
 import { toScreen } from './project';
-import { ritualAt } from './stones';
+import { ritualAt, ritualOf } from './stones';
 
 css('world-overlay', `
 .wo { position: fixed; left: 0; top: 0; z-index: 3; pointer-events: none; display: flex; flex-direction: column; align-items: center; gap: 2px;
@@ -46,6 +46,7 @@ css('world-overlay', `
 .wo .hp > i.low { background: linear-gradient(180deg, #ff8a6a, #c8402a 70%, #8a2618); }
 .wo .hp > i.build { background: repeating-linear-gradient(-55deg, #e7b25a 0 4px, #c98a2e 4px 7px); }
 .wo .tr > i { background: linear-gradient(180deg, #b8f4f6, #4fc3cf 70%, #2a8590); }
+.wo .tr.rite > i { background: linear-gradient(180deg, color-mix(in srgb, var(--rite) 45%, #fff), var(--rite) 70%); }
 .wo .hp > b { position: absolute; left: 0; right: 0; bottom: 0; height: 1px; background: var(--tc, transparent); }
 .wo .marks { display: flex; gap: 2px; }
 .wo .mk { display: inline-flex; align-items: center; gap: 1px; height: 1rem; padding: 0 0.22rem; border-radius: 0.2rem 0.3rem 0.2rem 0.3rem;
@@ -191,14 +192,25 @@ export class WorldOverlay {
       const sel = selection.units.has(u.id) || selection.inspect === u.id || hover.unit === u.id;
       const hurt = u.hp < u.maxHp - 0.01;
       const buffed = u.wardTime > 0 || u.warsongTime > 0;
-      if (!sel && !(showHurt && (hurt || (buffed && u.tribe === 'player')))) continue;
+      // A kneeling leader carries the ritual's progress over her head (the stone's own marker can sit under the HUD).
+      const rite = u.kind === 'shaman' ? ritualOf(world, u.id) : null;
+      if (!sel && !rite && !(showHurt && (hurt || (buffed && u.tribe === 'player')))) continue;
       const p = toScreen(view, u.x, u.z, UNITS[u.kind].height + 0.55);
       if (!p || this.covered(p)) continue;
       const it = this.item(`u${u.id}`, false);
       this.place(it.el, p);
       if (sel || hurt) this.setHp(it, u.hp / u.maxHp);
       else it.hp.hidden = true;
-      it.tr.hidden = true;
+      it.tr.hidden = !rite;
+      if (rite) {
+        const t = fillTransform(rite.ritual.progress);
+        if (it.trSig !== t) {
+          it.trSig = t;
+          it.trFill.style.transform = t;
+        }
+        it.tr.style.setProperty('--rite', tribeCss(rite.ritual.tribe));
+      }
+      setClass(it.tr, 'rite', !!rite);
       const marks: string[] = [];
       if (u.wardTime > 0) marks.push(`<span class="mk ward">${icon('shield', 10)}</span>`);
       if (u.warsongTime > 0) marks.push(`<span class="mk song">${icon('speed', 10)}</span>`);
