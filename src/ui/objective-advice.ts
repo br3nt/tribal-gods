@@ -59,6 +59,7 @@ function spellAdvice(world: World, spell: SpellId, where: string): string {
  * (and this chip) points at it — the lull is for kneeling there; else hold.
  */
 function quietAdvice(world: World, click: string): string {
+  if (world.landings.length) return `Boats are running in — they step ashore in a moment. Be ready to strike them on the sand.`;
   const kneeling = world.monuments.find((m) => m.communing && m.communer === 'player');
   if (kneeling) return `None of them ashore yet. Your leader is kneeling at the ${spellDef(kneeling.spell).name} stone — let her finish.`;
   const open = world.monuments.find((m) => world.monumentAvailable(m) && !(m.mode === 'teach' && m.claimedBy !== null) && !world.tribes.player?.known.has(m.spell));

@@ -49,6 +49,12 @@ export class CastGather {
     this.disc.userData.keep = true; // shared by every sigil: never disposed with one
   }
 
+  /** A new world: drop every sigil at once (no release streak into the new map). */
+  reset(): void {
+    for (const g of this.live.values()) for (const m of [g.under, g.mark]) m.ttl = m.age;
+    this.live.clear();
+  }
+
   sync(world: World, dt: number): void {
     for (const g of this.live.values()) g.seen = false;
     for (const u of world.units) {

@@ -203,6 +203,8 @@ export interface Unit {
   maxHp: number;
   /** Sim time of the last blow taken (leaders mend after LEADER_MEND.after quiet seconds). Missing on old saves. */
   hurtAt?: number;
+  /** Walking where an order sent it (orderMove): a blow on the way doesn't turn it round. Cleared on arrival or a new task. */
+  ordered?: boolean;
   castSpell: SpellId | null;
   castTarget: { x: number; z: number } | null;
   /** Building this unit is inside as a garrison/worshipper/trainee (-1 = none). */
@@ -1169,7 +1171,8 @@ export class World implements SimQueries {
    * Levelled). Checked once a second; regions are cached per map version.
    */
   /** The whole second tickStranded last ran in (a counter, not elapsed − dt: float drift skips seconds). */
-  private strandedSecond = -1;
+  /** The whole second tickStranded last ran in (restoreWorld sets it, so a resumed world doesn't rerun it). */
+  strandedSecond = -1;
 
   private tickStranded(): void {
     for (const u of this.units) {
@@ -1212,7 +1215,8 @@ export class World implements SimQueries {
   }
 
   tribeAlive(id: TribeId): boolean {
-    return this.units.some((u) => u.tribe === id) || this.buildings.some((b) => b.tribe === id);
+    // Crews still in their boats count: a war band isn't destroyed during its own run-in.
+    return this.units.some((u) => u.tribe === id) || this.buildings.some((b) => b.tribe === id) || this.landings.some((l) => l.action.tribe === id);
   }
 
   // -------------------------------------------------------------------------
@@ -1245,7 +1249,8 @@ export class World implements SimQueries {
     // A host holding its beach: fights what walks into it, else drifts back to the mark.
     if (u.holdAt && (u.holdUntil ?? 0) > this.elapsed && u.task === 'none') {
       if (canSearch && isFighterKind(u.kind) && this.acquireTarget(u)) return;
-      if (u.idleTime > 2 && this.distTo(u, u.holdAt.x, u.holdAt.z) > 3.5) {
+      const off = this.distTo(u, u.holdAt.x, u.holdAt.z);
+      if ((u.idleTime > 2 || off > HOLD_LEASH) && off > 3.5) {
         u.idleTime = 0;
         this.sendTo(u, u.holdAt.x + this.random() * 3 - 1.5, u.holdAt.z + this.random() * 3 - 1.5, 1500);
       }
@@ -1444,14 +1449,28 @@ export class World implements SimQueries {
   }
 
   /**
-   * A host holding its beach fights what walks into it — but no further
-   * than HOLD_LEASH from its mark: chasing a villager home would carry two
-   * spears into the village a minute and a half before the host marches.
+   * A host holding its beach fights what walks into it — but chases nothing
+   * that has gone further than HOLD_LEASH from its mark: chasing a villager
+   * home would carry two spears into the village a minute and a half before
+   * the host marches. A foe within weapon reach is always struck back
+   * (a holder on its march in is not a punching bag). A dropped chase walks
+   * back to the mark.
    */
+  private holding(u: Unit): boolean {
+    return !!u.holdAt && (u.holdUntil ?? 0) > this.elapsed;
+  }
+
+  private withinLeash(u: Unit, q: Unit): boolean {
+    if (!this.holding(u)) return true;
+    return this.distTo(u, q.x, q.z) <= UNITS[u.kind].range + 0.4 || this.distTo(q, u.holdAt!.x, u.holdAt!.z) <= HOLD_LEASH;
+  }
+
   private leashed(u: Unit): boolean {
-    if (!u.holdAt || (u.holdUntil ?? 0) <= this.elapsed) return false;
-    if (this.distTo(u, u.holdAt.x, u.holdAt.z) <= HOLD_LEASH) return false;
+    if (!this.holding(u) || u.task !== 'attack') return false;
+    const target = this.unitById(u.targetUnit);
+    if (!target || this.withinLeash(u, target)) return false;
     this.abandonTask(u);
+    this.sendTo(u, u.holdAt!.x, u.holdAt!.z, 1500);
     return true;
   }
 
@@ -1472,7 +1491,7 @@ export class World implements SimQueries {
       u.path = [{ x: this.map.wrap(tx), z: this.map.wrap(tz) }];
       u.pathIndex = 0;
       u.goal = { x: this.map.wrap(tx), z: this.map.wrap(tz) };
-    } else if (off > PURSUE_REPLAN) this.sendTo(u, tx, tz);
+    } else if (off > PURSUE_REPLAN && !this.autoSendTo(u, tx, tz, `u${target.id}`)) this.abandonTask(u);
   }
 
   /** Walkable all the way along the straight line (sampled every half tile)? */
@@ -1490,7 +1509,7 @@ export class World implements SimQueries {
       this.beginCast(u);
       return;
     }
-    if ((u.task === 'attack' || u.task === 'attackBuilding') && this.leashed(u)) return;
+    if (this.leashed(u)) return;
     if (u.task === 'attack') {
       const target = this.unitById(u.targetUnit);
       if (!target || target.hp <= 0 || target.hidden) {
@@ -1545,6 +1564,7 @@ export class World implements SimQueries {
   }
 
   private onArrive(u: Unit): void {
+    u.ordered = false;
     u.path = [];
     u.pathIndex = 0;
     u.goal = null;
@@ -1803,8 +1823,8 @@ export class World implements SimQueries {
     const sight = UNITS[u.kind].sight;
     // Cheapest test first: distance (via the spatial hash), then allegiance,
     // and only for someone actually in sight the unreachable-memory lookup
-    // (which builds a string key).
-    const best = this.nearestUnit(u.x, u.z, sight, (q) => this.foes(u, q) && !this.isUnreachable(u, `u${q.id}`));
+    // (which builds a string key). A holding host only takes foes inside its leash.
+    const best = this.nearestUnit(u.x, u.z, sight, (q) => this.foes(u, q) && this.withinLeash(u, q) && !this.isUnreachable(u, `u${q.id}`));
     if (best) {
       u.task = 'attack';
       u.targetUnit = best.id;
@@ -1830,6 +1850,7 @@ export class World implements SimQueries {
   }
 
   abandonTask(u: Unit): void {
+    u.ordered = false;
     u.task = 'none';
     u.targetTree = -1;
     u.targetBuilding = -1;
@@ -1977,7 +1998,7 @@ export class World implements SimQueries {
     const willing = (q: Unit) =>
       q.hp > 0 && !q.hidden && q.state !== 'inside' && q.tribe !== 'wild' && UNITS[q.kind].dmg > 0 && q.kind !== 'chanter' &&
       q.task !== 'attack' && q.task !== 'attackBuilding' && q.task !== 'worship' && q.task !== 'garrison' && !q.castSpell &&
-      this.foes(q, attacker);
+      !q.ordered && this.foes(q, attacker);
     const turn = (q: Unit) => {
       this.abandonTask(q);
       q.task = 'attack';
@@ -2795,6 +2816,8 @@ export class World implements SimQueries {
       units.push(u);
     }
     const refused = this.groupMove(units, tx, tz, units[0]?.tribe === 'player' ? World.PLAYER_EXPANSIONS : 4000);
+    // Walking on an order: a blow on the way doesn't turn them round (standUp).
+    for (const u of units) if (u.state === 'moving' && !refused.includes(u)) u.ordered = true;
     if (refused.length > 0 && refused[0].tribe === 'player') this.events.push({ type: 'denied', x: tx, z: tz });
   }
 

@@ -208,7 +208,10 @@ export class WorldOverlay {
           it.trSig = t;
           it.trFill.style.transform = t;
         }
-        it.tr.style.setProperty('--rite', tribeCss(rite.ritual.tribe));
+        if (it.el.dataset.rite !== rite.ritual.tribe) {
+          it.el.dataset.rite = rite.ritual.tribe;
+          it.tr.style.setProperty('--rite', tribeCss(rite.ritual.tribe));
+        }
       }
       setClass(it.tr, 'rite', !!rite);
       const marks: string[] = [];

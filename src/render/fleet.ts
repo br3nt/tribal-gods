@@ -27,7 +27,7 @@ import { TILE, WORLD_SIZE } from '../config';
 import { wrapDelta } from '../core/util';
 import { TRIBE_COLORS, Tribe } from '../sim/catalog';
 import type { World } from '../sim/world-state';
-import { LANDING } from '../sim/scenario-events';
+import { comesBySea, LANDING } from '../sim/scenario-events';
 import { buildBoat } from '../assets/models/boats';
 import { curveObject } from '../world/curvature';
 import type { EffectsRenderer } from './effects';
@@ -72,9 +72,31 @@ export class Fleet {
     for (const list of this.horizon.values()) for (const b of list) this.scene.remove(b.obj);
     this.boats = [];
     this.horizon.clear();
+    this.launched.clear();
   }
 
-  landing(x: number, z: number, count: number, tribe: string | undefined): void {
+  /** Landings already given boats (world.landings entries, by order time and place). */
+  private readonly launched = new Set<string>();
+
+  /**
+   * Boats for every pending landing in the sim (world.landings): driven by
+   * that state, not by the one-frame `landing` event, so a game Continued
+   * during the run-in still shows its boats grounding as the crews step out.
+   */
+  private syncLandings(world: World): void {
+    const live = new Set<string>();
+    for (const l of world.landings) {
+      const key = `${l.orderedAt.toFixed(3)}|${l.action.x}|${l.action.z}`;
+      live.add(key);
+      if (this.launched.has(key)) continue;
+      this.launched.add(key);
+      const n = Object.values(l.action.units).reduce((a: number, b) => a + (b ?? 0), 0);
+      this.landing(l.action.x, l.action.z, n, l.action.tribe, Math.max(0.4, l.at - world.elapsed));
+    }
+    for (const k of this.launched) if (!live.has(k)) this.launched.delete(k);
+  }
+
+  landing(x: number, z: number, count: number, tribe: string | undefined, runIn = LANDING.seconds): void {
     const world = this.fx.worldNow;
     if (!world) return;
     const sea = seaward(world, x, z);
@@ -96,7 +118,7 @@ export class Fleet {
         sx: ex + sea.ux * out, sz: ez + sea.uz * out, ex, ez,
         yaw: Math.atan2(-sea.ux, -sea.uz) + (Math.random() - 0.5) * 0.25,
         // grounded just before the crews step out (the sim lands them LANDING.seconds after this event)
-        run: LANDING.seconds * (0.78 + Math.random() * 0.18), stay: STAY + Math.random() * 20, horizon: false, color, seed: i,
+        run: runIn * (0.78 + Math.random() * 0.18), stay: STAY + Math.random() * 20, horizon: false, color, seed: i,
       });
     }
   }
@@ -111,6 +133,7 @@ export class Fleet {
   }
 
   sync(world: World, dt: number): void {
+    this.syncLandings(world);
     if (world.rules?.events?.length || this.horizon.size) this.syncHorizon(world);
     for (const list of this.horizon.values()) for (const b of list) this.place(b, world, dt);
     for (const b of this.boats) {
@@ -133,7 +156,7 @@ export class Fleet {
       const m = mem[i];
       if (!ev.delay || !m || m.armedAt === undefined || m.fired > 0) continue;
       const spawn = ev.actions.find((a) => a.type === 'spawn' && a.march);
-      if (!spawn || spawn.type !== 'spawn') continue;
+      if (!spawn || spawn.type !== 'spawn' || !comesBySea(world, spawn)) continue; // by land: no sails
       const p = Math.min(1, Math.max(0, (world.elapsed - m.armedAt) / ev.delay));
       live.add(i);
       let list = this.horizon.get(i);

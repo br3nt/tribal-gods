@@ -5,6 +5,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { restoreWorld, saveWorld, SaveData, validateSave } from '../src/sim/save';
+import { runAction } from '../src/sim/scenario-events';
 import { World } from '../src/sim/world-state';
 import { loadScenario } from './campaign-helpers';
 import { run } from './helpers';
@@ -115,6 +116,33 @@ describe('save / resume', () => {
 
     expectSameFuture(w, copy, 30);
   }, 15000);
+
+  it('chapter 1 mid-story: stranded kin, a mid-ritual stone, boats at sea, a holding host and an armed while-event all resume identically', async () => {
+    const w = await loadScenario('c01_landfall');
+    run(w, 3);
+    // A Causeway thrown away: the kin stay stranded and the while-event's clock is running.
+    const leader = w.leaderOf('player')!;
+    expect(w.orderCast('player', 'landbridge', leader.x - 4, leader.z + 6)).toBeNull();
+    run(w, 12);
+    expect(w.units.some((u) => u.joins === 'player')).toBe(true);
+    // The strand stone wakes; the leader kneels there.
+    w.monuments[0].asleep = false;
+    leader.x = w.monuments[0].x;
+    leader.z = w.monuments[0].z + 2;
+    w.orderWorship([leader.id], 0);
+    run(w, 4);
+    expect(w.monuments[0].communing).toBe(true);
+    // A holding host's boats are running in.
+    runAction(w, { type: 'spawn', tribe: 'violet', units: { warrior: 4 }, x: 81, z: 101, march: { x: 74, z: 93 }, hold: 60 });
+    run(w, 1);
+    expect(w.landings.length).toBe(1);
+    w.events.length = 0;
+    const { copy } = roundTrip(w);
+    expect(copy.landings).toEqual(w.landings);
+    expect(copy.monuments[0].communing).toBe(true);
+    expectSameFuture(w, copy, 30);
+    expect(copy.units.some((u) => u.tribe === 'violet' && (u.holdUntil ?? 0) > copy.elapsed)).toBe(true);
+  }, 20000);
 
   it('restore mutates the same World in place and bumps render versions', () => {
     const a = new World();

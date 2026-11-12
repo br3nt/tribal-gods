@@ -118,7 +118,8 @@ export class AlertFeed {
         this.push(a);
         alertSound('attack');
       } else if (e.type === 'landing' && e.tribe && e.tribe !== 'player' && e.tribe !== 'wild' && w.hostile('player', e.tribe as never)) {
-        this.push({ kind: 'attack', text: `${(e.magnitude ?? 0) > 1 ? `${e.magnitude} raiders` : 'A raider'} came ashore`, tone: 'bad', x: e.x, z: e.z });
+        // The event goes out as the boats set off (sim LANDING): they are landing, not landed.
+        this.push({ kind: 'attack', text: `Boats running in: ${(e.magnitude ?? 0) > 1 ? `${e.magnitude} raiders` : 'a raider'} landing`, tone: 'bad', x: e.x, z: e.z });
         alertSound('attack');
       } else if (e.type === 'rescued' && e.tribe === 'player') {
         rescued = { n: (rescued?.n ?? 0) + 1, x: e.x, z: e.z };

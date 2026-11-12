@@ -155,7 +155,7 @@ export const scenario: CampaignScenario = {
         focus: strand,
         actions: [{ type: 'openStone', index: 0 }],
       },
-      { when: { type: 'objective', index: O.huts }, delay: 45, message: 'They are ashore. Blast them into the sea!', focus: landing, actions: [raid(WAVE)] },
+      { when: { type: 'objective', index: O.huts }, delay: 45, message: 'Their boats are running in to the Black Strand! Blast them as they step ashore.', focus: landing, actions: [raid(WAVE)] },
       // The host.
       {
         when: { type: 'objective', index: O.raid },

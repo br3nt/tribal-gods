@@ -200,5 +200,37 @@ describe('villagers fight back', () => {
     run(w, 4);
     expect(l.hp).toBeCloseTo(h, 1);
   });
+
+  it('a holder struck on its march in strikes back (the leash never freezes it), then walks on to its mark', () => {
+    const w = flatWorld(rulesFor([{ id: 'player', ai: false }, { id: 'violet', ai: false }], { objectives: [{ objective: { type: 'survive', seconds: 99999 }, text: 'wait' }] }));
+    const h = w.spawn('warrior', 'violet', 60, 60);
+    h.holdAt = { x: 76, z: 60 };
+    h.holdUntil = 300;
+    w.sendTo(h, 76, 60);
+    const p = w.spawn('warrior', 'player', 61, 60);
+    run(w, 1 / 15);
+    w.hurtUnit(h, 1, { by: p });
+    run(w, 8);
+    expect(p.hp).toBeLessThan(p.maxHp); // it fought back
+  });
+
+  it('a unit walking on an order is not turned round by a blow', () => {
+    const w = flatWorld(rulesFor([{ id: 'player', ai: false }, { id: 'violet', ai: false }], { objectives: [{ objective: { type: 'survive', seconds: 99999 }, text: 'wait' }] }));
+    const me = w.spawn('warrior', 'player', 60, 60);
+    const foe = w.spawn('warrior', 'violet', 61, 60);
+    w.orderMove([me.id], 30, 60);
+    run(w, 1 / 15);
+    w.hurtUnit(me, 1, { by: foe });
+    expect(me.task).not.toBe('attack');
+    run(w, 3);
+    expect(me.x).toBeLessThan(57);
+  });
+
+  it('crews still at sea keep a war band alive (no premature destroyTribe)', () => {
+    const w = coastWorld([{ when: { type: 'time', at: 1 }, actions: [raid()] }]);
+    w.units = w.units.filter((u) => u.tribe !== 'violet');
+    run(w, 1.5);
+    expect(w.tribeAlive('violet')).toBe(true);
+  });
 });
 
