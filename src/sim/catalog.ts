@@ -512,7 +512,7 @@ export type ScenarioAction =
   | { type: 'gift'; tribe: TribeId; spell: SpellId; charges: number }
   /** The world itself casts a spell at (x, z) on `tribe`'s behalf — no leader needed. */
   | { type: 'strike'; spell: SpellId; x: number; z: number; tribe: TribeId }
-  /** Wake a stone that was `asleep`. */
+  /** Wake a stone that was `asleep` (or a gift stone resting after a lending: ready again). */
   | { type: 'openStone'; index: number }
   /** The scenario is lost, for `reason` (a fail condition written as a story beat). */
   | { type: 'defeat'; reason: string }
@@ -523,6 +523,8 @@ export interface ScenarioEvent {
   when: ScenarioTrigger;
   /** Seconds between the trigger first holding and the event firing (a visible countdown). */
   delay?: number;
+  /** If this holds when the event would fire, it is spent without firing (the story moved past it). */
+  unless?: ScenarioTrigger;
   /**
    * Fire again every `every` seconds after the first, `times` times in all
    * (default once). `while`: instead, it fires each time its trigger has

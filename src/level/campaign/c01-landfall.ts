@@ -172,11 +172,14 @@ export const scenario: CampaignScenario = {
         actions: [{ type: 'spawn', tribe: 'violet', units: HOST, x: landing.x, z: landing.z, march: strand, hold: HOST_HOLD }],
       },
       {
+        // The host was not buried: it is about to march. The strand stone wakes again so the
+        // village is not left to spears alone (a missed or late Volcano is not the end).
         when: { type: 'objective', index: O.raid },
         delay: FLEET_DELAY + HOST_HOLD - 15,
-        message: 'Drums on the strand. The host is about to march on the village.',
+        unless: { type: 'spellCast', spell: 'volcano', x: strand.x, z: strand.z, radius: 9 },
+        message: 'Drums on the strand — the host is about to march on the village! The stone above the strand wakes again: Lightning.',
         focus: strand,
-        actions: [],
+        actions: [{ type: 'openStone', index: 0 }],
       },
       { when: { type: 'spellCast', spell: 'volcano', x: strand.x, z: strand.z, radius: 9 }, delay: 3, message: 'The Black Strand is a mountain now. Let the Unmoored tell their children.', focus: strand, actions: [] },
       // Fail: too many of us fall.

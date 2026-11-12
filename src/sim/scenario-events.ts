@@ -112,6 +112,10 @@ export function tickScenarioEvents(world: World): void {
       if (world.elapsed - mem.armedAt < ev.repeat.every) return;
       mem.armedAt = world.elapsed;
     } else if (mem.fired === 0 ? !triggered(world, ev, mem) : world.elapsed < mem.next) return;
+    if (ev.unless && holds(world, ev.unless)) {
+      mem.fired = times; // the story moved past it: spent, silently
+      return;
+    }
     mem.fired++;
     mem.next = world.elapsed + (ev.repeat?.every ?? 0);
     if (ev.message) world.say(ev.message, ev.focus);
@@ -249,7 +253,10 @@ export function runAction(world: World, a: ScenarioAction): void {
       return;
     case 'openStone': {
       const m = world.monuments[a.index];
-      if (m) m.asleep = false;
+      if (m) {
+        m.asleep = false;
+        m.sleep = 0; // a gift stone resting after a lending is ready again
+      }
       return;
     }
     case 'defeat':
