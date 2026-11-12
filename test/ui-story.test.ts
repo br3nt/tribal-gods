@@ -79,6 +79,10 @@ describe('objective advice', () => {
     m.contested = false;
     m.communer = null;
     expect(objectiveAdvice(w, o, true)).toMatch(/broke at 42%.*kneel again/);
+    // No leader (fallen, returning): never "select your leader".
+    w.units = w.units.filter((u) => u.kind !== 'shaman');
+    expect(objectiveAdvice(w, o, true)).toMatch(/has fallen and returns/);
+    expect(objectiveAdvice(w, o, true)).not.toMatch(/Select your leader/);
   });
 
   it('waiting for raiders with a stone open: the chip points at the stone, like the narrator', () => {

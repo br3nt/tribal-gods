@@ -376,6 +376,10 @@ const HELPERS = 4;
 const BAND_RADIUS = 5;
 /** How far a fleeing villager runs (tiles) when no dwelling takes them in. */
 const FLEE_DISTANCE = 8;
+/** A chaser this close to its target with open ground between runs straight at it. */
+const PURSUE_DIRECT = 6;
+/** Further out, a chaser re-plans when its target has moved this far off the path's end. */
+const PURSUE_REPLAN = 4;
 /** How far a holding host's fighter may chase from its mark before it turns back. */
 const HOLD_LEASH = 9;
 /** A fleeing villager shelters in a dwelling with a free bed within this many tiles (not one past the attacker). */
@@ -1443,6 +1447,36 @@ export class World implements SimQueries {
     return true;
   }
 
+  /**
+   * PURSUIT. A path is planned to where the target stood; a target that
+   * keeps walking leaves the chaser trudging to an empty spot and only then
+   * re-planning — an escort three tiles from its kneeling leader took ten
+   * seconds to reach the raiders cutting her down. Close in (PURSUE_DIRECT
+   * tiles, open ground between), run straight at the target; further out,
+   * re-plan when the target has moved well off the path's end.
+   */
+  private pursue(u: Unit, target: Unit, d: number): void {
+    const tx = Math.round(target.x), tz = Math.round(target.z);
+    const g = u.goal;
+    const off = g ? Math.hypot(wrapDelta(g.x - target.x, WORLD_SIZE), wrapDelta(g.z - target.z, WORLD_SIZE)) : Infinity;
+    if (off < 1.2) return;
+    if (d < PURSUE_DIRECT && this.openLine(u.x, u.z, target.x, target.z)) {
+      u.path = [{ x: this.map.wrap(tx), z: this.map.wrap(tz) }];
+      u.pathIndex = 0;
+      u.goal = { x: this.map.wrap(tx), z: this.map.wrap(tz) };
+    } else if (off > PURSUE_REPLAN) this.sendTo(u, tx, tz);
+  }
+
+  /** Walkable all the way along the straight line (sampled every half tile)? */
+  private openLine(ax: number, az: number, bx: number, bz: number): boolean {
+    const dx = wrapDelta(bx - ax, WORLD_SIZE), dz = wrapDelta(bz - az, WORLD_SIZE);
+    const n = Math.ceil(Math.hypot(dx, dz) * 2);
+    for (let i = 1; i <= n; i++) {
+      if (!walkable(this.map, this.map.wrap(Math.round(ax + (dx * i) / n)), this.map.wrap(Math.round(az + (dz * i) / n)))) return false;
+    }
+    return true;
+  }
+
   private tickMoving(u: Unit, dt: number): void {
     if (u.castSpell && this.castTargetInRange(u)) {
       this.beginCast(u);
@@ -1455,10 +1489,12 @@ export class World implements SimQueries {
         this.abandonTask(u);
         return;
       }
-      if (this.distTo(u, target.x, target.z) <= UNITS[u.kind].range) {
+      const d = this.distTo(u, target.x, target.z);
+      if (d <= UNITS[u.kind].range) {
         u.state = 'fighting';
         return;
       }
+      this.pursue(u, target, d);
     } else if (u.task === 'attackBuilding') {
       const b = this.getBuilding(u.targetBuilding);
       if (!b) {
@@ -1977,9 +2013,10 @@ export class World implements SimQueries {
     let best = FLEE_SHELTER;
     for (const b of this.buildings) {
       if (b.tribe !== u.tribe || b.kind !== 'hut' || b.progress < 1 || b.residents >= this.dwellingCapacity(b)) continue;
-      const bx = wrapDelta(b.x - u.x, WORLD_SIZE), bz = wrapDelta(b.z - u.z, WORLD_SIZE);
+      const door = this.doorOf(b);
+      const bx = wrapDelta(door.x - u.x, WORLD_SIZE), bz = wrapDelta(door.z - u.z, WORLD_SIZE);
       const d = Math.hypot(bx, bz);
-      if (d < best && bx * ax + bz * az > -0.3 * d * len) {
+      if (d < best && (d < 1.5 || bx * ax + bz * az > -0.3 * d * len)) {
         best = d;
         shelter = b;
       }

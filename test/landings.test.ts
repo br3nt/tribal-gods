@@ -163,6 +163,7 @@ describe('villagers fight back', () => {
     const w = flatWorld(rulesFor([{ id: 'player', ai: false }, { id: 'violet', ai: false }], { objectives: [{ objective: { type: 'survive', seconds: 99999 }, text: 'wait' }] }));
     const hut = w.spawnBuilding('player', 'hut', 40, 48);
     const hit = w.spawn('brave', 'player', 40, 42);
+    hit.hp = 60; // (this test is about where they run, not whether the spears catch them)
     const a = w.spawn('warrior', 'violet', 40, 40.8);
     w.spawn('warrior', 'violet', 41, 39);
     run(w, 1 / 15);

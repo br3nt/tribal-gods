@@ -68,6 +68,12 @@ function quietAdvice(world: World, click: string): string {
   return `None of them in sight yet. Keep your fighters near the village and a spell charged.`;
 }
 
+/** The leader is dead and returning: say so (never "select your leader" when there is none). */
+function leaderAway(world: World, then: string): string {
+  const back = world.tribeSummary('player').leaderRespawn;
+  return `Your leader has fallen and returns to the home circle${back > 0 ? ` in ${Math.ceil(back)}s` : ''} — ${then}. A broken ritual fades slowly.`;
+}
+
 /** Strongest first: what to hit a host with when the leader holds it. */
 const STRIKES: SpellId[] = ['volcano', 'emberfall', 'earthquake', 'lightning', 'blast'];
 
@@ -103,6 +109,7 @@ export function objectiveAdvice(world: World, o: Objective, leftClickOrders: boo
       return `Grow the tribe: Dwellings${k('build:hut')} breed villagers while they have room.`;
     case 'claimMonument': {
       const m = world.monuments[o.index];
+      if (!world.leaderOf('player')) return leaderAway(world, 'then send her back to the stone');
       const name = m ? `${spellDef(m.spell).name} ` : '';
       const pct = (p: number | undefined) => `${Math.round((p ?? 0) * 100)}%`;
       if (m?.communing && m.communer === 'player') {
@@ -116,6 +123,7 @@ export function objectiveAdvice(world: World, o: Objective, leftClickOrders: boo
       return `Select your leader${k('select-leader')} and ${click} the ${name}stone. Bring warriors: the ritual breaks if she's hit.`;
     }
     case 'leaderReach':
+      if (!world.leaderOf('player')) return leaderAway(world, 'then walk her there');
       return `Select your leader${k('select-leader')} and ${click} the ground where the story points.`;
     case 'rescueStranded': {
       const cb = world.spellState('player', 'landbridge');
