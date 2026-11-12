@@ -111,7 +111,10 @@ export const scenario: CampaignScenario = {
             focus: LAYOUT.cove,
             actions: [{ type: 'spawn', tribe: 'violet', units: { warrior: 2 }, x: LAYOUT.cove.x, z: LAYOUT.cove.z, march: LAYOUT.level, hold: 40 }],
           },
-          raid(160, 2, 'Sails on the eastern beach — the Unmoored are coming for the ford.'),
+          // The first raid waits for the knoll: it comes 20 s after the Level stone is learned, or at 3:20
+          // at the latest. At a fixed 2:40 it landed on top of a slower player's knoll ritual, drew the
+          // escort off after it, and the boat crew cut the kneeling leader down.
+          { ...raid(0, 2, 'Sails on the eastern beach — the Unmoored are coming for the ford.'), when: { type: 'any', of: [{ type: 'objective', index: 1 }, { type: 'time', at: 180 }] }, delay: 20 },
           raid(290, 3, 'More Unmoored boats. They smell the smoke of your hearths.'),
           raid(410, 4, 'The largest boat yet. Hold the ford!'),
           { when: { type: 'time', at: SURVIVE }, actions: [{ type: 'message', text: 'The raiders turn back to the sea. Riverholm is yours.' }] },
