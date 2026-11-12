@@ -201,8 +201,9 @@ async function cast(key, spell, x, z, opts = {}) {
   await wait(120);
   const armed = await tg(() => window.__tg.toolState.tool);
   if (armed !== spell) {
+    // (Esc only if something IS armed: with nothing armed or selected it opens the menu and pauses the game.)
     log(`  ${key} armed ${armed}, not ${spell}`);
-    await page.keyboard.press('Escape');
+    if (armed !== 'select') await page.keyboard.press('Escape');
     return false;
   }
   await page.mouse.move(p.x, p.y);
@@ -219,6 +220,11 @@ async function cast(key, spell, x, z, opts = {}) {
     if ((await tg(() => window.__tg.toolState.tool)) !== 'select') await page.keyboard.press('Escape');
   } else log(`  cast ${spell} → ${x.toFixed(0)},${z.toFixed(0)} (aim note "${note.trim()}")`);
   return ok;
+}
+
+/** Esc drops the selection — but with nothing selected it opens the menu (and pauses), so only when there is one. */
+async function deselect() {
+  if (!(await tg(() => window.__tg.ui.selection.empty))) await page.keyboard.press('Escape');
 }
 
 /** Press L (select the leader) and check it took. */
@@ -258,7 +264,7 @@ async function commune(i, shotName) {
   const s = await snap();
   if (!s.leader || s.leader.task !== 'worship') throw new Error(`clicking the stone left the leader ${s.leader?.state}/${s.leader?.task}`);
   log(`  leader sent to the ${m.spell} stone (hover tag: "${tag.replace(/\s+/g, ' ').slice(0, 80)}")`);
-  await page.keyboard.press('Escape'); // drop the selection: a player's next click shouldn't order her away
+  if (!(await tg(() => window.__tg.ui.selection.empty))) await page.keyboard.press('Escape'); // drop the selection: a player's next click shouldn't order her away
   return tag;
 }
 
@@ -555,7 +561,7 @@ async function speakingStones() {
   const p = await pixelFor(L.bloom.x, L.bloom.z + 3, 2);
   if (p) await page.mouse.click(p.x, p.y, { button: 'right' });
   await wait(200);
-  await page.keyboard.press('Escape');
+  await deselect();
   await think(8);
   await commune(0, 'bloom-hover');
   await until((q) => q.monuments[0].communing || q.guards.some((g) => g.of === 0), 60, 'the Bloom ritual to begin');
@@ -573,7 +579,7 @@ async function speakingStones() {
       await look(keepers[0].x, keepers[0].z);
       const kp = await screenOf(keepers[0].x, keepers[0].z, 1.2);
       if (kp) await page.mouse.click(kp.x, kp.y, { button: 'right' });
-      await page.keyboard.press('Escape');
+      await deselect();
       await think(4);
       if (s.leader && s.leader.task !== 'worship') await commune(0);
     } else if (!keepers.length && s.leader && s.leader.task !== 'worship' && !s.objectives[0].done) {
@@ -601,7 +607,7 @@ async function speakingStones() {
   const p2 = await pixelFor(L.level.x - 2, L.level.z + 3, 2.5);
   if (p2) await page.mouse.click(p2.x, p2.y, { button: 'right' });
   await wait(200);
-  await page.keyboard.press('Escape');
+  await deselect();
   await think(6);
   await commune(1, 'level-hover');
   await until((q) => q.monuments[1].communing, 90, 'the Level ritual to begin');
@@ -639,7 +645,7 @@ async function speakingStones() {
           await look(L.ford.x - 6, L.ford.z);
           const fp = await pixelFor(L.ford.x - 6, L.ford.z, 2);
           if (fp) await page.mouse.click(fp.x, fp.y);
-          await page.keyboard.press('Escape');
+          await deselect();
         }
         await think(2);
       } else await until((q) => !q.leader || !q.leader.cast, 30, 'the strike');
