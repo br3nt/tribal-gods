@@ -31,6 +31,7 @@ import { tribeCss } from './orders';
 import { stoneHeight } from './picking';
 import { toScreen } from './project';
 import { ritualAt, ritualOf } from './stones';
+import { tr } from '../i18n';
 
 css('world-overlay', `
 .wo { position: fixed; left: 0; top: 0; z-index: 3; pointer-events: none; display: flex; flex-direction: column; align-items: center; gap: 2px;
@@ -302,7 +303,7 @@ export class WorldOverlay {
         setClass(s.ritual, 'idle', !r.communing);
         setClass(s.ritual, 'contested', r.communing && r.contested);
       }
-      const flag = r?.communing && r.contested ? 'Contested' : m.guardsAwake ? 'Guardians awake' : '';
+      const flag = r?.communing && r.contested ? tr('Contested') : m.guardsAwake ? tr('Guardians awake') : '';
       if (s.flag.textContent !== flag) s.flag.textContent = flag;
     });
   }

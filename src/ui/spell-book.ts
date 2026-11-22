@@ -33,8 +33,9 @@ import { icon, spellIcon } from './icons';
 import { carve } from './lettering';
 import { activeSpell } from './tools';
 import { tip, toast } from './tooltip';
+import { tr } from '../i18n';
 
-const TIER_NAMES = ['', 'Everyday', 'Battle', 'World-shaping'];
+const TIER_NAMES = ['', tr('Everyday'), tr('Battle'), tr('World-shaping')];
 const ROMAN = ['', 'I', 'II', 'III'];
 
 css('spell-book', `
@@ -116,12 +117,12 @@ export class SpellBook {
   constructor(private readonly ctx: UiContext) {
     this.el = h('div.sb.tg-panel.mat-stone');
     this.flow = h('span.flow');
-    this.el.appendChild(h('div.tg-panel-head', { html: `${carve('Spells')}<span class="cloth" style="flex:1"></span>` }, this.flow));
+    this.el.appendChild(h('div.tg-panel-head', { html: `${carve(tr('Spells'))}<span class="cloth" style="flex:1"></span>` }, this.flow));
 
     for (const tier of [1, 2, 3] as const) {
       const row = h('div.sb-row');
       const label = h('div.sb-tier', { html: carve(ROMAN[tier]) });
-      tip(label, () => `<h4>Tier ${ROMAN[tier]} · ${TIER_NAMES[tier]}</h4><p>${tier === 1 ? 'Cheap, quick to recharge — use them freely.' : tier === 2 ? 'Spells that decide a battle.' : 'Spells that reshape the planet. Plan minutes ahead.'}</p>`);
+      tip(label, () => `<h4>${tr('Tier {0} · {1}', ROMAN[tier], TIER_NAMES[tier])}</h4><p>${tier === 1 ? tr('Cheap, quick to recharge — use them freely.') : tier === 2 ? tr('Spells that decide a battle.') : tr('Spells that reshape the planet. Plan minutes ahead.')}</p>`);
       row.appendChild(label);
       for (const def of SPELLS.filter((s) => s.tier === tier)) row.appendChild(this.slot(def));
       this.el.appendChild(row);
@@ -135,7 +136,7 @@ export class SpellBook {
     const pips = h('div.sb-pips');
     const gift = h('div.sb-gift');
     const eta = h('div.sb-eta');
-    const toggle = h('button.sb-toggle', { type: 'button', 'aria-label': `Toggle charging ${def.name}`, html: icon('charging', 11) });
+    const toggle = h('button.sb-toggle', { type: 'button', 'aria-label': tr('Toggle charging {0}', def.name), html: icon('charging', 11) });
     el.prepend(sweep);
     el.append(h('span.kbd', { text: key }), pips, gift, eta, toggle);
     const slot: Slot = { def, el, sweep, pips, gift, eta, lastP: -1, lastCharges: -1, shown: '' };
@@ -171,13 +172,13 @@ export class SpellBook {
     const why = w.castCheck('player', id, at.x, at.z);
     // Land-only spells may refuse the leader's own tile for terrain reasons;
     // that's about the target, not the spell — aiming will show it.
-    if (why === 'Must target land' || why === 'Out of range') return null;
-    if (why === 'No charges ready') {
+    if (why === tr('Must target land') || why === tr('Out of range')) return null;
+    if (why === tr('No charges ready')) {
       // Not broken, just not ready: say what is happening and when.
       const s = w.spellState('player', id);
       const name = spellDef(id).name;
-      if (!s.charging) return `${name} is not charging — right-click it to pour mana in`;
-      return Number.isFinite(s.eta) ? `${name} is gathering power — ready in ${fmtEta(s.eta)}` : `${name} is gathering power`;
+      if (!s.charging) return tr('{0} is not charging — right-click it to pour mana in', name);
+      return Number.isFinite(s.eta) ? tr('{0} is gathering power — ready in {1}', name, fmtEta(s.eta)) : tr('{0} is gathering power', name);
     }
     return why;
   }
@@ -202,49 +203,49 @@ export class SpellBook {
   private howToLearn(id: SpellId): string {
     const stones = this.ctx.world.monuments.filter((m) => m.spell === id);
     if (stones.some((m) => m.mode === 'teach' && this.ctx.world.monumentAvailable(m))) {
-      return 'Taught by a standing stone. Send your leader to commune with it (select the leader, right-click the stone).';
+      return tr('Taught by a standing stone. Send your leader to commune with it (select the leader, right-click the stone).');
     }
-    if (stones.some((m) => m.mode === 'gift')) return 'A standing stone lends casts of this spell. Commune with it to borrow them.';
-    if (stones.length > 0) return 'Its stone has already been claimed.';
-    return 'No standing stone on this planet teaches it.';
+    if (stones.some((m) => m.mode === 'gift')) return tr('A standing stone lends casts of this spell. Commune with it to borrow them.');
+    if (stones.length > 0) return tr('Its stone has already been claimed.');
+    return tr('No standing stone on this planet teaches it.');
   }
 
   private tooltip(def: SpellDef): string {
     const s = this.ctx.world.spellState('player', def.id);
     const key = labelFor(`spell:${def.id}`);
-    const aim = def.aim === 'line' ? 'A line from your leader' : def.aim === 'point' ? 'A point' : 'An area';
+    const aim = def.aim === 'line' ? tr('A line from your leader') : def.aim === 'point' ? 'A point' : tr('An area');
     const charge = !s.known
       ? '—'
       : s.charges >= s.max
-        ? 'Full'
+        ? tr('Full')
         : !s.charging
-          ? 'Not charging'
-          : `in ${fmtEta(s.eta)}`;
+          ? tr('Not charging')
+          : tr('in {0}', fmtEta(s.eta));
     // The tribe's own numbers: campaign boons and loadouts change both.
     const cost = Math.round(s.chargeMana * 10) / 10;
     const manaLine = cost === def.chargeMana
       ? `${cost}`
       : `${cost} <span style="color:var(--${cost < def.chargeMana ? 'good' : 'warn'})">(usually ${def.chargeMana})</span>`;
-    const bonus = s.bonusCharges ? ` <span style="color:var(--good)">(+${s.bonusCharges} from boons)</span>` : '';
+    const bonus = s.bonusCharges ? ` <span style="color:var(--good)">${tr('(+{0} from boons)', s.bonusCharges)}</span>` : '';
     let html =
-      `<div class="sub">Tier ${ROMAN[def.tier]} · ${TIER_NAMES[def.tier]}</div>` +
+      `<div class="sub">${tr('Tier {0} · {1}', ROMAN[def.tier], TIER_NAMES[def.tier])}</div>` +
       `<h4>${escapeHtml(def.name)}<span class="kbd">${key}</span></h4>` +
       `<p>${escapeHtml(def.blurb)}</p><dl class="stats">` +
-      `<dt>Charges</dt><dd>${s.known ? `${s.charges} / ${s.max}` : `holds ${s.max}`}${bonus}${s.gifted ? ` <span style="color:var(--gold)">+${s.gifted} gifted</span>` : ''}</dd>` +
-      `<dt>Next charge</dt><dd>${charge}</dd>` +
-      `<dt>Mana / charge</dt><dd>${manaLine}</dd>` +
-      `<dt>Range</dt><dd>${fmtTiles(def.range)} from your leader</dd>` +
-      (def.radius > 0 ? `<dt>${def.aim === 'line' ? 'Width' : 'Radius'}</dt><dd>${fmtTiles(def.radius)}</dd>` : '') +
-      `<dt>Duration</dt><dd>${def.duration > 0 ? fmtSeconds(def.duration) : 'Instant'}</dd>` +
-      `<dt>Cast time</dt><dd>${fmtSeconds(def.castSeconds)}</dd>` +
-      `<dt>Target</dt><dd>${aim}${def.anywhere ? ', land or water' : ', land only'}</dd></dl>`;
+      `<dt>${tr('Charges')}</dt><dd>${s.known ? `${s.charges} / ${s.max}` : tr('holds {0}', s.max)}${bonus}${s.gifted ? ` <span style="color:var(--gold)">${tr('+{0} gifted', s.gifted)}</span>` : ''}</dd>` +
+      `<dt>${tr('Next charge')}</dt><dd>${charge}</dd>` +
+      `<dt>${tr('Mana / charge')}</dt><dd>${manaLine}</dd>` +
+      `<dt>${tr('Range')}</dt><dd>${tr('{0} from your leader', fmtTiles(def.range))}</dd>` +
+      (def.radius > 0 ? `<dt>${def.aim === 'line' ? tr('Width') : tr('Radius')}</dt><dd>${fmtTiles(def.radius)}</dd>` : '') +
+      `<dt>${tr('Duration')}</dt><dd>${def.duration > 0 ? fmtSeconds(def.duration) : tr('Instant')}</dd>` +
+      `<dt>${tr('Cast time')}</dt><dd>${fmtSeconds(def.castSeconds)}</dd>` +
+      `<dt>${tr('Target')}</dt><dd>${aim}${def.anywhere ? tr(', land or water') : tr(', land only')}</dd></dl>`;
     if (!s.known && s.gifted === 0) html += `<div class="note">${escapeHtml(this.howToLearn(def.id))}</div>`;
     else {
       const why = this.blockedReason(def.id);
       // Charging is a state, not a fault: amber note, not a red refusal.
       if (why) html += `<div class="${/gathering power|not charging/.test(why) ? 'note' : 'why'}">${escapeHtml(why)}</div>`;
-      if (s.known && !s.charging) html += `<div class="note">Not charging — mana goes to your other spells.</div>`;
-      html += `<div class="hint">Click or press ${key}, then click the world. Right-click this slot to ${s.charging ? 'stop' : 'resume'} charging.</div>`;
+      if (s.known && !s.charging) html += `<div class="note">${tr('Not charging — mana goes to your other spells.')}</div>`;
+      html += `<div class="hint">${tr('Click or press {0}, then click the world. Right-click this slot to {1} charging.', key, s.charging ? tr('stop') : tr('resume'))}</div>`;
     }
     return html;
   }
@@ -295,6 +296,6 @@ export class SpellBook {
       setClass(slot.el, 'armed', armed === slot.def.id);
       setClass(slot.el, 'blocked', usable && !leaderHere);
     }
-    setText(this.flow, charging > 0 ? `${charging} charging` : 'none charging');
+    setText(this.flow, charging > 0 ? tr('{0} charging', charging) : tr('none charging'));
   }
 }

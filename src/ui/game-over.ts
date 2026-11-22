@@ -20,6 +20,7 @@ import { css, h, uiRoot } from './dom';
 import { fmtClock } from './format';
 import { icon, UiIconName } from './icons';
 import { carve } from './lettering';
+import { tr } from '../i18n';
 
 export type GameResult = 'victory' | 'defeat';
 
@@ -91,19 +92,19 @@ export class GameOverScreen {
       if (r) actions.push(...(Array.isArray(r) ? r : [r]));
     }
     actions.push(
-      { label: 'Keep watching', icon: 'eye', run: () => this.hide() },
-      { label: 'Restart', icon: 'arrowRight', primary: !actions.some((a) => a.primary), run: () => { this.hide(); this.defaults.onRestart(); } },
-      { label: 'Main menu', icon: 'menu', run: () => { this.hide(); this.defaults.onMenu(); } },
+      { label: tr('Keep watching'), icon: 'eye', run: () => this.hide() },
+      { label: tr('Restart'), icon: 'arrowRight', primary: !actions.some((a) => a.primary), run: () => { this.hide(); this.defaults.onRestart(); } },
+      { label: tr('Main menu'), icon: 'menu', run: () => { this.hide(); this.defaults.onMenu(); } },
     );
     const stat = (v: string, l: string) => `<div class="go-stat"><b>${v}</b><span>${l}</span></div>`;
     const card = h('div.go-card.tg-panel.mat-hide', {
       html:
         `<div class="go-badge">${icon(win ? 'trophy' : 'skull', 34)}</div>` +
-        `<h1>${carve(win ? 'Victory' : 'Defeat')}</h1>` +
+        `<h1>${carve(win ? tr('Victory') : tr('Defeat'))}</h1>` +
         `<p class="why"></p>` +
-        `<div class="go-stats">${stat(fmtClock(stats.seconds), 'time')}${stat(String(stats.peakPopulation), 'peak people')}${stat(String(stats.spellsCast), 'spells cast')}${stat(String(stats.buildings), 'buildings')}</div>`,
+        `<div class="go-stats">${stat(fmtClock(stats.seconds), 'time')}${stat(String(stats.peakPopulation), tr('peak people'))}${stat(String(stats.spellsCast), tr('spells cast'))}${stat(String(stats.buildings), 'buildings')}</div>`,
     });
-    (card.querySelector('.why') as HTMLElement).textContent = reason ?? (win ? 'The planet is yours.' : 'Your tribe has fallen silent.');
+    (card.querySelector('.why') as HTMLElement).textContent = reason ?? (win ? tr('The planet is yours.') : tr('Your tribe has fallen silent.'));
     const row = h('div.go-actions');
     let focus: HTMLButtonElement | null = null;
     for (const a of actions) {

@@ -36,6 +36,7 @@ import { spellIcon } from './icons';
 import { ritualAt, stoneBlocked, stoneName, stoneTerms, tribeLabelOf } from './stones';
 import { tip } from './tooltip';
 import { lookAtTile, viewCentreTile } from './project';
+import { tr } from '../i18n';
 
 css('minimap', `
 /* The planet painted on hide, stretched in a round wooden hoop; a notch marks north. */
@@ -80,7 +81,7 @@ export class Minimap {
 
   constructor(private readonly ctx: UiContext) {
     this.el = h('div.mm.tg-panel');
-    this.canvas = h('canvas', { 'aria-label': 'Minimap' });
+    this.canvas = h('canvas', { 'aria-label': tr('Minimap') });
     this.el.append(this.canvas, h('div.hide'), h('div.notch'));
     this.g = this.canvas.getContext('2d')!;
     this.terrain = document.createElement('canvas');
@@ -126,11 +127,11 @@ export class Minimap {
       const m = w.monuments[idx];
       const blocked = stoneBlocked(w, m);
       const r = ritualAt(w, idx);
-      return `<div class="sub">Standing stone</div><h4>${spellIcon(m.spell, 18)}${escapeHtml(stoneName(m))}</h4><p>${escapeHtml(stoneTerms(m))}.</p>` +
+      return `<div class="sub">${tr('Standing stone')}</div><h4>${spellIcon(m.spell, 18)}${escapeHtml(stoneName(m))}</h4><p>${escapeHtml(stoneTerms(m))}.</p>` +
         (r ? `<p>${escapeHtml(tribeLabelOf(w, r.tribe))} communing: ${Math.round(r.progress * 100)}%</p>` : '') +
-        (blocked ? `<div class="why">${escapeHtml(blocked)}</div>` : '') + `<div class="hint">Click to look there.</div>`;
+        (blocked ? `<div class="why">${escapeHtml(blocked)}</div>` : '') + `<div class="hint">${tr('Click to look there.')}</div>`;
     }
-    return `<h4>The planet</h4><p>Click or drag to look. Right-click (or Ctrl-click) to send your selection there.</p>`;
+    return `<h4>${tr('The planet')}</h4><p>${tr('Click or drag to look. Right-click (or Ctrl-click) to send your selection there.')}</p>`;
   }
 
   ping(x: number, z: number, tone: 'bad' | 'good' | 'info'): void {

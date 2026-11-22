@@ -33,6 +33,7 @@ import { Drape } from './drape';
 import { labelFor } from './hotkeys';
 import { activeSpell, resetTool } from './tools';
 import { toast } from './tooltip';
+import { tr } from '../i18n';
 
 const OK = 0x72d8ff;
 const BAD = 0xff5a4a;
@@ -83,7 +84,7 @@ export class SpellAim {
     const def = spellDef(spell);
     const hit = pickGroundTile(ptr.x, ptr.y, view.camera, world.map, view.target);
     const leader = world.leaderOf('player');
-    const why = hit ? this.check(spell, hit.x, hit.z) : 'Aim at the ground';
+    const why = hit ? this.check(spell, hit.x, hit.z) : tr('Aim at the ground');
     const col = why ? BAD : OK;
 
     this.fill.begin(col);
@@ -136,7 +137,7 @@ export class SpellAim {
     this.note.style.left = `${ptr.x}px`;
     this.note.style.top = `${ptr.y}px`;
     setClass(this.note, 'bad', !!why);
-    setText(this.noteText, why ?? (walking ? `${def.name} · leader walks into range` : `${def.name} · click to cast, shift for more`));
+    setText(this.noteText, why ?? (walking ? tr('{0} · leader walks into range', def.name) : tr('{0} · click to cast, shift for more', def.name)));
     setText(this.noteKey, why ? '' : labelFor(`spell:${spell}`));
     this.noteKey.hidden = !!why;
   }

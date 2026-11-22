@@ -5,6 +5,7 @@
  */
 
 import { BUILD_ORDER, ScenarioRules, SPELLS, TRIBE_IDS, TribeId } from './catalog';
+import { tr } from '../i18n';
 
 export const STARTER_SPELLS = SPELLS.filter((s) => s.starter).map((s) => s.id);
 
@@ -17,16 +18,16 @@ export function skirmishRules(enemies = 1): ScenarioRules {
       ...rivals.map((id) => ({ id, ai: true })),
     ],
     objectives: [
-      { objective: { type: 'destroyAll' }, text: n === 1 ? 'Destroy the rival tribe' : 'Destroy every rival tribe' },
+      { objective: { type: 'destroyAll' }, text: n === 1 ? tr('Destroy the rival tribe') : tr('Destroy every rival tribe') },
     ],
     fail: [{ type: 'tribeDestroyed' }],
     briefing: {
-      title: 'Skirmish',
-      body: n === 1 ? 'One planet, two gods. Only one tribe walks away.' : `One planet, ${n + 1} gods. Only one tribe walks away.`,
+      title: tr('Skirmish'),
+      body: n === 1 ? tr('One planet, two gods. Only one tribe walks away.') : tr('One planet, {0} gods. Only one tribe walks away.', n + 1),
       tips: [
-        'Dwellings breed villagers and feed your spells.',
-        'Train fighters at the lodges; garrison a watchtower to hold a hill.',
-        'Leaders learn new spells at the standing stones.',
+        tr('Dwellings breed villagers and feed your spells.'),
+        tr('Train fighters at the lodges; garrison a watchtower to hold a hill.'),
+        tr('Leaders learn new spells at the standing stones.'),
       ],
     },
   };

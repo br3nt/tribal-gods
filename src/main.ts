@@ -58,6 +58,7 @@ import { curvatureUniforms } from './world/curvature';
 import { TerrainMesh } from './world/terrain-mesh';
 import { GroundCover } from './world/ground-cover';
 import { Water } from './world/water';
+import { tr } from './i18n';
 
 // Art review booth (?gallery=1): takes over the page and never returns. See render/gallery.ts.
 if (new URLSearchParams(location.search).get('gallery') === '1') await import('./render/gallery').then((m) => m.startGallery());
@@ -289,7 +290,7 @@ function autosave(): void {
   if (world.gameOver) return clearSave();
   if (world.elapsed < 5) return;
   const kind = campaign.active ? 'campaign' : lastStart.level ? 'level' : 'skirmish';
-  const what = kind === 'campaign' ? campaign.titleOf(campaign.active!) : kind === 'level' ? lastStart.level!.name : 'Skirmish';
+  const what = kind === 'campaign' ? campaign.titleOf(campaign.active!) : kind === 'level' ? lastStart.level!.name : tr('Skirmish');
   writeSave({
     v: 1,
     kind,
@@ -347,7 +348,7 @@ async function startLevel(level: LevelData, asTest = false, rules?: ScenarioRule
   } catch (err) {
     // A damaged imported level: say so and go back to the title, never a dead screen.
     console.warn('level failed to load', err);
-    alert(`This level could not be loaded: ${(err as Error).message}`);
+    alert(tr('This level could not be loaded: {0}', (err as Error).message));
     quitToMenu();
     return false;
   }
@@ -425,7 +426,7 @@ menu.onCampaign = () => {
 };
 if (menu.visible) menu.show('title'); // re-render: the Campaign door is open now
 registerGameOverAction(() =>
-  campaign.active ? { label: 'Campaign debrief', primary: true, icon: 'arrowRight', run: () => campaign.handleGameOver() } : null,
+  campaign.active ? { label: tr('Campaign debrief'), primary: true, icon: 'arrowRight', run: () => campaign.handleGameOver() } : null,
 );
 
 const editor = new Editor(rig.camera, rig.target, world, renderer.domElement, {
@@ -450,7 +451,7 @@ menu.onEditor = () => freshEditorCanvas();
 const backBtn = document.createElement('button');
 backBtn.type = 'button';
 backBtn.className = 'tg-btn primary';
-backBtn.textContent = 'Back to the editor';
+backBtn.textContent = tr('Back to the editor');
 backBtn.style.cssText = 'position: fixed; top: calc(var(--edge, 1rem) + 4.2rem); left: var(--edge, 1rem); z-index: 15; display: none;';
 backBtn.addEventListener('click', () => {
   if (!lastEdit.level) return;

@@ -21,6 +21,7 @@ import type { CivId } from '../../config';
 import type { MonumentDef, ScenarioRules, TribeId } from '../../sim/catalog';
 import { LevelData, packTerrain, PlacedBuilding, PlacedUnits } from '../level-format';
 import { Pt, Terrain } from '../terrain-kit';
+import { tr } from '../../i18n';
 
 export interface CampaignScenario {
   /** Stable id: progress, the library and `?scenario=` all key on it. */
@@ -61,7 +62,7 @@ export async function makeLevel(r: LevelRecipe): Promise<LevelData> {
   const level: LevelData = {
     v: 2,
     name: r.name,
-    author: 'Tribal Gods',
+    author: tr('Tribal Gods'),
     desc: r.desc,
     terrain: await packTerrain(map.heights),
     trees: r.terrain.trees(r.treeDensity ?? 0.02, clear),

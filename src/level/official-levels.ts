@@ -20,6 +20,7 @@ import { Heightmap } from '../world/heightmap';
 import { walkable } from '../sim/pathfinding';
 import { SpellId } from '../sim/spells';
 import { LevelData, packTerrain } from './level-format';
+import { tr } from '../i18n';
 
 export interface OfficialLevel {
   id: string;
@@ -112,7 +113,7 @@ async function assemble(
   return {
     v: 2,
     ...meta,
-    author: 'Tribal Gods',
+    author: tr('Tribal Gods'),
     terrain: await packTerrain(map.heights),
     trees,
     monuments: monuments.map((m) => ({ ...placeNear(map, m.x, m.z), spell: m.spell, mode: 'teach' as const })),
@@ -133,7 +134,7 @@ export const OFFICIAL_LEVELS: OfficialLevel[] = [
       return assemble(
         map,
         1001,
-        { name: 'First Light', desc: 'A kind world to learn godhood on. The stones are near; the enemy is far.' },
+        { name: tr('First Light'), desc: tr('A kind world to learn godhood on. The stones are near; the enemy is far.') },
         homes,
         [
           { x: homes.player.x + 10, z: homes.player.z + 6, spell: 'flatten' },
@@ -180,7 +181,7 @@ export const OFFICIAL_LEVELS: OfficialLevel[] = [
       return assemble(
         map,
         2002,
-        { name: 'The Strait', desc: 'An ocean apart. Causeway is on your shore — claim it before the water stops protecting you.' },
+        { name: tr('The Strait'), desc: tr('An ocean apart. Causeway is on your shore — claim it before the water stops protecting you.') },
         homes,
         [
           { x: homes.player.x + 9, z: homes.player.z + 5, spell: 'landbridge' },
@@ -210,7 +211,7 @@ export const OFFICIAL_LEVELS: OfficialLevel[] = [
       return assemble(
         map,
         3003,
-        { name: 'The Crucible', desc: 'One continent, one volcano, two gods. It is exactly the standoff it looks like.' },
+        { name: tr('The Crucible'), desc: tr('One continent, one volcano, two gods. It is exactly the standoff it looks like.') },
         homes,
         [
           { x: homes.player.x + 9, z: homes.player.z - 6, spell: 'flatten' },

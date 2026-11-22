@@ -21,6 +21,7 @@
  */
 
 import { BUILD_ORDER, BUILDINGS, BuildingKind, SPELLS, SpellId } from '../sim/catalog';
+import { tr } from '../i18n';
 
 export type ActionId =
   | `spell:${SpellId}`
@@ -91,8 +92,8 @@ function buildHotkeys(): Hotkey[] {
 function groupHotkeys(): Hotkey[] {
   const out: Hotkey[] = [];
   for (let n = 1; n <= 9; n++) {
-    out.push({ action: `group-recall:${n}`, code: `Digit${n}`, group: 'Selection', desc: `Select group ${n} (twice: jump to it)` });
-    out.push({ action: `group-set:${n}`, code: `Digit${n}`, ctrl: true, group: 'Selection', desc: `Make the selection group ${n}` });
+    out.push({ action: `group-recall:${n}`, code: `Digit${n}`, group: 'Selection', desc: tr('Select group {0} (twice: jump to it)', n) });
+    out.push({ action: `group-set:${n}`, code: `Digit${n}`, ctrl: true, group: 'Selection', desc: tr('Make the selection group {0}', n) });
   }
   return out;
 }
@@ -101,19 +102,19 @@ export const HOTKEYS: Hotkey[] = [
   ...spellHotkeys(),
   ...buildHotkeys(),
   ...groupHotkeys(),
-  { action: 'select-army', code: 'Comma', group: 'Selection', desc: 'Select every fighter' },
-  { action: 'idle-villager', code: 'Period', group: 'Selection', desc: 'Next idle villager' },
-  { action: 'select-leader', code: 'KeyL', group: 'Selection', desc: 'Select your leader' },
-  { action: 'centre-leader', code: 'Space', group: 'Camera', desc: 'Jump to your leader' },
-  { action: 'centre-home', code: 'KeyC', group: 'Camera', desc: 'Jump to your home circle' },
-  { action: 'pause', code: 'KeyP', group: 'Game', desc: 'Pause / resume' },
-  { action: 'speed-down', code: 'BracketLeft', group: 'Game', desc: 'Slower' },
-  { action: 'speed-up', code: 'BracketRight', group: 'Game', desc: 'Faster' },
-  { action: 'demolish', code: 'Delete', group: 'Selection', desc: 'Demolish the selected building' },
-  { action: 'demolish', code: 'Backspace', group: 'Selection', desc: 'Demolish (Mac delete key)' },
-  { action: 'cancel', code: 'Escape', group: 'Game', desc: 'Cancel aiming / placing; else open the menu' },
-  { action: 'help', code: 'F1', group: 'Game', desc: 'How to play' },
-  { action: 'debug', code: 'F3', group: 'Game', desc: 'Debug readout' },
+  { action: 'select-army', code: 'Comma', group: 'Selection', desc: tr('Select every fighter') },
+  { action: 'idle-villager', code: 'Period', group: 'Selection', desc: tr('Next idle villager') },
+  { action: 'select-leader', code: 'KeyL', group: 'Selection', desc: tr('Select your leader') },
+  { action: 'centre-leader', code: 'Space', group: 'Camera', desc: tr('Jump to your leader') },
+  { action: 'centre-home', code: 'KeyC', group: 'Camera', desc: tr('Jump to your home circle') },
+  { action: 'pause', code: 'KeyP', group: 'Game', desc: tr('Pause / resume') },
+  { action: 'speed-down', code: 'BracketLeft', group: 'Game', desc: tr('Slower') },
+  { action: 'speed-up', code: 'BracketRight', group: 'Game', desc: tr('Faster') },
+  { action: 'demolish', code: 'Delete', group: 'Selection', desc: tr('Demolish the selected building') },
+  { action: 'demolish', code: 'Backspace', group: 'Selection', desc: tr('Demolish (Mac delete key)') },
+  { action: 'cancel', code: 'Escape', group: 'Game', desc: tr('Cancel aiming / placing; else open the menu') },
+  { action: 'help', code: 'F1', group: 'Game', desc: tr('How to play') },
+  { action: 'debug', code: 'F3', group: 'Game', desc: tr('Debug readout') },
 ];
 
 /**
@@ -123,23 +124,23 @@ export const HOTKEYS: Hotkey[] = [
  */
 export function describedControls(leftClickOrders: boolean): Array<{ keys: string[]; desc: string; group: HotkeyGroup }> {
   return [
-    { keys: ['W', 'A', 'S', 'D'], desc: 'Pan (or arrow keys)', group: 'Camera' },
-    { keys: ['Q', 'E'], desc: 'Rotate (or middle-drag)', group: 'Camera' },
-    { keys: ['Wheel'], desc: 'Zoom toward the cursor', group: 'Camera' },
-    { keys: ['Click'], desc: leftClickOrders
-      ? 'Select your person, building or a stone. With people selected, click the ground or a target to send them'
-      : 'Select your person, building or a stone', group: 'Selection' },
-    { keys: ['Drag'], desc: 'Draw an area on the land: your people inside it are selected', group: 'Selection' },
-    { keys: ['Double-click'], desc: 'Select all of that kind on screen', group: 'Selection' },
-    { keys: ['Shift', 'Click'], desc: 'Add to / remove from the selection (Shift-drag too)', group: 'Selection' },
-    { keys: ['Right-click'], desc: 'Order: move, attack, garrison, commune, rally (Ctrl-click or a two-finger tap on a Mac)', group: 'Selection' },
-    { keys: ['Esc'], desc: 'Drop the selection', group: 'Selection' },
+    { keys: ['W', 'A', 'S', 'D'], desc: tr('Pan (or arrow keys)'), group: 'Camera' },
+    { keys: ['Q', 'E'], desc: tr('Rotate (or middle-drag)'), group: 'Camera' },
+    { keys: [tr('Wheel')], desc: tr('Zoom toward the cursor'), group: 'Camera' },
+    { keys: [tr('Click')], desc: leftClickOrders
+      ? tr('Select your person, building or a stone. With people selected, click the ground or a target to send them')
+      : tr('Select your person, building or a stone'), group: 'Selection' },
+    { keys: [tr('Drag')], desc: tr('Draw an area on the land: your people inside it are selected'), group: 'Selection' },
+    { keys: [tr('Double-click')], desc: tr('Select all of that kind on screen'), group: 'Selection' },
+    { keys: [tr('Shift'), tr('Click')], desc: tr('Add to / remove from the selection (Shift-drag too)'), group: 'Selection' },
+    { keys: [tr('Right-click')], desc: tr('Order: move, attack, garrison, commune, rally (Ctrl-click or a two-finger tap on a Mac)'), group: 'Selection' },
+    { keys: [tr('Esc')], desc: tr('Drop the selection'), group: 'Selection' },
   ];
 }
 
 /** The word hints and tooltips use for "give an order" under the current setting. */
 export function orderVerb(leftClickOrders: boolean): string {
-  return leftClickOrders ? 'click' : 'right-click';
+  return leftClickOrders ? tr('click') : tr('right-click');
 }
 
 /** 'KeyR' → 'R', 'Digit1' → '1', 'Space' → 'Space'… */
@@ -147,15 +148,15 @@ export function codeLabel(code: string): string {
   if (code.startsWith('Key')) return code.slice(3);
   if (code.startsWith('Digit')) return code.slice(5);
   const named: Record<string, string> = {
-    Space: 'Space', Period: '.', Comma: ',', Escape: 'Esc', Backquote: '`', BracketLeft: '[', BracketRight: ']',
-    Delete: 'Del', Backspace: 'Bksp', Slash: '/', Minus: '-', Equal: '=',
+    Space: tr('Space'), Period: '.', Comma: ',', Escape: tr('Esc'), Backquote: '`', BracketLeft: '[', BracketRight: ']',
+    Delete: tr('Del'), Backspace: tr('Bksp'), Slash: '/', Minus: '-', Equal: '=',
   };
   return named[code] ?? code;
 }
 
 /** Display label for a hotkey, e.g. 'R', '⇧1', 'Ctrl 1'. */
 export function keyLabel(hk: Hotkey): string {
-  return `${hk.ctrl ? 'Ctrl ' : ''}${hk.shift ? '⇧' : ''}${codeLabel(hk.code)}`;
+  return `${hk.ctrl ? tr('Ctrl ') : ''}${hk.shift ? '⇧' : ''}${codeLabel(hk.code)}`;
 }
 
 export function hotkeyFor(action: ActionId): Hotkey | undefined {

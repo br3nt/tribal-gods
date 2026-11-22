@@ -21,6 +21,7 @@ import { labelFor } from './hotkeys';
 import { icon } from './icons';
 import { carve } from './lettering';
 import { tip } from './tooltip';
+import { tr } from '../i18n';
 
 css('top-bar', `
 .tb-left { position: absolute; top: var(--edge); left: var(--edge); display: flex; align-items: stretch; padding: 0.1rem 0.15rem; gap: 0; }
@@ -69,7 +70,7 @@ export class TopBar {
     const left = h('div.tb-left.tg-panel');
     const stat = (cls: string, ic: string, key: string, label: string, tag: 'div' | 'button' = 'div') => {
       const v = h('div.v');
-      const l = h('div.l', { text: label });
+      const l = h('div.l', { text: tr(label) });
       const el: HTMLElement = h(tag, { class: `tb-stat ${cls}`, html: icon(ic as never, 22) }, h('div', {}, v, l));
       if (tag === 'button') el.setAttribute('type', 'button');
       this.v[key] = v;
@@ -79,7 +80,7 @@ export class TopBar {
     };
 
     const wood = stat('wood', 'wood', 'wood', 'wood');
-    tip(wood, () => `<h4>Wood</h4><p>Villagers fell trees and haul the logs home. Buildings, training and growing dwellings all cost wood.</p>`);
+    tip(wood, () => `<h4>${tr('Wood')}</h4><p>${tr('Villagers fell trees and haul the logs home. Buildings, training and growing dwellings all cost wood.')}</p>`);
 
     const pop = stat('pop', 'population', 'pop', 'housed');
     this.idleBtn = h('button.tb-idle.tg-hit', { type: 'button', html: icon('idle', 14) + '<span>0</span>' });
@@ -89,25 +90,25 @@ export class TopBar {
     this.v.popL.append(this.v.housed, this.idleBtn);
     tip(pop, () => {
       const s = ctx.world.tribeSummary('player');
-      return `<h4>Population</h4><p>${s.population} people of a possible ${s.popCap}. ${s.housed} live in dwellings, which breed new villagers and feed your mana.</p>` +
-        `<p class="hint">Build more Dwellings to raise the cap.</p>`;
+      return `<h4>${tr('Population')}</h4><p>${tr('{0} people of a possible {1}. {2} live in dwellings, which breed new villagers and feed your mana.', s.population, s.popCap, s.housed)}</p>` +
+        `<p class="hint">${tr('Build more Dwellings to raise the cap.')}</p>`;
     });
-    tip(this.idleBtn, () => `<h4>Idle villagers <span class="kbd">${labelFor('idle-villager')}</span></h4><p>Click to jump to the next villager with nothing to do.</p>`);
+    tip(this.idleBtn, () => `<h4>${tr('Idle villagers {0}', `<span class="kbd">${labelFor('idle-villager')}</span>`)}</h4><p>${tr('Click to jump to the next villager with nothing to do.')}</p>`);
 
     const mana = stat('mana', 'mana', 'mana', 'mana');
     tip(mana, () => {
       const t = ctx.world.tribes.player;
-      return `<h4>Mana</h4><p>Your people's faith, flowing into every spell that is charging. More people, more homes and more prayer mean faster charges.</p>` +
-        (t && t.manaRate === 0 && t.income > 0 ? `<p class="why">Nothing is charging — mana is going to waste.</p>` : '');
+      return `<h4>${tr('Mana')}</h4><p>${tr('Your people\'s faith, flowing into every spell that is charging. More people, more homes and more prayer mean faster charges.')}</p>` +
+        (t && t.manaRate === 0 && t.income > 0 ? `<p class="why">${tr('Nothing is charging — mana is going to waste.')}</p>` : '');
     });
 
     this.prayStat = stat('pray', 'prayer', 'pray', 'praying');
-    tip(this.prayStat, () => `<h4>Praying</h4><p>Villagers inside a Shrine pray instead of working. Each one speeds every charging spell.</p>`);
+    tip(this.prayStat, () => `<h4>${tr('Praying')}</h4><p>${tr('Villagers inside a Shrine pray instead of working. Each one speeds every charging spell.')}</p>`);
 
     this.leaderStat = stat('leader', 'leader', 'leader', 'leader', 'button') as HTMLButtonElement;
     this.leaderStat.classList.add('tg-hit');
     this.leaderStat.addEventListener('click', () => ctx.actions.centreOnLeader());
-    tip(this.leaderStat, () => `<h4>Your leader <span class="kbd">${labelFor('centre-leader')}</span></h4><p>Casts every spell. If they fall, they return to the home circle while your tribe lives.</p><p class="hint">Click to look at them.</p>`);
+    tip(this.leaderStat, () => `<h4>${tr('Your leader {0}', `<span class="kbd">${labelFor('centre-leader')}</span>`)}</h4><p>${tr('Casts every spell. If they fall, they return to the home circle while your tribe lives.')}</p><p class="hint">${tr('Click to look at them.')}</p>`);
     parent.appendChild(left);
 
     // --- Right cluster: clock, speed, menu ---
@@ -115,26 +116,26 @@ export class TopBar {
     const clock = h('div.tb-clock', { html: icon('clock', 16) });
     this.v.clock = h('span');
     clock.appendChild(this.v.clock);
-    tip(clock, () => `<h4>Time</h4><p>How long this scenario has been running.</p>`);
+    tip(clock, () => `<h4>${tr('Time')}</h4><p>${tr('How long this scenario has been running.')}</p>`);
     const speed = h('div.tb-speed');
-    this.pauseBtn = h('button.tg-btn', { type: 'button', 'aria-label': 'Pause', html: icon('pause', 16) });
+    this.pauseBtn = h('button.tg-btn', { type: 'button', 'aria-label': tr('Pause'), html: icon('pause', 16) });
     this.pauseBtn.addEventListener('click', () => ctx.actions.togglePause());
-    tip(this.pauseBtn, () => `<h4>${appState.paused ? 'Resume' : 'Pause'} <span class="kbd">${labelFor('pause')}</span></h4><p>Time stops; you can still look around, select and plan.</p>`);
+    tip(this.pauseBtn, () => `<h4>${appState.paused ? tr('Resume') : tr('Pause')} ${`<span class="kbd">${labelFor('pause')}</span>`}</h4><p>${tr('Time stops; you can still look around, select and plan.')}</p>`);
     speed.appendChild(this.pauseBtn);
     for (const n of SPEEDS) {
-      const b = h('button.tg-btn', { type: 'button', text: `${n}×`, 'aria-label': `Speed ${n}×` });
+      const b = h('button.tg-btn', { type: 'button', text: `${n}×`, 'aria-label': tr('Speed {0}×', n) });
       b.addEventListener('click', () => ctx.actions.setSpeed(n));
-      tip(b, () => `<h4>Speed ${n}× <span class="kbd">${labelFor('speed-down')}</span><span class="kbd">${labelFor('speed-up')}</span></h4><p>${n === 1 ? 'Normal pace.' : `Time runs ${n} times as fast.`}</p>`);
+      tip(b, () => `<h4>${tr('Speed {0}× {1}{2}', n, `<span class="kbd">${labelFor('speed-down')}</span>`, `<span class="kbd">${labelFor('speed-up')}</span>`)}</h4><p>${n === 1 ? tr('Normal pace.') : tr('Time runs {0} times as fast.', n)}</p>`);
       speed.appendChild(b);
       this.speedBtns.push(b);
     }
-    const menu = h('button.tg-btn.icon-only', { type: 'button', 'aria-label': 'Menu', html: icon('menu', 18) });
+    const menu = h('button.tg-btn.icon-only', { type: 'button', 'aria-label': tr('Menu'), html: icon('menu', 18) });
     menu.addEventListener('click', () => ctx.actions.openMenu());
-    tip(menu, () => `<h4>Menu <span class="kbd">Esc</span></h4><p>Settings, how to play, restart, leave.</p>`);
+    tip(menu, () => `<h4>${tr('Menu {0}', `<span class="kbd">Esc</span>`)}</h4><p>${tr('Settings, how to play, restart, leave.')}</p>`);
     right.append(clock, speed, menu);
     parent.appendChild(right);
 
-    this.pausedBanner = h('div.tb-paused.tg-panel.mat-hide.passthrough', { html: carve('Paused') });
+    this.pausedBanner = h('div.tb-paused.tg-panel.mat-hide.passthrough', { html: carve(tr('Paused')) });
     this.pausedBanner.hidden = true;
     parent.appendChild(this.pausedBanner);
   }
@@ -144,18 +145,18 @@ export class TopBar {
     const s = w.tribeSummary('player');
     setText(this.v.wood, String(s.wood));
     setText(this.v.pop, `${s.population}/${s.popCap}`);
-    setText(this.v.housed, `${s.housed} housed`);
+    setText(this.v.housed, tr('{0} housed', s.housed));
     setText(this.idleBtn.lastElementChild!, String(s.idleVillagers));
     setClass(this.idleBtn, 'has', s.idleVillagers > 0);
     setText(this.v.mana, fmtRate(w.tribes.player?.income ?? s.manaRate));
     // Idle mana is only a problem when something could be filling: all full is good news.
     const idle = s.manaRate === 0 && (w.tribes.player?.income ?? 0) > 0;
     const allFull = SPELLS.every((d) => { const st = w.spellState('player', d.id); return !st.known || st.charges >= st.max; });
-    setText(this.v.manaL, !idle ? 'mana' : allFull ? 'spells full' : 'nothing charging');
+    setText(this.v.manaL, !idle ? tr('mana') : allFull ? tr('spells full') : tr('nothing charging'));
     setText(this.v.pray, String(s.praying));
     setClass(this.prayStat, 'dim', s.praying === 0);
-    setText(this.v.leader, s.leaderAlive ? 'Alive' : s.leaderRespawn > 0 ? fmtEta(s.leaderRespawn) : 'Lost');
-    setText(this.v.leaderL, s.leaderAlive ? 'leader' : s.leaderRespawn > 0 ? 'returning in' : 'leader');
+    setText(this.v.leader, s.leaderAlive ? tr('Alive') : s.leaderRespawn > 0 ? fmtEta(s.leaderRespawn) : tr('Lost'));
+    setText(this.v.leaderL, s.leaderAlive ? tr('leader') : s.leaderRespawn > 0 ? tr('returning in') : tr('leader'));
     setClass(this.leaderStat, 'down', !s.leaderAlive);
     setText(this.v.clock, fmtClock(w.elapsed));
     setClass(this.pauseBtn, 'on', appState.paused);

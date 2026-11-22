@@ -8,6 +8,7 @@
 
 import { BUILDINGS, DWELLING_TIERS, spellDef, UNITS } from '../sim/catalog';
 import type { Building, Unit } from '../sim/world-state';
+import { tr } from '../i18n';
 
 /** 75 → "1:15", 3725 → "1:02:05". */
 export function fmtClock(seconds: number): string {
@@ -41,12 +42,12 @@ export function fmtRate(perSecond: number): string {
 /** 1 → "1 tile", 4.5 → "4.5 tiles". */
 export function fmtTiles(n: number): string {
   const v = Math.round(n * 10) / 10;
-  return `${v} ${v === 1 ? 'tile' : 'tiles'}`;
+  return `${v} ${v === 1 ? tr('tile') : tr('tiles')}`;
 }
 
 /** 0 → "Instant", 2.5 → "2.5s". */
 export function fmtSeconds(n: number): string {
-  return n <= 0 ? 'Instant' : `${Math.round(n * 10) / 10}s`;
+  return n <= 0 ? tr('Instant') : `${Math.round(n * 10) / 10}s`;
 }
 
 /** Player-facing name of a building (dwellings by their tier). */
@@ -64,43 +65,43 @@ type ActivityUnit = Pick<
  * the building a garrisoned unit is inside (null if unknown).
  */
 export function activityText(u: ActivityUnit, insideKind: string | null = null): string {
-  if (u.hp <= 0) return 'Fallen';
-  if (u.lifted > 0) return 'Caught in the wind';
-  if (u.pacified > 0) return 'Spellbound by a chant';
-  if (u.castSpell) return u.state === 'working' ? `Casting ${spellDef(u.castSpell).name}` : `Going to cast ${spellDef(u.castSpell).name}`;
+  if (u.hp <= 0) return tr('Fallen');
+  if (u.lifted > 0) return tr('Caught in the wind');
+  if (u.pacified > 0) return tr('Spellbound by a chant');
+  if (u.castSpell) return u.state === 'working' ? tr('Casting {0}', spellDef(u.castSpell).name) : tr('Going to cast {0}', spellDef(u.castSpell).name);
   if (u.garrison >= 0 || (u.hidden && u.state === 'inside')) {
-    if (insideKind === 'shrine') return 'Praying at the shrine';
-    if (insideKind === 'tower') return 'Manning the watchtower';
-    if (insideKind && BUILDINGS[insideKind as keyof typeof BUILDINGS]?.trains) return 'In training';
-    return 'At home';
+    if (insideKind === 'shrine') return tr('Praying at the shrine');
+    if (insideKind === 'tower') return tr('Manning the watchtower');
+    if (insideKind && BUILDINGS[insideKind as keyof typeof BUILDINGS]?.trains) return tr('In training');
+    return tr('At home');
   }
   switch (u.task) {
     case 'chop':
-      return u.state === 'working' ? 'Felling a tree' : 'Going to fell a tree';
+      return u.state === 'working' ? tr('Felling a tree') : tr('Going to fell a tree');
     case 'deliverWood':
-      return 'Hauling wood';
+      return tr('Hauling wood');
     case 'build':
-      return u.state === 'working' ? 'Building' : 'Going to build';
+      return u.state === 'working' ? tr('Building') : tr('Going to build');
     case 'goHome':
-      return 'Heading home';
+      return tr('Heading home');
     case 'train':
-      return 'Going to train';
+      return tr('Going to train');
     case 'attack':
-      return u.state === 'fighting' ? 'Fighting' : 'Charging an enemy';
+      return u.state === 'fighting' ? tr('Fighting') : tr('Charging an enemy');
     case 'attackBuilding':
-      return u.state === 'fighting' ? 'Wrecking a building' : 'Marching on a building';
+      return u.state === 'fighting' ? tr('Wrecking a building') : tr('Marching on a building');
     case 'worship':
-      return u.state === 'working' ? 'Communing with a stone' : 'Going to a standing stone';
+      return u.state === 'working' ? tr('Communing with a stone') : tr('Going to a standing stone');
     case 'garrison':
-      return 'Heading inside';
+      return tr('Heading inside');
     case 'chant':
-      return 'Chanting';
+      return tr('Chanting');
     default:
       break;
   }
-  if (u.state === 'fighting') return 'Fighting';
-  if (u.state === 'moving') return u.carrying ? 'Hauling wood' : 'Walking';
-  if (u.kind === 'brave') return 'Idle';
-  if (u.kind === 'shaman') return 'Ready to cast';
-  return UNITS[u.kind].sight > 0 ? 'Standing guard' : 'Waiting';
+  if (u.state === 'fighting') return tr('Fighting');
+  if (u.state === 'moving') return u.carrying ? tr('Hauling wood') : tr('Walking');
+  if (u.kind === 'brave') return tr('Idle');
+  if (u.kind === 'shaman') return tr('Ready to cast');
+  return UNITS[u.kind].sight > 0 ? tr('Standing guard') : tr('Waiting');
 }

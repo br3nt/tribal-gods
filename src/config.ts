@@ -6,6 +6,7 @@
  */
 
 import { TRIBE_COLORS as CATALOG_TRIBE_COLORS } from './sim/catalog';
+import { tr } from './i18n';
 
 // ---------------------------------------------------------------------------
 // The world grid
@@ -117,9 +118,9 @@ export interface Civ {
 export const CIVS: Record<CivId, Civ> = {
   forest: {
     id: 'forest',
-    name: 'Forest Tribe',
-    leaderTitle: 'the Grove-Speaker',
-    blurb: 'Thatch, totems, and a leader who listens to the trees.',
+    name: tr('Forest Tribe'),
+    leaderTitle: tr('the Grove-Speaker'),
+    blurb: tr('Thatch, totems, and a leader who listens to the trees.'),
     roof: 'thatch',
     roofColor: 0xc9a84c,
     wallColor: 0xb08d5e,
@@ -127,9 +128,9 @@ export const CIVS: Record<CivId, Civ> = {
   },
   dynasty: {
     id: 'dynasty',
-    name: 'River Dynasty',
-    leaderTitle: 'the God-King',
-    blurb: 'Sandstone, gold, and a crown that touches the sky.',
+    name: tr('River Dynasty'),
+    leaderTitle: tr('the God-King'),
+    blurb: tr('Sandstone, gold, and a crown that touches the sky.'),
     roof: 'stepped',
     roofColor: 0xd8b36a,
     wallColor: 0xcfb284,
@@ -137,9 +138,9 @@ export const CIVS: Record<CivId, Civ> = {
   },
   north: {
     id: 'north',
-    name: 'Northmen',
-    leaderTitle: 'the Far-Seer',
-    blurb: 'Steep timber halls and weather gods with short tempers.',
+    name: tr('Northmen'),
+    leaderTitle: tr('the Far-Seer'),
+    blurb: tr('Steep timber halls and weather gods with short tempers.'),
     roof: 'gabled',
     roofColor: 0x5e4a32,
     wallColor: 0x8a6a47,
@@ -161,9 +162,9 @@ export type Difficulty = 'easy' | 'normal' | 'hard';
  * with more or less of a head start in followers.
  */
 export const DIFFICULTIES: Record<Difficulty, { aiEvalSeconds: number; aiCastGap: number; aiDwellings: number; redStartBraves: number; label: string }> = {
-  easy: { aiEvalSeconds: 4, aiCastGap: 16, aiDwellings: 6, redStartBraves: 6, label: 'A patient, sleepy god' },
-  normal: { aiEvalSeconds: 2, aiCastGap: 9, aiDwellings: 8, redStartBraves: 8, label: 'An even match' },
-  hard: { aiEvalSeconds: 1.3, aiCastGap: 5.5, aiDwellings: 11, redStartBraves: 11, label: 'It dreams of your extinction' },
+  easy: { aiEvalSeconds: 4, aiCastGap: 16, aiDwellings: 6, redStartBraves: 6, label: tr('A patient, sleepy god') },
+  normal: { aiEvalSeconds: 2, aiCastGap: 9, aiDwellings: 8, redStartBraves: 8, label: tr('An even match') },
+  hard: { aiEvalSeconds: 1.3, aiCastGap: 5.5, aiDwellings: 11, redStartBraves: 11, label: tr('It dreams of your extinction') },
 };
 
 // ---------------------------------------------------------------------------

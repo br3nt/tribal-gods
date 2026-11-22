@@ -82,6 +82,7 @@ import { EventMemory, initEventMemory, PendingLanding, tickLandings, tickScenari
 import { finishHeldObjectives } from './objectives';
 import { hasCast, manaIncome, newSpellBook, pourMana, slotState, SpellBook, spendCast } from './spellbook';
 import { Aura, castSpell, SpellJob, tickJobs } from './spells';
+import { tr } from '../i18n';
 
 // Catalog types, re-exported so existing `from './world-state'` imports keep working.
 export type { BuildingKind, SpellId, Tribe, TribeId, UnitKind } from './catalog';
@@ -482,7 +483,7 @@ export class World implements SimQueries {
   /** The tribe's state; throws if it isn't in this scenario. */
   tribe(id: TribeId): TribeState {
     const t = this.tribes[id];
-    if (!t) throw new Error(`tribe ${id} is not in this world`);
+    if (!t) throw new Error(tr('tribe {0} is not in this world', id));
     return t;
   }
 
@@ -1893,20 +1894,20 @@ export class World implements SimQueries {
   castCheck(tribe: TribeId, spell: SpellId, tx: number, tz: number): string | null {
     const t = this.tribes[tribe];
     const leader = this.leaderOf(tribe);
-    if (!t || !leader || leader.hidden) return 'Your leader is not here';
-    if (leader.task === 'worship' && leader.state === 'working') return 'Your leader is communing';
-    if (!hasCast(t.spells, t.known, spell)) return t.known.has(spell) ? 'No charges ready' : 'Spell not known';
+    if (!t || !leader || leader.hidden) return tr('Your leader is not here');
+    if (leader.task === 'worship' && leader.state === 'working') return tr('Your leader is communing');
+    if (!hasCast(t.spells, t.known, spell)) return t.known.has(spell) ? tr('No charges ready') : tr('Spell not known');
     const def = spellDef(spell);
     const x = this.map.wrap(Math.round(tx));
     const z = this.map.wrap(Math.round(tz));
-    if (!def.anywhere && this.map.heightAt(x, z) < WALK_MIN_HEIGHT) return 'Must target land';
+    if (!def.anywhere && this.map.heightAt(x, z) < WALK_MIN_HEIGHT) return tr('Must target land');
     if (this.distTo(leader, x, z) <= def.range) return null;
     // A spell that may land on water / another shore (Causeway at an islet):
     // walk to the nearest of OUR ground that puts the mark in range.
     const path = findPath(this.map, leader.x, leader.z, x, z, 4000, World.approachRadius(spell));
     const end = path && path.length > 0 ? path[path.length - 1] : null;
     if (!end || Math.hypot(wrapDelta(end.x - x, WORLD_SIZE), wrapDelta(end.z - z, WORLD_SIZE)) > def.range) {
-      return 'Out of range';
+      return tr('Out of range');
     }
     return null;
   }
@@ -1931,7 +1932,7 @@ export class World implements SimQueries {
       leader.castSpell = null;
       leader.castTarget = null;
       if (tribe === 'player') this.events.push({ type: 'denied', x: tx, z: tz });
-      return 'Out of range';
+      return tr('Out of range');
     }
     return null;
   }
@@ -2356,7 +2357,7 @@ export class World implements SimQueries {
   buildState(tribe: TribeId, kind: BuildingKind): BuildState {
     const t = this.tribes[tribe];
     const def = BUILDINGS[kind];
-    if (!t) return { allowed: false, unlocked: false, affordable: false, reason: 'No such tribe' };
+    if (!t) return { allowed: false, unlocked: false, affordable: false, reason: tr('No such tribe') };
     const allowed = t.allowed.has(kind);
     const missing = def.requires.filter(
       (r) => !this.buildings.some((b) => b.tribe === tribe && b.kind === r && b.progress >= 1),
@@ -2364,9 +2365,9 @@ export class World implements SimQueries {
     const unlocked = missing.length === 0;
     const affordable = t.wood >= def.wood;
     let reason: string | null = null;
-    if (!allowed) reason = 'Not available in this scenario';
-    else if (!unlocked) reason = `Needs a ${missing.map((m) => BUILDINGS[m].name).join(' and a ')}`;
-    else if (!affordable) reason = `Needs ${def.wood - t.wood} more wood`;
+    if (!allowed) reason = tr('Not available in this scenario');
+    else if (!unlocked) reason = tr('Needs a {0}', missing.map((m) => BUILDINGS[m].name).join(tr(' and a ')));
+    else if (!affordable) reason = tr('Needs {0} more wood', def.wood - t.wood);
     return { allowed, unlocked, affordable, reason };
   }
 

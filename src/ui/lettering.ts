@@ -79,6 +79,13 @@ const G: Record<string, [number, Stroke[]]> = {
   ' ': [3.4, []],
 };
 
+// Umlauts (German): the base capital with two short dots above the cap line.
+for (const [u, base] of [['Ä', 'A'], ['Ö', 'O'], ['Ü', 'U']] as const) {
+  const [adv, strokes] = G[base];
+  const a = adv * 0.3, b = adv * 0.7;
+  G[u] = [adv, [...strokes, [a, -4.1, a, -3.5], [b, -4.1, b, -3.5]]];
+}
+
 const SPACING = 1.9;
 const WEIGHT = 2.35;
 
@@ -121,13 +128,15 @@ export function letterPath(text: string): { d: string; width: number } {
 export function carve(text: string, cls = ''): string {
   const { d, width } = letterPath(text);
   const pad = 1.6;
+  // Umlaut dots sit above the cap line: let them draw outside the box.
+  const over = /[ÄÖÜäöü]/.test(text) ? ';overflow:visible' : '';
   const vbW = width + pad * 2;
   const vbH = 10 + pad * 2;
   const esc = text.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
   const w = (vbW / vbH).toFixed(3);
   return (
     `<span class="carve${cls ? ` ${cls}` : ''}"><svg aria-hidden="true" focusable="false" viewBox="${-pad} ${-pad} ${vbW.toFixed(2)} ${vbH}" ` +
-    `style="width:${w}em;height:1em" fill="none" stroke-linecap="square" stroke-linejoin="miter" stroke-miterlimit="3">` +
+    `style="width:${w}em;height:1em${over}" fill="none" stroke-linecap="square" stroke-linejoin="miter" stroke-miterlimit="3">` +
     `<path d="${d}" transform="translate(0.45 0.95)" stroke="var(--carve-cut, rgba(20,10,4,0.85))" stroke-width="${WEIGHT + 0.7}"/>` +
     `<path d="${d}" stroke="var(--carve-paint, #e8bd6a)" stroke-width="${WEIGHT}"/>` +
     `<path d="${d}" transform="translate(-0.2 -0.35)" stroke="var(--carve-edge, rgba(255,240,205,0.55))" stroke-width="0.35"/>` +

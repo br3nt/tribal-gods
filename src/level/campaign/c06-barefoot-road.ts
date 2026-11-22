@@ -16,6 +16,7 @@
 
 import { dist, inside, lineDist, Terrain, wanderers } from '../terrain-kit';
 import { CampaignScenario, makeLevel } from './common';
+import { tr } from '../../i18n';
 
 export const LAYOUT = {
   landing: { x: 16, z: 72 },
@@ -41,9 +42,9 @@ export const LAYOUT = {
 export const scenario: CampaignScenario = {
   id: 'c06_barefoot_road',
   chapter: 6,
-  title: 'The Barefoot Road',
-  tagline: 'No roofs, no fields. A leader, a war band, and a long gorge.',
-  teaches: 'No buildings: a war band, Ward, Kindle for mana',
+  title: tr('The Barefoot Road'),
+  tagline: tr('No roofs, no fields. A leader, a war band, and a long gorge.'),
+  teaches: tr('No buildings: a war band, Ward, Kindle for mana'),
   async build() {
     const t = new Terrain(60606);
     const { gorge, side, cairn, landing, lightning } = LAYOUT;
@@ -67,8 +68,8 @@ export const scenario: CampaignScenario = {
     t.addGrove(48, 96, 6, 0.5).addGrove(30, 68, 4, 0.4).addGrove(84, 66, 4, 0.3);
     const W = LAYOUT.watchHome;
     return makeLevel({
-      name: 'The Barefoot Road',
-      desc: 'Campaign VI. No buildings: bring the leader up the Long Gorge alive.',
+      name: tr('The Barefoot Road'),
+      desc: tr('Campaign VI. No buildings: bring the leader up the Long Gorge alive.'),
       terrain: t,
       homes: { player: landing, red: W },
       civs: { red: 'north' },
@@ -94,40 +95,40 @@ export const scenario: CampaignScenario = {
       rules: {
         tribes: [
           {
-            id: 'player', name: 'the Lantern-folk', ai: false,
+            id: 'player', name: tr('the Lantern-folk'), ai: false,
             loadout: {
               spells: ['blast', 'convert', 'ward'],
               buildings: [],
               startUnits: { brave: 0, warrior: 6, firewarrior: 2 },
             },
           },
-          { id: 'red', name: 'the Ashmark', ai: false, loadout: { spells: [], buildings: [], startUnits: { shaman: 0, brave: 0 } } },
+          { id: 'red', name: tr('the Ashmark'), ai: false, loadout: { spells: [], buildings: [], startUnits: { shaman: 0, brave: 0 } } },
         ],
         objectives: [
-          { objective: { type: 'claimMonument', index: 1 }, text: 'Bring the leader to the Cairn of First Fire' },
-          { objective: { type: 'destroyTribe', tribe: 'red' }, text: 'Leave no Ashmark watch standing', optional: true },
-          { objective: { type: 'claimMonument', index: 0 }, text: 'Take Lightning from the side-valley stone', optional: true },
+          { objective: { type: 'claimMonument', index: 1 }, text: tr('Bring the leader to the Cairn of First Fire') },
+          { objective: { type: 'destroyTribe', tribe: 'red' }, text: tr('Leave no Ashmark watch standing'), optional: true },
+          { objective: { type: 'claimMonument', index: 0 }, text: tr('Take Lightning from the side-valley stone'), optional: true },
         ],
         fail: [{ type: 'leaderDies' }],
         events: [
-          { when: { type: 'time', at: 2 }, message: 'Two Ashmark spears guard the gorge mouth. Ward the band, then Blast them off the road.', focus: { x: 38, z: 70 }, actions: [] },
+          { when: { type: 'time', at: 2 }, message: tr('Two Ashmark spears guard the gorge mouth. Ward the band, then Blast them off the road.'), focus: { x: 38, z: 70 }, actions: [] },
           {
             when: { type: 'commune', index: 1, tribe: 'player' },
-            message: 'Horns from the far end of the gorge — the Ashmark garrison is coming for the kneeling leader. Hold them off!',
+            message: tr('Horns from the far end of the gorge — the Ashmark garrison is coming for the kneeling leader. Hold them off!'),
             focus: { x: 112, z: 56 },
             actions: [{ type: 'spawn', tribe: 'red', units: { warrior: 3, firewarrior: 1 }, x: 116, z: 56, march: LAYOUT.cairn }],
           },
         ],
         briefing: {
-          title: 'The Barefoot Road',
+          title: tr('The Barefoot Road'),
           body:
-            'The Cairn of First Fire stands at the head of the Long Gorge, and whoever sits with it learns to call burning stone out of the sky. ' +
-            'There is no ground in the gorge to build on and no time to try. Our leader goes on foot with eight spears and throwers, up a valley the Ashmark watch. ' +
-            'If she falls on the road, there is no circle to bring her back. Walk carefully.',
+            tr('The Cairn of First Fire stands at the head of the Long Gorge, and whoever sits with it learns to call burning stone out of the sky. ') +
+            tr('There is no ground in the gorge to build on and no time to try. Our leader goes on foot with eight spears and throwers, up a valley the Ashmark watch. ') +
+            tr('If she falls on the road, there is no circle to bring her back. Walk carefully.'),
           tips: [
-            'No Dwellings means little mana: every follower adds a trickle. Kindle the wanderers in the side valley to charge faster.',
-            'Stone Ward on the band before a fight halves the damage they take. Keep the leader behind the spears.',
-            'Emberthrowers outrange the towers’ spearmen — stop short of a tower and let them work.',
+            tr('No Dwellings means little mana: every follower adds a trickle. Kindle the wanderers in the side valley to charge faster.'),
+            tr('Stone Ward on the band before a fight halves the damage they take. Keep the leader behind the spears.'),
+            tr('Emberthrowers outrange the towers’ spearmen — stop short of a tower and let them work.'),
           ],
         },
       },

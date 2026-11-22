@@ -26,6 +26,7 @@ import type { LevelData } from '../level/level-format';
 import type { ScenarioRules } from '../sim/catalog';
 import type { World } from '../sim/world-state';
 import { BriefingScreen, CampaignMapScreen, DebriefScreen, MapNode } from './campaign-screens';
+import { tr } from '../i18n';
 
 export interface CampaignHooks {
   world: World;
@@ -107,7 +108,7 @@ export class CampaignController {
     let p = this.levels.get(id);
     if (!p) {
       const s = campaignScenario(id);
-      if (!s) return Promise.reject(new Error(`no scenario ${id}`));
+      if (!s) return Promise.reject(new Error(tr('no scenario {0}', id)));
       p = s.build();
       this.levels.set(id, p);
     }
@@ -133,7 +134,7 @@ export class CampaignController {
         bestTime: rec?.bestTime ?? null,
         stars: rec?.stars.length ?? 0,
         starsTotal: null,
-        boon: p.boons[s.id] ? BOONS[p.boons[s.id]].name : boonOffer(p, s.id).length ? 'unclaimed — choose at the next briefing' : undefined,
+        boon: p.boons[s.id] ? BOONS[p.boons[s.id]].name : boonOffer(p, s.id).length ? tr('unclaimed — choose at the next briefing') : undefined,
       };
     });
     this.map.show(nodes);
@@ -201,7 +202,7 @@ export class CampaignController {
   /** Title of a chapter, for the Continue button. */
   titleOf(id: string): string {
     const s = campaignScenario(id);
-    return s ? `Ch. ${s.chapter} · ${s.title}` : 'Campaign';
+    return s ? tr('Ch. {0} · {1}', s.chapter, s.title) : tr('Campaign');
   }
 
   /** Per-frame: game over → record + debrief. Cheap when idle. */

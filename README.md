@@ -159,6 +159,19 @@ live with the Web Audio API — effects for every world event, attenuated by
 distance from the camera, plus a quiet ambient bed of wind, surf and birds
 (`src/core/audio.ts`, `src/core/sfx.ts`).
 
+## Languages
+
+English and German (Settings → Language; the page reloads, and the
+browser's language picks the default). The text stays in the code, in
+English, and is its own key: `tr('Out of range')`, with numbered
+placeholders for the parts that change — `tr('Needs {0} more wood', n)`.
+`src/i18n/de.ts` maps those strings to German; anything it lacks falls back
+to English, and headless runs (the tests, the sim) always stay English. A
+hosted build can default to German with `VITE_DEFAULT_LANG=de`. Another
+language is one more dictionary file plus a line in `src/i18n/index.ts`;
+`test/i18n.test.ts` checks every dictionary entry against the code. The
+carved lettering has Ä, Ö and Ü for the German headings.
+
 ## Development
 
 - `npm test` runs the Vitest suite: the simulation is headless (no

@@ -22,6 +22,7 @@ import { settings } from './settings';
 import { currentObjective, isGuided, objectiveAdvice } from './objective-advice';
 import { ritualOf } from './stones';
 import { activeSpell } from './tools';
+import { tr } from '../i18n';
 
 interface Hint {
   id: string;
@@ -92,7 +93,7 @@ export class Hints {
     this.hints = [
       {
         id: 'camera', icon: 'eye',
-        html: () => `Look around: <span class="kbd">W</span><span class="kbd">A</span><span class="kbd">S</span><span class="kbd">D</span> pan, <span class="kbd">Q</span><span class="kbd">E</span> rotate, the wheel zooms. ${k('centre-leader')} jumps to your leader.`,
+        html: () => `${tr('Look around: {0}{1}{2}{3} pan, {4}{5} rotate, the wheel zooms. {6} jumps to your leader.', `<span class="kbd">W</span>`, `<span class="kbd">A</span>`, `<span class="kbd">S</span>`, `<span class="kbd">D</span>`, `<span class="kbd">Q</span>`, `<span class="kbd">E</span>`, k('centre-leader'))}`,
         when: (_c, t) => t > 1.5, done: moved,
       },
       {
@@ -102,9 +103,9 @@ export class Hints {
           const st = w().buildState('player', dwelling);
           const name = BUILDINGS[dwelling].name;
           if (!st.affordable) {
-            return `A ${name} costs ${BUILDINGS[dwelling].wood} wood; you have ${w().tribeSummary('player').wood}. Your villagers are felling trees — build one ${k(`build:${dwelling}`)} when the wood is in.`;
+            return tr('A {0} costs {1} wood; you have {2}. Your villagers are felling trees — build one {3} when the wood is in.', name, BUILDINGS[dwelling].wood, w().tribeSummary('player').wood, k(`build:${dwelling}`));
           }
-          return `Build a ${name}: pick it in the Build panel ${k(`build:${dwelling}`)} and click open ground. Homes breed villagers and feed your spells.`;
+          return tr('Build a {0}: pick it in the Build panel {1} and click open ground. Homes breed villagers and feed your spells.', name, k(`build:${dwelling}`));
         },
         when: (_c, t) => t > 4 && !isGuided(w()) && w().buildState('player', dwelling).allowed && w().buildState('player', dwelling).unlocked, done: ownHut,
       },
@@ -115,16 +116,16 @@ export class Hints {
           const s = teachSpell()!;
           const st = w().spellState('player', s.id);
           const key = k(`spell:${s.id}`);
-          if (!leader()) return `Your leader casts every spell. They are returning to the home circle — spells wait for them.`;
-          if (st.charges + st.gifted > 0) return `${s.name} is ready: press ${key} (or click it in the spell book), then click the world. Your leader walks into range and casts.`;
-          if (!st.charging) return `${s.name} is not charging. Right-click its stone in the spell book to pour mana into it.`;
-          return `${s.name} is gathering power — its stones fill as your people pray${Number.isFinite(st.eta) ? ` (about ${Math.ceil(st.eta)}s)` : ''}. When it glows, press ${key} and click the world.`;
+          if (!leader()) return tr(`Your leader casts every spell. They are returning to the home circle — spells wait for them.`);
+          if (st.charges + st.gifted > 0) return tr('{0} is ready: press {1} (or click it in the spell book), then click the world. Your leader walks into range and casts.', s.name, key);
+          if (!st.charging) return tr('{0} is not charging. Right-click its stone in the spell book to pour mana into it.', s.name);
+          return tr('{0} is gathering power — its stones fill as your people pray{1}. When it glows, press {2} and click the world.', s.name, Number.isFinite(st.eta) ? tr(' (about {0}s)', Math.ceil(st.eta)) : '', key);
         },
         when: (_c, t) => (t > 30 || ownHut()) && !isGuided(w()) && !!teachSpell(), done: () => this.armedOnce,
       },
       {
         id: 'stones', icon: 'stone',
-        html: () => `Standing stones teach spells — the marker above each shows which. Select your leader ${k('select-leader')} and ${verb()} a stone to commune. The ritual takes a while and damage breaks it: bring an escort.`,
+        html: () => tr('Standing stones teach spells — the marker above each shows which. Select your leader {0} and {1} a stone to commune. The ritual takes a while and damage breaks it: bring an escort.', k('select-leader'), verb()),
         when: (c, t) => t > 90 && !isGuided(c.world) && !!leader() && c.world.monuments.some((m) => c.world.monumentAvailable(m)),
         done: (c) => (c.world.tribes.player?.known.size ?? 0) > this.learnedFrom || c.world.units.some((u) => u.tribe === 'player' && u.task === 'worship'),
       },
@@ -145,14 +146,14 @@ export class Hints {
       },
       {
         id: 'ritual', icon: 'shield',
-        html: () => `Your leader is communing and can't defend themselves. Any hit breaks the ritual — keep warriors beside them until it's done.`,
+        html: () => tr(`Your leader is communing and can't defend themselves. Any hit breaks the ritual — keep warriors beside them until it's done.`),
         when: (c) => !!ritualOfLeader(c), done: (c) => (c.world.tribes.player?.known.size ?? 0) > this.learnedFrom,
       },
       {
         id: 'select', icon: 'move',
         html: () => settings.leftClickOrders
-          ? `Drag on the ground to select your people, then click where they should go. The cursor shows what a click will do.`
-          : `Drag on the ground to select your people; right-click to send them. The cursor shows what a right-click will do.`,
+          ? tr(`Drag on the ground to select your people, then click where they should go. The cursor shows what a click will do.`)
+          : tr(`Drag on the ground to select your people; right-click to send them. The cursor shows what a right-click will do.`),
         when: (c, t) => t > 60 && !isGuided(c.world) && c.world.units.filter((u) => u.tribe === 'player' && !u.hidden).length > 1, done: (c) => c.selection.units.size > 1,
       },
     ];
@@ -223,7 +224,7 @@ export class Hints {
     const next = this.hints.find((x) => (x.id === OBJECTIVE_HINT || !this.seen.has(x.id)) && x.when(this.ctx, this.sinceStart));
     if (!next) return;
     this.showing = next.id;
-    const close = h('button.tg-btn.icon-only', { type: 'button', 'aria-label': 'Dismiss hint', html: icon('close', 14) });
+    const close = h('button.tg-btn.icon-only', { type: 'button', 'aria-label': tr('Dismiss hint'), html: icon('close', 14) });
     close.addEventListener('click', () => {
       if (next.id === OBJECTIVE_HINT) {
         const cur = currentObjective(this.ctx.world, this.activatedAt);

@@ -15,6 +15,7 @@
 import { communeSecondsFor, spellDef, Tribe, tribeName, TribeId, UNITS, UnitKind } from '../sim/catalog';
 import type { Monument, World } from '../sim/world-state';
 import { fmtSeconds } from './format';
+import { tr } from '../i18n';
 
 export interface Ritual {
   tribe: Tribe;
@@ -60,26 +61,26 @@ export function stoneName(m: Monument): string {
 /** One line: what it holds and on what terms. */
 export function stoneTerms(m: Monument): string {
   return m.mode === 'teach'
-    ? `Teaches ${spellDef(m.spell).name} for good`
-    : `Lends ${m.charges ?? 2} free cast${(m.charges ?? 2) === 1 ? '' : 's'} of ${spellDef(m.spell).name}`;
+    ? tr('Teaches {0} for good', spellDef(m.spell).name)
+    : tr('Lends {0} free cast{1} of {2}', m.charges ?? 2, (m.charges ?? 2) === 1 ? '' : 's', spellDef(m.spell).name);
 }
 
 /** The guardians' line for a tooltip, or null when the stone has none. */
 export function stoneGuards(m: Monument): string | null {
   const g = m.guards ? (Object.entries(m.guards) as Array<[UnitKind, number]>).filter(([, n]) => n > 0) : [];
   if (g.length === 0) return null;
-  const who = g.map(([k, n]) => `${n} ${UNITS[k].name}${n === 1 ? '' : 's'}`).join(', ');
-  return m.guardsAwake ? `Guarded — ${who}, awake and fighting!` : `Guarded — ${who} wake when a ritual begins`;
+  const who = g.map(([k, n]) => `${n} ${n === 1 ? UNITS[k].name : tr('{0}s', UNITS[k].name)}`).join(', ');
+  return m.guardsAwake ? tr('Guarded — {0}, awake and fighting!', who) : tr('Guarded — {0} wake when a ritual begins', who);
 }
 
 /** Why the stone can't be communed with now, or null. */
 export function stoneBlocked(world: World, m: Monument): string | null {
   if (world.monumentAvailable(m)) return null;
-  if (m.asleep) return 'Asleep — not yet awake to anyone';
-  if (m.mode === 'teach' && m.claimedBy) return m.claimedBy === 'player' ? 'Your tribe already learned it here' : 'Already claimed';
-  if (m.sleep > 0) return `Sleeping — wakes in ${fmtSeconds(Math.ceil(m.sleep))}`;
-  if (m.opensAt && world.elapsed < m.opensAt) return `Wakes in ${fmtSeconds(Math.ceil(m.opensAt - world.elapsed))}`;
-  return 'Not open now';
+  if (m.asleep) return tr('Asleep — not yet awake to anyone');
+  if (m.mode === 'teach' && m.claimedBy) return m.claimedBy === 'player' ? tr('Your tribe already learned it here') : tr('Already claimed');
+  if (m.sleep > 0) return tr('Sleeping — wakes in {0}', fmtSeconds(Math.ceil(m.sleep)));
+  if (m.opensAt && world.elapsed < m.opensAt) return tr('Wakes in {0}', fmtSeconds(Math.ceil(m.opensAt - world.elapsed)));
+  return tr('Not open now');
 }
 
 /** Display name for a tribe ("the Ashmark", "your tribe"). */

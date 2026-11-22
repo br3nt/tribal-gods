@@ -24,6 +24,7 @@ import { STARTER_SPELLS } from '../sim/rules';
 import { START_BRAVES, START_WOOD } from '../config';
 import type { LevelData } from '../level/level-format';
 import { carve } from './lettering';
+import { tr } from '../i18n';
 
 const CSS = `
 .tgc-overlay {
@@ -184,10 +185,10 @@ export class CampaignMapScreen extends Overlay {
   show(nodes: MapNode[]): void {
     this.open();
     const head = el('div', 'tgc-head');
-    head.append(carved('h1', 'tgc-title', 'The Long Tide'), el('span', 'tgc-sub', `${nodes.filter((n) => n.state === 'won').length} of ${nodes.length} chapters`));
-    head.appendChild(button('Back', () => this.hooks.onClose()));
+    head.append(carved('h1', 'tgc-title', tr('The Long Tide')), el('span', 'tgc-sub', tr('{0} of {1} chapters', nodes.filter((n) => n.state === 'won').length, nodes.length)));
+    head.appendChild(button(tr('Back'), () => this.hooks.onClose()));
     this.inner.appendChild(head);
-    const intro = el('p', 'tgc-sub', 'The sea is rising. The Lantern-folk have lost one shore already; this is the road to the last one.');
+    const intro = el('p', 'tgc-sub', tr('The sea is rising. The Lantern-folk have lost one shore already; this is the road to the last one.'));
     intro.style.margin = '0 0 18px';
     this.inner.appendChild(intro);
 
@@ -204,10 +205,10 @@ export class CampaignMapScreen extends Overlay {
       if (n.state === 'won') {
         const total = n.starsTotal ?? 0;
         if (total > 0) meta.appendChild(el('div', 'tgc-stars', '★'.repeat(n.stars) + '☆'.repeat(Math.max(0, total - n.stars))));
-        meta.appendChild(el('div', undefined, `best ${formatTime(n.bestTime)}`));
-        if (n.boon) meta.appendChild(el('div', undefined, `boon: ${n.boon}`));
-      } else if (n.state === 'open') meta.appendChild(el('div', undefined, n.current ? 'next on the road' : 'open'));
-      else meta.appendChild(el('div', undefined, 'locked'));
+        meta.appendChild(el('div', undefined, tr('best {0}', formatTime(n.bestTime))));
+        if (n.boon) meta.appendChild(el('div', undefined, tr('boon: {0}', n.boon)));
+      } else if (n.state === 'open') meta.appendChild(el('div', undefined, n.current ? tr('next on the road') : tr('open')));
+      else meta.appendChild(el('div', undefined, tr('locked')));
       card.append(num, text, meta);
       if (n.state !== 'locked') card.addEventListener('click', () => this.hooks.onPick(n.id));
       trail.appendChild(card);
@@ -259,10 +260,10 @@ function drawTrail(trail: HTMLElement, cards: HTMLElement[]): void {
 export function failText(f: FailCondition): string | null {
   switch (f.type) {
     case 'tribeDestroyed': return null;
-    case 'leaderDies': return 'Your leader must not fall — there is no return this time.';
-    case 'timeLimit': return `Finish within ${formatTime(f.seconds)}.`;
-    case 'buildingLost': return `Lose every ${BUILDINGS[f.kind].name} and it is over.`;
-    case 'monumentTaken': return 'If a rival communes at the stone first, it is over.';
+    case 'leaderDies': return tr('Your leader must not fall — there is no return this time.');
+    case 'timeLimit': return tr('Finish within {0}.', formatTime(f.seconds));
+    case 'buildingLost': return tr('Lose every {0} and it is over.', BUILDINGS[f.kind].name);
+    case 'monumentTaken': return tr('If a rival communes at the stone first, it is over.');
   }
 }
 
@@ -278,8 +279,8 @@ export function scriptedDefeats(rules: ScenarioRules): string[] {
     if (!defeat) continue;
     const t = e.when;
     if (t.type === 'killed' && t.tribe === 'player') {
-      const who = t.kind ? `${t.count} ${UNITS[t.kind].name}${t.count === 1 ? '' : 's'}` : `${t.count} of your people`;
-      out.push(`If ${who} ${t.count === 1 ? 'dies' : 'die'}, it is over.`);
+      const who = t.kind ? tr('{0} {1}', t.count, t.count === 1 ? UNITS[t.kind].name : tr('{0}s', UNITS[t.kind].name)) : tr('{0} of your people', t.count);
+      out.push(tr('If {0} {1}, it is over.', who, t.count === 1 ? tr('dies') : tr('die')));
     } else out.push(defeat.reason);
   }
   return out;
@@ -301,17 +302,17 @@ export function describeLoadout(rules: ScenarioRules) {
     const extra = lo.extraCharges?.[id] ?? 0;
     const cost = lo.chargeCost?.[id];
     let note = '';
-    if (extra) note += ` +${extra} charge`;
-    if (cost && cost !== 1) note += cost > 1 ? ` ×${cost} cost` : ` −${Math.round((1 - cost) * 100)}% cost`;
+    if (extra) note += tr(' +{0} charge', extra);
+    if (cost && cost !== 1) note += cost > 1 ? tr(' ×{0} cost', cost) : tr(' −{0}% cost', Math.round((1 - cost) * 100));
     return spellDef(id).name + note;
   });
-  const gifts = Object.entries(lo.gifts ?? {}).map(([id, n]) => `${spellDef(id as SpellId).name} ×${n} (free)`);
-  const buildings = lo.buildings === undefined ? 'Every building' : lo.buildings.length === 0 ? 'None — no building at all' : lo.buildings.map((k) => BUILDINGS[k].name).join(', ');
+  const gifts = Object.entries(lo.gifts ?? {}).map(([id, n]) => tr('{0} ×{1} (free)', spellDef(id as SpellId).name, n));
+  const buildings = lo.buildings === undefined ? tr('Every building') : lo.buildings.length === 0 ? tr('None — no building at all') : lo.buildings.map((k) => BUILDINGS[k].name).join(', ');
   const units: Partial<Record<UnitKind, number>> = { brave: START_BRAVES, ...(lo.startUnits ?? {}) };
   const people = (Object.entries(units) as Array<[UnitKind, number]>)
     .filter(([k, n]) => n > 0 && k !== 'shaman')
-    .map(([k, n]) => `${n} ${UNITS[k].name}${n === 1 ? '' : 's'}`);
-  if ((units.shaman ?? 1) > 0) people.unshift('your Leader');
+    .map(([k, n]) => `${n} ${n === 1 ? UNITS[k].name : tr('{0}s', UNITS[k].name)}`);
+  if ((units.shaman ?? 1) > 0) people.unshift(tr('your Leader'));
   return { spells: [...spells, ...gifts], buildings, people, wood: lo.startWood ?? START_WOOD, startBuildings: (lo.startBuildings ?? []).map((k) => BUILDINGS[k].name) };
 }
 
@@ -324,7 +325,7 @@ export class BriefingScreen extends Overlay {
     this.open();
     const b = d.rules.briefing;
     const head = el('div', 'tgc-head');
-    head.append(el('span', 'tgc-sub', `Chapter ${roman(d.chapter)}`), carved('h1', 'tgc-title', b.title));
+    head.append(el('span', 'tgc-sub', tr('Chapter {0}', roman(d.chapter))), carved('h1', 'tgc-title', b.title));
     head.style.flexDirection = 'column';
     head.style.alignItems = 'flex-start';
     head.style.gap = '4px';
@@ -332,20 +333,20 @@ export class BriefingScreen extends Overlay {
 
     const grid = el('div', 'tgc-grid');
     const story = el('div', 'tgc-panel tg-panel mat-hide');
-    story.append(el('p', 'tgc-body', b.body), el('div', 'tgc-h', 'Counsel'));
+    story.append(el('p', 'tgc-body', b.body), el('div', 'tgc-h', tr('Counsel')));
     const tips = el('ul', 'tgc-list');
     for (const t of b.tips) tips.appendChild(el('li', undefined, t));
     story.appendChild(tips);
 
-    story.appendChild(el('div', 'tgc-h', 'Objectives'));
+    story.appendChild(el('div', 'tgc-h', tr('Objectives')));
     for (const o of d.rules.objectives.filter((x) => x.after === undefined)) { // later steps of the story arrive in play
       const row = el('div', `tgc-obj${o.optional ? ' optional' : ''}`);
-      row.append(el('span', 'mark', o.optional ? '☆' : '◆'), el('span', undefined, o.text + (o.optional ? ' (optional)' : '')));
+      row.append(el('span', 'mark', o.optional ? '☆' : '◆'), el('span', undefined, o.text + (o.optional ? tr(' (optional)') : '')));
       story.appendChild(row);
     }
     const fails = [...(d.rules.fail ?? []).map((f) => failText(f)).filter((x): x is string => !!x), ...scriptedDefeats(d.rules)];
     if (fails.length) {
-      story.appendChild(el('div', 'tgc-h', 'Beware'));
+      story.appendChild(el('div', 'tgc-h', tr('Beware')));
       for (const f of fails) {
         const row = el('div', 'tgc-obj miss');
         row.append(el('span', 'mark', '✕'), el('span', undefined, f));
@@ -360,27 +361,27 @@ export class BriefingScreen extends Overlay {
       for (const i of items) c.appendChild(el('span', `tgc-chip ${cls}`, i));
       return c;
     };
-    side.append(el('div', 'tgc-h', 'Your spells'), chips(lo.spells));
-    side.append(el('div', 'tgc-h', 'You may build'), el('div', undefined, lo.buildings));
-    side.append(el('div', 'tgc-h', 'You bring'), el('div', undefined, `${lo.people.join(', ')} · ${lo.wood} wood`));
+    side.append(el('div', 'tgc-h', tr('Your spells')), chips(lo.spells));
+    side.append(el('div', 'tgc-h', tr('You may build')), el('div', undefined, lo.buildings));
+    side.append(el('div', 'tgc-h', tr('You bring')), el('div', undefined, tr('{0} · {1} wood', lo.people.join(', '), lo.wood)));
     if (lo.startBuildings.length || d.level.buildings?.some((x) => x.tribe === 'player')) {
       const standing = [...(d.level.buildings ?? []).filter((x) => x.tribe === 'player').map((x) => BUILDINGS[x.kind].name), ...lo.startBuildings];
-      side.append(el('div', 'tgc-h', 'Already standing'), el('div', undefined, standing.join(', ')));
+      side.append(el('div', 'tgc-h', tr('Already standing')), el('div', undefined, standing.join(', ')));
     }
     const stones = d.level.monuments.map((m) => {
       const name = spellDef(m.spell).name;
-      if (m.mode === 'gift') return `${name} — gift, ${m.charges ?? 2} cast${(m.charges ?? 2) === 1 ? '' : 's'}${m.cooldown ? `, then sleeps ${formatTime(m.cooldown)}` : ''}`;
-      return `${name} — teaches${m.opensAt ? `, wakes at ${formatTime(m.opensAt)}` : ''}`;
+      if (m.mode === 'gift') return `${(m.charges ?? 2) === 1 ? tr('{0} — gift, {1} cast', name, 1) : tr('{0} — gift, {1} casts', name, m.charges ?? 2)}${m.cooldown ? tr(', then sleeps {0}', formatTime(m.cooldown)) : ''}`;
+      return `${tr('{0} — teaches', name)}${m.opensAt ? tr(', wakes at {0}', formatTime(m.opensAt)) : ''}`;
     });
-    side.append(el('div', 'tgc-h', 'The stones offer'), stones.length ? chips(stones, 'gift') : el('div', 'tgc-sub', 'No standing stones here.'));
+    side.append(el('div', 'tgc-h', tr('The stones offer')), stones.length ? chips(stones, 'gift') : el('div', 'tgc-sub', tr('No standing stones here.')));
     const rivals = d.rules.tribes.filter((t) => t.id !== 'player');
     if (rivals.length) {
       const name = (id: TribeId) => tribeName(d.rules, id);
-      side.append(el('div', 'tgc-h', 'Others here'), el('div', undefined, rivals.map((t) => name(t.id) + (t.allies?.length ? ` (allied with ${t.allies.map(name).join(', ')})` : '')).join('; ')));
+      side.append(el('div', 'tgc-h', tr('Others here')), el('div', undefined, rivals.map((t) => name(t.id) + (t.allies?.length ? tr(' (allied with {0})', t.allies.map(name).join(', ')) : '')).join('; ')));
     }
-    if (d.boons.length) side.append(el('div', 'tgc-h', 'Boons you carry'), chips(d.boons.map((id) => BOONS[id].name)));
+    if (d.boons.length) side.append(el('div', 'tgc-h', tr('Boons you carry')), chips(d.boons.map((id) => BOONS[id].name)));
     if (d.pendingBoon && this.hooks.onBoon) {
-      side.append(el('div', 'tgc-h', `Unclaimed boon — ${d.pendingBoon.chapterTitle}`));
+      side.append(el('div', 'tgc-h', tr('Unclaimed boon — {0}', d.pendingBoon.chapterTitle)));
       const grid = el('div', 'tgc-boons');
       for (const id of d.pendingBoon.offer) {
         const b = el('button', 'tgc-btn tg-btn tgc-boon');
@@ -394,7 +395,7 @@ export class BriefingScreen extends Overlay {
     this.inner.appendChild(grid);
 
     const actions = el('div', 'tgc-actions');
-    actions.append(button('Back to the map', () => this.hooks.onBack()), button('Begin', () => this.hooks.onPlay(), true));
+    actions.append(button(tr('Back to the map'), () => this.hooks.onBack()), button(tr('Begin'), () => this.hooks.onPlay(), true));
     this.inner.appendChild(actions);
   }
 }
@@ -428,14 +429,14 @@ export class DebriefScreen extends Overlay {
     this.open();
     const win = d.result === 'victory';
     const head = el('div');
-    head.append(el('div', 'tgc-sub', `Chapter ${roman(d.chapter)} · ${d.title}`), carved('h1', `tgc-result ${d.result}`, win ? 'Victory' : 'Defeat'), el('p', 'tgc-body', d.reason));
+    head.append(el('div', 'tgc-sub', tr('Chapter {0} · {1}', roman(d.chapter), d.title)), carved('h1', `tgc-result ${d.result}`, win ? tr('Victory') : tr('Defeat')), el('p', 'tgc-body', d.reason));
     head.style.marginBottom = '18px';
     this.inner.appendChild(head);
 
     const panel = el('div', 'tgc-panel tg-panel mat-hide');
-    panel.appendChild(el('div', 'tgc-h', 'Time'));
-    panel.appendChild(el('div', undefined, `${formatTime(d.seconds)}${win && d.bestTime !== null ? ` · best ${formatTime(d.bestTime)}` : ''}`));
-    panel.appendChild(el('div', 'tgc-h', 'Objectives'));
+    panel.appendChild(el('div', 'tgc-h', tr('Time')));
+    panel.appendChild(el('div', undefined, `${formatTime(d.seconds)}${win && d.bestTime !== null ? tr(' · best {0}', formatTime(d.bestTime)) : ''}`));
+    panel.appendChild(el('div', 'tgc-h', tr('Objectives')));
     for (const o of d.objectives) {
       const row = el('div', `tgc-obj ${o.done ? 'done' : 'miss'}${o.optional ? ' optional' : ''}`);
       row.append(el('span', 'mark', o.done ? (o.optional ? '★' : '✓') : o.optional ? '☆' : '✕'), el('span', undefined, o.text));
@@ -447,7 +448,7 @@ export class DebriefScreen extends Overlay {
     if (win && d.boonOffer.length) {
       const boonPanel = el('div', 'tgc-panel tg-panel mat-hide');
       boonPanel.style.marginTop = '14px';
-      boonPanel.append(el('div', 'tgc-h', 'Choose a boon to carry forward'));
+      boonPanel.append(el('div', 'tgc-h', tr('Choose a boon to carry forward')));
       const grid = el('div', 'tgc-boons');
       let chosen = d.boonChosen;
       const paint = () => {
@@ -471,9 +472,9 @@ export class DebriefScreen extends Overlay {
     }
 
     const actions = el('div', 'tgc-actions');
-    actions.append(button('Campaign map', () => this.hooks.onMap()), button(win ? 'Play again' : 'Try again', () => this.hooks.onRetry(), !win));
+    actions.append(button(tr('Campaign map'), () => this.hooks.onMap()), button(win ? tr('Play again') : tr('Try again'), () => this.hooks.onRetry(), !win));
     if (win && d.hasNext) {
-      next = button('Next chapter', () => this.hooks.onNext(), true);
+      next = button(tr('Next chapter'), () => this.hooks.onNext(), true);
       next.disabled = d.boonOffer.length > 0 && !d.boonChosen;
       actions.appendChild(next);
     }

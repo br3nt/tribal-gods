@@ -21,6 +21,7 @@
 
 import { inside, Terrain, wanderers } from '../terrain-kit';
 import { CampaignScenario, makeLevel, RAIDER_TRIBE } from './common';
+import { tr } from '../../i18n';
 
 export const LAYOUT = {
   home: { x: 36, z: 70 },
@@ -57,9 +58,9 @@ const raid = (at: number, warriors: number, message: string) => ({
 export const scenario: CampaignScenario = {
   id: 'c02_speaking_stones',
   chapter: 2,
-  title: 'The Speaking Stones',
-  tagline: 'Two stones that remember. And sails on the eastern sea.',
-  teaches: 'Standing stones, towers, the first raid',
+  title: tr('The Speaking Stones'),
+  tagline: tr('Two stones that remember. And sails on the eastern sea.'),
+  teaches: tr('Standing stones, towers, the first raid'),
   async build() {
     const t = new Terrain(20202);
     const { home, bloom, level, ford, river } = LAYOUT;
@@ -77,8 +78,8 @@ export const scenario: CampaignScenario = {
     t.pad(home.x, home.z, 8, 2.4, 5);
     t.addGrove(bloom.x, bloom.z, 12, 0.8).addGrove(home.x + 8, home.z + 12, 8, 0.5).addGrove(84, 82, 10, 0.4);
     return makeLevel({
-      name: 'The Speaking Stones',
-      desc: 'Campaign II. A river island; two stones; raiders from the east.',
+      name: tr('The Speaking Stones'),
+      desc: tr('Campaign II. A river island; two stones; raiders from the east.'),
       terrain: t,
       homes: { player: home, violet: LAYOUT.landing },
       monuments: [
@@ -89,46 +90,46 @@ export const scenario: CampaignScenario = {
       rules: {
         tribes: [
           {
-            id: 'player', name: 'the Lantern-folk', ai: false,
+            id: 'player', name: tr('the Lantern-folk'), ai: false,
             loadout: { spells: ['blast', 'convert'], buildings: ['hut', 'lumberyard', 'tower'], startUnits: { brave: 7, warrior: 4 }, startWood: 12 },
           },
-          { id: 'violet', name: 'the Unmoored', ...RAIDER_TRIBE },
+          { id: 'violet', name: tr('the Unmoored'), ...RAIDER_TRIBE },
         ],
         objectives: [
-          { objective: { type: 'claimMonument', index: 0 }, text: 'Learn Bloom at the west-bank stone' },
-          { objective: { type: 'claimMonument', index: 1 }, text: 'Learn Level at the stone across the river' },
-          { objective: { type: 'survive', seconds: SURVIVE }, text: 'Weather the raids (8 minutes)' },
-          { objective: { type: 'buildCount', kind: 'tower', count: 1 }, text: 'Raise a Watchtower by the ford', optional: true },
-          { objective: { type: 'reachPopulation', count: 30 }, text: 'Grow the tribe to 30', optional: true },
-          { objective: { type: 'convertWanderers', count: 4 }, text: 'Kindle the wanderers by the shore', optional: true },
+          { objective: { type: 'claimMonument', index: 0 }, text: tr('Learn Bloom at the west-bank stone') },
+          { objective: { type: 'claimMonument', index: 1 }, text: tr('Learn Level at the stone across the river') },
+          { objective: { type: 'survive', seconds: SURVIVE }, text: tr('Weather the raids (8 minutes)') },
+          { objective: { type: 'buildCount', kind: 'tower', count: 1 }, text: tr('Raise a Watchtower by the ford'), optional: true },
+          { objective: { type: 'reachPopulation', count: 30 }, text: tr('Grow the tribe to 30'), optional: true },
+          { objective: { type: 'convertWanderers', count: 4 }, text: tr('Kindle the wanderers by the shore'), optional: true },
         ],
         events: [
-          { when: { type: 'time', at: 2 }, message: 'Wanderers camped by the shore, a short walk south. Kindle them into the tribe.', focus: LAYOUT.camp, actions: [] },
-          { when: { type: 'time', at: 25 }, message: 'The stone in the old wood is watched. Whoever kneels there wakes its keepers — bring spears.', focus: LAYOUT.bloom, actions: [] },
+          { when: { type: 'time', at: 2 }, message: tr('Wanderers camped by the shore, a short walk south. Kindle them into the tribe.'), focus: LAYOUT.camp, actions: [] },
+          { when: { type: 'time', at: 25 }, message: tr('The stone in the old wood is watched. Whoever kneels there wakes its keepers — bring spears.'), focus: LAYOUT.bloom, actions: [] },
           {
             when: { type: 'commune', index: 1, tribe: 'player' },
-            message: 'A boat below the knoll — the Unmoored have seen the ritual! Guard the leader: one blow and it breaks.',
+            message: tr('A boat below the knoll — the Unmoored have seen the ritual! Guard the leader: one blow and it breaks.'),
             focus: LAYOUT.cove,
             actions: [{ type: 'spawn', tribe: 'violet', units: { warrior: 2 }, x: LAYOUT.cove.x, z: LAYOUT.cove.z, march: LAYOUT.level, hold: 40 }],
           },
           // The first raid waits for the knoll: it comes 20 s after the Level stone is learned, or at 3:20
           // at the latest. At a fixed 2:40 it landed on top of a slower player's knoll ritual, drew the
           // escort off after it, and the boat crew cut the kneeling leader down.
-          { ...raid(0, 2, 'Sails on the eastern beach — the Unmoored are coming for the ford.'), when: { type: 'any', of: [{ type: 'objective', index: 1 }, { type: 'time', at: 180 }] }, delay: 20 },
-          raid(290, 3, 'More Unmoored boats. They smell the smoke of your hearths.'),
-          raid(410, 4, 'The largest boat yet. Hold the ford!'),
-          { when: { type: 'time', at: SURVIVE }, actions: [{ type: 'message', text: 'The raiders turn back to the sea. Riverholm is yours.' }] },
+          { ...raid(0, 2, tr('Sails on the eastern beach — the Unmoored are coming for the ford.')), when: { type: 'any', of: [{ type: 'objective', index: 1 }, { type: 'time', at: 180 }] }, delay: 20 },
+          raid(290, 3, tr('More Unmoored boats. They smell the smoke of your hearths.')),
+          raid(410, 4, tr('The largest boat yet. Hold the ford!')),
+          { when: { type: 'time', at: SURVIVE }, actions: [{ type: 'message', text: tr('The raiders turn back to the sea. Riverholm is yours.') }] },
         ],
         briefing: {
-          title: 'The Speaking Stones',
+          title: tr('The Speaking Stones'),
           body:
-            'Riverholm has standing stones older than any tribe, and the old songs say a leader who sits with one comes away knowing a spell. ' +
-            'One stands in the wood on our bank; the other crowns a knoll across the cold river. ' +
-            'We are not the first boats to find this island. The Unmoored, whose isles drowned before ours, raid every shore that smokes — and the only crossing is the ford.',
+            tr('Riverholm has standing stones older than any tribe, and the old songs say a leader who sits with one comes away knowing a spell. ') +
+            tr('One stands in the wood on our bank; the other crowns a knoll across the cold river. ') +
+            tr('We are not the first boats to find this island. The Unmoored, whose isles drowned before ours, raid every shore that smokes — and the only crossing is the ford.'),
           tips: [
-            'At a stone your leader kneels for a while and learns its spell — but a kneeling leader is helpless, and one blow breaks the ritual.',
-            'Your spear-bearers fight best from a Watchtower — order them inside, near the ford.',
-            'Blast throws raiders clear; thrown into the river, they drown.',
+            tr('At a stone your leader kneels for a while and learns its spell — but a kneeling leader is helpless, and one blow breaks the ritual.'),
+            tr('Your spear-bearers fight best from a Watchtower — order them inside, near the ford.'),
+            tr('Blast throws raiders clear; thrown into the river, they drown.'),
           ],
         },
       },

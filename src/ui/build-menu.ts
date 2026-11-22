@@ -22,6 +22,7 @@ import { buildingIcon, icon } from './icons';
 import { carve } from './lettering';
 import { activeBuilding } from './tools';
 import { tip, toast } from './tooltip';
+import { tr } from '../i18n';
 
 css('build-menu', `
 .bm { padding: 0.3rem 0.45rem 0.45rem; }
@@ -67,7 +68,7 @@ export class BuildMenu {
 
   constructor(private readonly ctx: UiContext) {
     this.el = h('div.bm.tg-panel');
-    this.el.appendChild(h('div.tg-panel-head', { html: `${carve('Build')}<span class="cloth" style="flex:1"></span>` }));
+    this.el.appendChild(h('div.tg-panel-head', { html: `${carve(tr('Build'))}<span class="cloth" style="flex:1"></span>` }));
     const grid = h('div.bm-grid');
     for (const kind of BUILD_ORDER) {
       const def = BUILDINGS[kind];
@@ -91,7 +92,7 @@ export class BuildMenu {
       const t = this.tiles.find((x) => x.kind === kind);
       if (t) {
         const r = t.el.getBoundingClientRect();
-        toast(st.reason ?? 'Not available', r.left + r.width / 2, r.top);
+        toast(st.reason ?? tr('Not available'), r.left + r.width / 2, r.top);
         t.el.classList.remove('deny');
         void t.el.offsetWidth;
         t.el.classList.add('deny');
@@ -109,18 +110,18 @@ export class BuildMenu {
     let html =
       `<h4>${escapeHtml(def.name)}<span class="kbd">${labelFor(`build:${kind}`)}</span></h4>` +
       `<p>${escapeHtml(def.blurb)}</p><dl class="stats">` +
-      `<dt>Cost</dt><dd>${def.wood} wood</dd>` +
-      `<dt>Footprint</dt><dd>${def.size} × ${def.size} tiles</dd>` +
-      `<dt>Build time</dt><dd>${fmtSeconds(def.buildSeconds)} of work</dd>` +
-      (def.trains ? `<dt>Trains</dt><dd>${UNITS[def.trains].name} (${UNITS[def.trains].trainWood} wood each)</dd>` : '') +
+      `<dt>${tr('Cost')}</dt><dd>${tr('{0} wood', def.wood)}</dd>` +
+      `<dt>${tr('Footprint')}</dt><dd>${tr('{0} × {1} tiles', def.size, def.size)}</dd>` +
+      `<dt>${tr('Build time')}</dt><dd>${tr('{0} of work', fmtSeconds(def.buildSeconds))}</dd>` +
+      (def.trains ? `<dt>${tr('Trains')}</dt><dd>${tr('{0} ({1} wood each)', UNITS[def.trains].name, UNITS[def.trains].trainWood)}</dd>` : '') +
       `</dl>`;
     if (def.requires.length) {
       html += `<ul class="req">${def.requires
-        .map((r) => `<li class="${have(r) ? 'ok' : 'no'}">${icon(have(r) ? 'check' : 'close', 12)}Needs a ${escapeHtml(BUILDINGS[r].name)}</li>`)
+        .map((r) => `<li class="${have(r) ? 'ok' : 'no'}">${icon(have(r) ? 'check' : 'close', 12)}${tr('Needs a {0}', escapeHtml(BUILDINGS[r].name))}</li>`)
         .join('')}</ul>`;
     }
     if (st.reason) html += `<div class="why">${escapeHtml(st.reason)}</div>`;
-    else html += `<div class="hint">Click, then click the ground. Shift-click to place several. Esc cancels.</div>`;
+    else html += `<div class="hint">${tr('Click, then click the ground. Shift-click to place several. Esc cancels.')}</div>`;
     return html;
   }
 

@@ -20,6 +20,7 @@ import { UiContext } from './context';
 import { css, escapeHtml, h } from './dom';
 import { icon, UiIconName } from './icons';
 import { ritualAt, tribeLabelOf } from './stones';
+import { tr } from '../i18n';
 
 css('alerts', `
 .al { width: 16.5rem; display: flex; flex-direction: column; gap: 0.35rem; align-items: stretch; }
@@ -119,14 +120,14 @@ export class AlertFeed {
         alertSound('attack');
       } else if (e.type === 'landing' && e.tribe && e.tribe !== 'player' && e.tribe !== 'wild' && w.hostile('player', e.tribe as never)) {
         // The event goes out as the boats set off (sim LANDING): they are landing, not landed.
-        this.push({ kind: 'attack', text: `Boats running in: ${(e.magnitude ?? 0) > 1 ? `${e.magnitude} raiders` : 'a raider'} landing`, tone: 'bad', x: e.x, z: e.z });
+        this.push({ kind: 'attack', text: tr('Boats running in: {0} landing', (e.magnitude ?? 0) > 1 ? tr('{0} raiders', e.magnitude) : tr('a raider')), tone: 'bad', x: e.x, z: e.z });
         alertSound('attack');
       } else if (e.type === 'rescued' && e.tribe === 'player') {
         rescued = { n: (rescued?.n ?? 0) + 1, x: e.x, z: e.z };
       }
     }
     if (rescued) {
-      this.push({ kind: 'leaderBack', text: rescued.n > 1 ? `${rescued.n} of your stranded people are home` : 'One of your stranded people is home', tone: 'good', x: rescued.x, z: rescued.z });
+      this.push({ kind: 'leaderBack', text: rescued.n > 1 ? tr('{0} of your stranded people are home', rescued.n) : tr('One of your stranded people is home'), tone: 'good', x: rescued.x, z: rescued.z });
       alertSound('good');
     }
     if (this.prev && w.elapsed < this.prev.t) this.reset(); // world was reset under us

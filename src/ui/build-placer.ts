@@ -27,6 +27,7 @@ import { Drape } from './drape';
 import { labelFor } from './hotkeys';
 import { activeBuilding, resetTool } from './tools';
 import { toast } from './tooltip';
+import { tr } from '../i18n';
 
 const GOOD = 0x6fe08a;
 const BAD = 0xff5a4a;
@@ -54,7 +55,7 @@ export class BuildPlacer {
       const c = this.candidate;
       if (!c || c.kind !== kind) return;
       if (!c.ok || !ctx.world.placeBuilding('player', kind, c.x, c.z)) {
-        toast(c.why ?? 'Cannot build here', e.clientX, e.clientY);
+        toast(c.why ?? tr('Cannot build here'), e.clientX, e.clientY);
         denied();
         return;
       }
@@ -70,16 +71,16 @@ export class BuildPlacer {
     const st = w.buildState('player', kind);
     if (st.reason) return st.reason;
     if (w.canPlaceBuilding('player', kind, cx, cz)) return null;
-    if (badTiles > 0) return 'Something is in the way';
-    if (laneBlocked) return 'Keep a path clear around buildings';
+    if (badTiles > 0) return tr('Something is in the way');
+    if (laneBlocked) return tr('Keep a path clear around buildings');
     const r = (BUILDINGS[kind].size - 1) / 2;
     for (const id of w.activeTribes()) {
       const home = w.tribes[id]!.home;
       if (Math.abs(wrapDelta(cx - home.x, WORLD_SIZE)) < r + 3 && Math.abs(wrapDelta(cz - home.z, WORLD_SIZE)) < r + 3) {
-        return 'Too close to a home circle';
+        return tr('Too close to a home circle');
       }
     }
-    return 'The ground is too uneven';
+    return tr('The ground is too uneven');
   }
 
   update(): void {
@@ -147,6 +148,6 @@ export class BuildPlacer {
     this.note.style.left = `${ptr.x}px`;
     this.note.style.top = `${ptr.y}px`;
     setClass(this.note, 'bad', !ok);
-    setText(this.note, ok ? `${def.name} · ${def.wood} wood · click to place, shift for more  ${labelFor(`build:${kind}`)}` : why!);
+    setText(this.note, ok ? tr('{0} · {1} wood · click to place, shift for more  {2}', def.name, def.wood, labelFor(`build:${kind}`)) : why!);
   }
 }

@@ -16,6 +16,7 @@ import { fmtClock } from './format';
 import { fillTransform } from './bar-fill';
 import { icon } from './icons';
 import { carve } from './lettering';
+import { tr } from '../i18n';
 
 css('objectives', `
 /* A hide scroll between two rods. */
@@ -64,7 +65,7 @@ export class ObjectivesPanel {
   constructor(private readonly ctx: UiContext) {
     this.el = h('div.ob.tg-panel.mat-hide');
     this.count = h('span.count');
-    const head = h('button.ob-head', { type: 'button', 'aria-label': 'Objectives', html: `<span class="chev"></span>${carve('Objectives')}` }, this.count);
+    const head = h('button.ob-head', { type: 'button', 'aria-label': tr('Objectives'), html: `<span class="chev"></span>${carve(tr('Objectives'))}` }, this.count);
     head.addEventListener('click', () => this.el.classList.toggle('collapsed'));
     this.list = h('ul.ob-list');
     this.el.append(head, this.list);
@@ -101,11 +102,11 @@ export class ObjectivesPanel {
           const showBar = !o.done && !o.failed && o.progress > 0 && o.progress < 1;
           const cls = `ob-item${o.done ? ' done' : ''}${o.failed ? ' failed' : ''}${fresh ? ' fresh' : ''}`;
           return `<li class="${cls}"><span class="mark">${o.done ? icon('check', 10) : o.failed ? icon('close', 10) : ''}</span>` +
-            `<span class="txt">${escapeHtml(o.text)}${o.optional ? '<span class="tag">optional</span>' : ''}</span>` +
+            `<span class="txt">${escapeHtml(o.text)}${o.optional ? `<span class="tag">${tr('optional')}</span>` : ''}</span>` +
             (o.done
               ? `<span class="meta">done ${fmtClock(this.doneAt.get(i) ?? w.elapsed)}</span>`
               : o.failed
-                ? `<span class="meta">failed</span>`
+                ? `<span class="meta">${tr('failed')}</span>`
                 : showBar
                   ? `<span class="meta"><span class="bar gold"><i data-i="${i}"></i></span><span data-p="${i}"></span></span>`
                   : '') +

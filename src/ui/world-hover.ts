@@ -29,6 +29,7 @@ import { spellIcon } from './icons';
 import { settings } from './settings';
 import { ritualAt, ritualSeconds, stoneBlocked, stoneGuards, stoneName, stoneTerms, tribeLabelOf } from './stones';
 import { toolState } from './tools';
+import { tr } from '../i18n';
 
 const HOVER_DELAY = 0.45;
 const OWN = 0xf2d27a;
@@ -160,35 +161,35 @@ export class WorldHover {
     const def = UNITS[u.kind];
     const w = this.ctx.world;
     if (u.tribe === 'player') {
-      return `<h4>${escapeHtml(def.name)}</h4><p>${escapeHtml(activityText(u))}</p><div class="act">Click to select</div>`;
+      return `<h4>${escapeHtml(def.name)}</h4><p>${escapeHtml(activityText(u))}</p><div class="act">${tr('Click to select')}</div>`;
     }
     if (u.tribe === 'wild' && u.joins) {
-      return `<div class="sub">Stranded · ${escapeHtml(tribeLabelOf(w, u.joins))}</div><h4>${escapeHtml(def.name)}</h4>` +
-        `<p>Cut off from home. They join the moment a walking route links them to your home — raise land to reach them.</p>`;
+      return `<div class="sub">${tr('Stranded · {0}', escapeHtml(tribeLabelOf(w, u.joins)))}</div><h4>${escapeHtml(def.name)}</h4>` +
+        `<p>${tr('Cut off from home. They join the moment a walking route links them to your home — raise land to reach them.')}</p>`;
     }
     if (u.tribe === 'wild' && (u.guardOf ?? -1) >= 0) {
-      const act = w.foeOfTribe('player', u) ? (this.haveOwnPeople() ? `${Verb} to attack` : 'Awake and fighting') : 'Wakes when a ritual begins at its stone';
-      return `<div class="sub">Guardian of a stone</div><h4>${escapeHtml(def.name)}</h4><div class="act">${act}</div>`;
+      const act = w.foeOfTribe('player', u) ? (this.haveOwnPeople() ? tr('{0} to attack', Verb) : tr('Awake and fighting')) : tr('Wakes when a ritual begins at its stone');
+      return `<div class="sub">${tr('Guardian of a stone')}</div><h4>${escapeHtml(def.name)}</h4><div class="act">${act}</div>`;
     }
     if (u.tribe === 'wild') {
-      return `<div class="sub">Wanderer · no tribe</div><h4>${escapeHtml(def.name)}</h4><p>${escapeHtml(def.blurb)}</p>` +
-        `<div class="act">Kindle converts wanderers to your tribe</div>`;
+      return `<div class="sub">${tr('Wanderer · no tribe')}</div><h4>${escapeHtml(def.name)}</h4><p>${escapeHtml(def.blurb)}</p>` +
+        `<div class="act">${tr('Kindle converts wanderers to your tribe')}</div>`;
     }
     const who = tribeLabelOf(w, u.tribe);
-    const act = this.haveOwnPeople() ? `${Verb} to attack` : 'Click to look';
+    const act = this.haveOwnPeople() ? tr('{0} to attack', Verb) : tr('Click to look');
     return `<div class="sub">${escapeHtml(who)}</div><h4>${escapeHtml(def.name)}</h4><div class="act">${act}</div>`;
   }
 
   private buildingTag(b: Building, Verb: string): string {
     const w = this.ctx.world;
     if (b.tribe === 'player') {
-      let act = 'Click to select';
+      let act = tr('Click to select');
       if (this.haveOwnPeople() && (b.kind === 'tower' || b.kind === 'shrine') && b.progress >= 1) {
-        act += ` · right-click to ${b.kind === 'tower' ? 'man it' : 'pray there'}`;
+        act += tr(' · right-click to {0}', b.kind === 'tower' ? tr('man it') : tr('pray there'));
       }
       return `<h4>${escapeHtml(buildingName(b))}</h4>${b.progress < 1 ? `<p>${Math.floor(b.progress * 100)}% built</p>` : ''}<div class="act">${act}</div>`;
     }
-    const act = this.haveOwnPeople() ? `${Verb} to attack it` : 'Click to look';
+    const act = this.haveOwnPeople() ? tr('{0} to attack it', Verb) : tr('Click to look');
     return `<div class="sub">${escapeHtml(tribeLabelOf(w, b.tribe))}</div><h4>${escapeHtml(BUILDINGS[b.kind].name)}</h4><div class="act">${act}</div>`;
   }
 
@@ -198,22 +199,22 @@ export class WorldHover {
     const s = spellDef(m.spell);
     const blocked = stoneBlocked(w, m);
     const ritual = ritualAt(w, index);
-    let html = `<div class="sub">Standing stone · tier ${s.tier}</div><h4>${escapeHtml(stoneName(m))}</h4>` +
+    let html = `<div class="sub">${tr('Standing stone · tier {0}', s.tier)}</div><h4>${escapeHtml(stoneName(m))}</h4>` +
       `<div class="spell">${spellIcon(m.spell, 22)}<span>${escapeHtml(stoneTerms(m))}</span></div>` +
-      `<p>A ritual of ${fmtSeconds(ritualSeconds(m))}. Damage to the leader breaks it — bring an escort.</p>`;
+      `<p>${tr('A ritual of {0}. Damage to the leader breaks it — bring an escort.', fmtSeconds(ritualSeconds(m)))}</p>`;
     const guards = stoneGuards(m);
     if (guards) html += `<div class="why">${escapeHtml(guards)}</div>`;
     const ours = ritual?.tribe === 'player';
     if (ritual) {
-      const who = ours ? 'Your leader is' : `<b>${escapeHtml(tribeLabelOf(w, ritual.tribe))}</b> are`;
+      const who = ours ? tr('Your leader is') : `${tr('{0} are', `<b>${escapeHtml(tribeLabelOf(w, ritual.tribe))}</b>`)}`;
       html += ritual.communing
-        ? `<p>${who} communing: ${Math.round(ritual.progress * 100)}%${ritual.contested ? ' — <b>contested</b>, held still by enemies in the ring' : ''}</p>`
-        : `<p>A broken ritual (${ours ? 'yours' : escapeHtml(tribeLabelOf(w, ritual.tribe))}) — ${Math.round(ritual.progress * 100)}%, fading.</p>`;
+        ? `<p>${tr('{0} communing: {1}%{2}', who, Math.round(ritual.progress * 100), ritual.contested ? tr(' — <b>contested</b>, held still by enemies in the ring') : '')}</p>`
+        : `<p>${tr('A broken ritual ({0}) — {1}%, fading.', ours ? tr('yours') : escapeHtml(tribeLabelOf(w, ritual.tribe)), Math.round(ritual.progress * 100))}</p>`;
     }
-    if (ours && ritual?.communing) html += `<div class="act">Keep foes off her until it is done</div>`;
+    if (ours && ritual?.communing) html += `<div class="act">${tr('Keep foes off her until it is done')}</div>`;
     else if (blocked) html += `<div class="why">${escapeHtml(blocked)}</div>`;
-    else if (this.leaderSelected()) html += `<div class="act">${Verb} to send your leader to commune</div>`;
-    else html += `<div class="act">Select your leader, then ${Verb.toLowerCase()} the stone</div>`;
+    else if (this.leaderSelected()) html += `<div class="act">${tr('{0} to send your leader to commune', Verb)}</div>`;
+    else html += `<div class="act">${tr('Select your leader, then {0} the stone', Verb.toLowerCase())}</div>`;
     return html;
   }
 }

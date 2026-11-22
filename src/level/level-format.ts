@@ -26,6 +26,7 @@
 import { CivId, WORLD_SIZE } from '../config';
 import { BUILDINGS, SPELLS, TRIBE_IDS, UNITS } from '../sim/catalog';
 import type { BuildingKind, MonumentDef, ScenarioRules, SpellId, Tribe, TribeId, UnitKind } from '../sim/catalog';
+import { tr } from '../i18n';
 
 type Pt = { x: number; z: number };
 
@@ -101,28 +102,28 @@ export type AnyLevelData = LevelData | LevelDataV1;
 export function validateRules(rules: unknown): void {
   const r = rules as ScenarioRules;
   const fail = (why: string) => {
-    throw new Error(`Level rules are damaged: ${why}`);
+    throw new Error(tr('Level rules are damaged: {0}', why));
   };
-  if (!r || typeof r !== 'object') fail('not an object');
-  if (!Array.isArray(r.tribes) || r.tribes.length === 0) fail('no tribes');
-  if (!r.tribes.some((t) => t?.id === 'player')) fail('no player tribe');
+  if (!r || typeof r !== 'object') fail(tr('not an object'));
+  if (!Array.isArray(r.tribes) || r.tribes.length === 0) fail(tr('no tribes'));
+  if (!r.tribes.some((t) => t?.id === 'player')) fail(tr('no player tribe'));
   for (const t of r.tribes) {
-    if (!TRIBE_IDS.includes(t?.id)) fail(`unknown tribe ${String(t?.id)}`);
-    for (const s of t.loadout?.spells ?? []) if (!SPELLS.some((d) => d.id === s)) fail(`unknown spell ${s}`);
-    for (const b of t.loadout?.buildings ?? []) if (!BUILDINGS[b]) fail(`unknown building ${b}`);
-    for (const b of t.loadout?.startBuildings ?? []) if (!BUILDINGS[b]) fail(`unknown building ${b}`);
-    for (const u of Object.keys(t.loadout?.startUnits ?? {})) if (!UNITS[u as UnitKind]) fail(`unknown unit ${u}`);
+    if (!TRIBE_IDS.includes(t?.id)) fail(tr('unknown tribe {0}', String(t?.id)));
+    for (const s of t.loadout?.spells ?? []) if (!SPELLS.some((d) => d.id === s)) fail(tr('unknown spell {0}', s));
+    for (const b of t.loadout?.buildings ?? []) if (!BUILDINGS[b]) fail(tr('unknown building {0}', b));
+    for (const b of t.loadout?.startBuildings ?? []) if (!BUILDINGS[b]) fail(tr('unknown building {0}', b));
+    for (const u of Object.keys(t.loadout?.startUnits ?? {})) if (!UNITS[u as UnitKind]) fail(tr('unknown unit {0}', u));
     for (const k of [...Object.keys(t.loadout?.extraCharges ?? {}), ...Object.keys(t.loadout?.chargeCost ?? {}), ...Object.keys(t.loadout?.gifts ?? {})]) {
-      if (!SPELLS.some((d) => d.id === k)) fail(`unknown spell ${k}`);
+      if (!SPELLS.some((d) => d.id === k)) fail(tr('unknown spell {0}', k));
     }
   }
-  if (!Array.isArray(r.objectives)) fail('no objectives');
-  if (!r.briefing || typeof r.briefing.title !== 'string' || !Array.isArray(r.briefing.tips)) fail('no briefing');
+  if (!Array.isArray(r.objectives)) fail(tr('no objectives'));
+  if (!r.briefing || typeof r.briefing.title !== 'string' || !Array.isArray(r.briefing.tips)) fail(tr('no briefing'));
   for (const e of r.events ?? []) {
-    if (!e?.when || !Array.isArray(e.actions)) fail('a scripted event has no trigger or actions');
+    if (!e?.when || !Array.isArray(e.actions)) fail(tr('a scripted event has no trigger or actions'));
     for (const a of e.actions) {
-      if ('spell' in a && !SPELLS.some((d) => d.id === a.spell)) fail(`unknown spell ${a.spell}`);
-      if (a.type === 'spawn') for (const u of Object.keys(a.units ?? {})) if (!UNITS[u as UnitKind]) fail(`unknown unit ${u}`);
+      if ('spell' in a && !SPELLS.some((d) => d.id === a.spell)) fail(tr('unknown spell {0}', a.spell));
+      if (a.type === 'spawn') for (const u of Object.keys(a.units ?? {})) if (!UNITS[u as UnitKind]) fail(tr('unknown unit {0}', u));
     }
   }
 }
@@ -131,10 +132,10 @@ export function validateRules(rules: unknown): void {
 export function migrateLevel(level: AnyLevelData): LevelData {
   if (level.v === 2) {
     if (level.rules !== undefined) validateRules(level.rules);
-    for (const m of level.monuments ?? []) if (!SPELLS.some((d) => d.id === m.spell)) throw new Error(`Level has a stone of unknown spell ${m.spell}`);
+    for (const m of level.monuments ?? []) if (!SPELLS.some((d) => d.id === m.spell)) throw new Error(tr('Level has a stone of unknown spell {0}', m.spell));
     return level;
   }
-  if (level.v !== 1) throw new Error('Level is from an unknown version');
+  if (level.v !== 1) throw new Error(tr('Level is from an unknown version'));
   const out: LevelData = {
     v: 2,
     name: level.name,
@@ -207,16 +208,16 @@ export async function levelToCode(level: LevelData): Promise<string> {
 export async function codeToLevel(code: string): Promise<LevelData> {
   const trimmed = code.trim();
   const prefix = [CODE_PREFIX, ...LEGACY_PREFIXES].find((p) => trimmed.startsWith(p));
-  if (!prefix) throw new Error('Not a Tribal Gods level code (missing TG2. prefix)');
+  if (!prefix) throw new Error(tr('Not a Tribal Gods level code (missing TG2. prefix)'));
   let level: AnyLevelData;
   try {
     const inflated = await pump(base64ToBytes(trimmed.slice(prefix.length)), new DecompressionStream('deflate-raw'));
     level = JSON.parse(new TextDecoder().decode(inflated)) as AnyLevelData;
   } catch {
-    throw new Error('Level code is damaged');
+    throw new Error(tr('Level code is damaged'));
   }
   if ((level.v !== 1 && level.v !== 2) || !level.terrain || !level.homes?.player) {
-    throw new Error('Level code is damaged or from an unknown version');
+    throw new Error(tr('Level code is damaged or from an unknown version'));
   }
   return migrateLevel(level);
 }

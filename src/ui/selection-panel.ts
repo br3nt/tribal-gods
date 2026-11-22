@@ -34,6 +34,7 @@ import { groupByKind } from './selection';
 import { settings } from './settings';
 import { ritualAt, ritualOf, ritualSeconds, stoneBlocked, stoneGuards, stoneName, stoneTerms } from './stones';
 import { hideTip, tip } from './tooltip';
+import { tr } from '../i18n';
 
 css('selection-panel', `
 .sp { width: auto; min-width: 19rem; max-width: min(27rem, 100%); min-height: 7rem; padding: 0.55rem 0.7rem 0.6rem; box-sizing: border-box; display: flex; flex-direction: column; gap: 0.45rem; }
@@ -92,8 +93,8 @@ css('selection-panel', `
 `);
 
 const tribeLabel = (ctx: UiContext, t: string): string => {
-  if (t === 'player') return 'Your tribe';
-  if (t === 'wild') return 'No tribe';
+  if (t === 'player') return tr('Your tribe');
+  if (t === 'wild') return tr('No tribe');
   const civ = ctx.world.tribes[t as TribeId]?.civ;
   return `${civ ? CIVS[civ].name : t} · ${t}`;
 };
@@ -216,7 +217,7 @@ export class SelectionPanel {
       this.el.hidden = sig.startsWith('none');
       for (const k of this.el.querySelectorAll<HTMLElement>('[data-kind]')) {
         const kind = k.dataset.kind as UnitKind;
-        tip(k, () => `<h4>${UNITS[kind].name}</h4><p>${escapeHtml(UNITS[kind].blurb)}</p><p class="hint">Click: select only these. Shift-click: drop them.</p>`);
+        tip(k, () => `<h4>${UNITS[kind].name}</h4><p>${escapeHtml(UNITS[kind].blurb)}</p><p class="hint">${tr('Click: select only these. Shift-click: drop them.')}</p>`);
       }
       for (const b of this.el.querySelectorAll<HTMLElement>('[data-tip]')) tip(b, () => b.dataset.tip!);
     }
@@ -249,10 +250,10 @@ export class SelectionPanel {
           bar('grow', b.fullTime / next.growSeconds);
           const wood = w.tribes[b.tribe]?.wood ?? 0;
           set('growt', !full
-            ? `Grows once full`
+            ? tr(`Grows once full`)
             : b.fullTime >= next.growSeconds && wood < next.growWood
-              ? `Needs ${next.growWood - wood} more wood to grow`
-              : `Grows in ${fmtEta(next.growSeconds - b.fullTime)}`);
+              ? tr('Needs {0} more wood to grow', next.growWood - wood)
+              : tr('Grows in {0}', fmtEta(next.growSeconds - b.fullTime)));
         }
       }
       const trains = BUILDINGS[b.kind].trains;
@@ -262,25 +263,25 @@ export class SelectionPanel {
         bar('train', inside ? 1 - b.trainTime / def.trainSeconds : 0);
         const wood = w.tribes[b.tribe]?.wood ?? 0;
         set('traint', b.queue === 0
-          ? 'Queue empty'
+          ? tr('Queue empty')
           : inside
-            ? `Training a ${def.name} · ${fmtEta(b.trainTime)}`
+            ? tr('Training a {0} · {1}', def.name, fmtEta(b.trainTime))
             : b.trainee >= 0
-              ? 'A villager is on the way'
+              ? tr('A villager is on the way')
               : wood < def.trainWood
-                ? `Needs ${def.trainWood - wood} more wood`
-                : 'Waiting for an idle villager');
+                ? tr('Needs {0} more wood', def.trainWood - wood)
+                : tr('Waiting for an idle villager'));
         set('qn', `${b.queue}`);
       }
     } else if (sel.monument !== null) {
       const m = w.monuments[sel.monument];
-      if (m) set('sleep', m.sleep > 0 ? `Sleeping — wakes in ${fmtEta(m.sleep)}` : '');
+      if (m) set('sleep', m.sleep > 0 ? tr('Sleeping — wakes in {0}', fmtEta(m.sleep)) : '');
       const r = ritualAt(w, sel.monument);
       const row = this.el.querySelector<HTMLElement>('[data-k="ritrow"]');
       if (row) row.hidden = !r;
       if (r) {
         bar('rit', r.progress);
-        set('ritt', `${r.tribe === 'player' ? 'Your leader' : 'A rival'} · ${Math.round(r.progress * 100)}%${!r.communing ? ' · broken, fading' : r.contested ? ' · contested' : ''}`);
+        set('ritt', `${r.tribe === 'player' ? tr('Your leader') : 'A rival'} · ${Math.round(r.progress * 100)}%${!r.communing ? tr(' · broken, fading') : r.contested ? ' · contested' : ''}`);
       }
     } else if (units.length === 1 || sel.inspect !== null) {
       const u = units[0] ?? w.unitById(sel.inspect!);
@@ -289,8 +290,8 @@ export class SelectionPanel {
       if (r) {
         bar('rit', r.ritual.progress);
         set('ritt', r.ritual.contested
-          ? `${Math.round(r.ritual.progress * 100)}% · contested — enemies in the ring hold it still`
-          : `${Math.round(r.ritual.progress * 100)}% · ${fmtEta((1 - r.ritual.progress) * ritualSeconds(w.monuments[r.index]))} left`);
+          ? tr('{0}% · contested — enemies in the ring hold it still', Math.round(r.ritual.progress * 100))
+          : tr('{0}% · {1} left', Math.round(r.ritual.progress * 100), fmtEta((1 - r.ritual.progress) * ritualSeconds(w.monuments[r.index]))));
       }
       bar('hp', u.hp / u.maxHp);
       set('hpt', `${Math.ceil(u.hp)} / ${u.maxHp}`);
@@ -326,34 +327,34 @@ export class SelectionPanel {
     let html = this.head(unitIcon(u.kind, 34), tc, name, tribeLabel(this.ctx, u.tribe), `<div class="sp-act" data-k="act"></div>`);
     html += this.hpRow();
     const chips: string[] = [];
-    if (u.wardTime > 0) chips.push(`<span class="sp-chip ward">${icon('shield', 12)}Stone Ward <span data-k="ward"></span></span>`);
-    if (u.warsongTime > 0) chips.push(`<span class="sp-chip song">${icon('speed', 12)}Warsong <span data-k="song"></span></span>`);
+    if (u.wardTime > 0) chips.push(`<span class="sp-chip ward">${icon('shield', 12)}${tr('Stone Ward')} <span data-k="ward"></span></span>`);
+    if (u.warsongTime > 0) chips.push(`<span class="sp-chip song">${icon('speed', 12)}${tr('Warsong')} <span data-k="song"></span></span>`);
     if (chips.length) html += `<div class="sp-row">${chips.join('')}</div>`;
     const stats: string[] = [];
-    if (def.dmg > 0) stats.push(`Damage <b>${def.dmg}</b>`);
-    if (def.range > 1.5) stats.push(`Range <b>${def.range}</b>`);
-    if (def.armor > 0) stats.push(`Armour <b>${Math.round(def.armor * 100)}%</b>`);
-    stats.push(`Speed <b>${def.speed}</b>`);
+    if (def.dmg > 0) stats.push(`${tr('Damage {0}', `<b>${def.dmg}</b>`)}`);
+    if (def.range > 1.5) stats.push(`${tr('Range {0}', `<b>${def.range}</b>`)}`);
+    if (def.armor > 0) stats.push(`${tr('Armour {0}', `<b>${Math.round(def.armor * 100)}%</b>`)}`);
+    stats.push(`${tr('Speed {0}', `<b>${def.speed}</b>`)}`);
     html += `<div class="sp-stats">${stats.map((s) => `<span>${s}</span>`).join('')}</div>`;
     const verb = orderVerb(settings.leftClickOrders);
     if (u.tribe === 'player' && u.kind === 'shaman') {
       const r = ritualOf(this.ctx.world, u.id);
       if (r) {
-        html += `<div class="sp-row"><span class="lbl">Ritual</span><div class="sp-train"><div class="bar mana"><i data-k="rit"></i></div><span data-k="ritt"></span></div></div>` +
-          `<div class="sp-warn soft">${icon('shield', 14)}Communing leaves your leader open: damage breaks the ritual. Keep warriors close.</div>`;
+        html += `<div class="sp-row"><span class="lbl">${tr('Ritual')}</span><div class="sp-train"><div class="bar mana"><i data-k="rit"></i></div><span data-k="ritt"></span></div></div>` +
+          `<div class="sp-warn soft">${icon('shield', 14)}${tr('Communing leaves your leader open: damage breaks the ritual. Keep warriors close.')}</div>`;
       } else {
-        html += `<div class="sp-note">Pick a spell, then click the world. To learn a spell, ${verb} a standing stone: your leader goes to commune there.</div>`;
+        html += `<div class="sp-note">${tr('Pick a spell, then click the world. To learn a spell, {0} a standing stone: your leader goes to commune there.', verb)}</div>`;
       }
     } else if (u.tribe === 'player' && u.kind === 'brave') {
-      html += `<div class="sp-note">Villagers work on their own. Right-click a Shrine to pray there, or a lodge's queue will train them.</div>`;
+      html += `<div class="sp-note">${tr('Villagers work on their own. Right-click a Shrine to pray there, or a lodge\'s queue will train them.')}</div>`;
     } else if (u.tribe === 'wild' && u.joins) {
-      html += `<div class="sp-note">Stranded kin of ${escapeHtml(tribeLabel(this.ctx, u.joins))}: not yours to command until a walking route links them to your home — then they join.</div>`;
+      html += `<div class="sp-note">${tr('Stranded kin of {0}: not yours to command until a walking route links them to your home — then they join.', escapeHtml(tribeLabel(this.ctx, u.joins)))}</div>`;
     } else if (u.tribe === 'wild' && (u.guardOf ?? -1) >= 0) {
-      html += `<div class="sp-note">A guardian of a standing stone. It stands still until a ritual begins there, then fights every tribe in reach.</div>`;
+      html += `<div class="sp-note">${tr('A guardian of a standing stone. It stands still until a ritual begins there, then fights every tribe in reach.')}</div>`;
     } else if (u.tribe === 'wild') {
-      html += `<div class="sp-note">${escapeHtml(def.blurb)} Not yours to command: <b>Kindle</b> converts wanderers to your tribe.</div>`;
+      html += `<div class="sp-note">${tr('{0} Not yours to command: <b>Kindle</b> converts wanderers to your tribe.', escapeHtml(def.blurb))}</div>`;
     } else if (u.tribe !== 'player') {
-      html += `<div class="sp-note">A rival's ${escapeHtml(def.name)}. Select your fighters and ${verb} it to attack.</div>`;
+      html += `<div class="sp-note">${tr('A rival\'s {0}. Select your fighters and {1} it to attack.', escapeHtml(def.name), verb)}</div>`;
     }
     return html;
   }
@@ -362,7 +363,7 @@ export class SelectionPanel {
     const groups = groupByKind(units);
     const own = units.every((u) => u.tribe === 'player');
     let html = `<div class="sp-head"><div class="sp-title"><div class="sp-name">${units.length} selected</div>` +
-      `<div class="sp-sub">${own ? `${orderVerb(settings.leftClickOrders) === 'click' ? 'Click' : 'Right-click'} the ground to send them` : 'Mixed'}</div></div></div>`;
+      `<div class="sp-sub">${own ? tr('{0} the ground to send them', settings.leftClickOrders ? tr('Click') : tr('Right-click')) : tr('Mixed')}</div></div></div>`;
     html += `<div class="sp-kinds">${groups
       .map((g) => `<button type="button" class="sp-kind" data-a="kind" data-kind="${g.kind}">${unitIcon(g.kind, 24)}<span><div class="n">${g.ids.length}</div><div class="k">${UNITS[g.kind].name}</div></span></button>`)
       .join('')}</div>`;
@@ -375,21 +376,21 @@ export class SelectionPanel {
     const def = BUILDINGS[b.kind];
     const ours = b.tribe === 'player';
     const tc = tribeCss(b.tribe);
-    const status = b.progress < 1 ? 'Under construction' : tribeLabel(this.ctx, b.tribe);
+    const status = b.progress < 1 ? tr('Under construction') : tribeLabel(this.ctx, b.tribe);
     let html = this.head(buildingIcon(b.kind, 32), tc, buildingName(b), status);
-    if (b.burning > 0) html += `<div class="sp-warn">${icon('fire', 16)}Burning! Villagers nearby will put it out.</div>`;
+    if (b.burning > 0) html += `<div class="sp-warn">${icon('fire', 16)}${tr('Burning! Villagers nearby will put it out.')}</div>`;
     html += this.hpRow();
 
     if (b.progress >= 1 && b.kind === 'hut') {
       const tier = DWELLING_TIERS[b.tier];
       const cap = w.dwellingCapacity(b);
-      html += `<div class="sp-row"><span class="lbl">Residents</span><div class="sp-pips">${Array.from({ length: cap }, (_, i) => `<i class="${i < b.residents ? 'on' : ''}"></i>`).join('')}</div><span data-k="res"></span></div>`;
+      html += `<div class="sp-row"><span class="lbl">${tr('Residents')}</span><div class="sp-pips">${Array.from({ length: cap }, (_, i) => `<i class="${i < b.residents ? 'on' : ''}"></i>`).join('')}</div><span data-k="res"></span></div>`;
       const next = DWELLING_TIERS[b.tier + 1];
       if (next) {
-        html += `<div class="sp-row"><span class="lbl">Growth</span><div class="sp-train"><div class="bar gold"><i data-k="grow"></i></div><span data-k="growt"></span></div></div>` +
-          `<div class="sp-note">A full ${tier.name} grows into a ${next.name} (${next.capacity} beds) after ${next.growSeconds}s, for ${next.growWood} wood.</div>`;
+        html += `<div class="sp-row"><span class="lbl">${tr('Growth')}</span><div class="sp-train"><div class="bar gold"><i data-k="grow"></i></div><span data-k="growt"></span></div></div>` +
+          `<div class="sp-note">${tr('A full {0} grows into a {1} ({2} beds) after {3}s, for {4} wood.', tier.name, next.name, next.capacity, next.growSeconds, next.growWood)}</div>`;
       } else {
-        html += `<div class="sp-note">Fully grown: ${tier.capacity} beds, a villager every ${tier.breedSeconds}s while there's room.</div>`;
+        html += `<div class="sp-note">${tr('Fully grown: {0} beds, a villager every {1}s while there\'s room.', tier.capacity, tier.breedSeconds)}</div>`;
       }
     }
 
@@ -397,15 +398,15 @@ export class SelectionPanel {
     if (b.progress >= 1 && trains) {
       const ud = UNITS[trains];
       if (ours) {
-        html += `<div class="sp-row"><span class="lbl">Training</span><div class="sp-train"><div class="bar mana"><i data-k="train"></i></div><span data-k="traint"></span></div></div>` +
-          `<div class="sp-row"><span class="lbl">Queue</span><div class="sp-queue">` +
+        html += `<div class="sp-row"><span class="lbl">${tr('Training')}</span><div class="sp-train"><div class="bar mana"><i data-k="train"></i></div><span data-k="traint"></span></div></div>` +
+          `<div class="sp-row"><span class="lbl">${tr('Queue')}</span><div class="sp-queue">` +
           `<span class="sp-pips">${Array.from({ length: ECONOMY.trainQueueMax }, (_, i) => `<i class="${i < b.queue ? 'q' : ''}"></i>`).join('')}</span>` +
           `<button type="button" class="tg-btn" data-a="q" data-n="1" data-tip="&lt;h4&gt;Train one ${ud.name}&lt;/h4&gt;&lt;p&gt;${ud.trainWood} wood and ${ud.trainSeconds}s each. An idle villager walks in and comes out a ${ud.name}.&lt;/p&gt;">${icon('plus', 14)}1</button>` +
           `<button type="button" class="tg-btn" data-a="q" data-n="5">${icon('plus', 14)}5</button>` +
           `<button type="button" class="tg-btn" data-a="q" data-n="-1" aria-label="Cancel one" data-tip="&lt;h4&gt;Cancel one&lt;/h4&gt;">${icon('minus', 14)}</button>` +
           `</div></div>`;
       } else {
-        html += `<div class="sp-note">Trains ${ud.name}s.</div>`;
+        html += `<div class="sp-note">${tr('Trains {0}s.', ud.name)}</div>`;
       }
     }
 
@@ -415,11 +416,11 @@ export class SelectionPanel {
         const u = b.garrison[i] !== undefined ? w.unitById(b.garrison[i]) : undefined;
         return u ? `<span title="${UNITS[u.kind].name}">${unitIcon(u.kind, 16)}</span>` : `<span class="empty">${icon('plus', 12)}</span>`;
       });
-      html += `<div class="sp-row"><span class="lbl">${b.kind === 'shrine' ? 'Praying' : 'Garrison'}</span><div class="sp-inside">${slots.join('')}</div></div>`;
+      html += `<div class="sp-row"><span class="lbl">${b.kind === 'shrine' ? tr('Praying') : tr('Garrison')}</span><div class="sp-inside">${slots.join('')}</div></div>`;
       if (ours) {
         html += `<div class="sp-note">${b.kind === 'shrine'
-          ? `Select villagers and right-click the shrine to send them to pray (+${Math.round(ECONOMY.shrinePrayerBonus * 100)}% spell charging each).`
-          : 'Select fighters and right-click the tower to man it. They see farther and hit harder from the top.'}</div>`;
+          ? tr('Select villagers and right-click the shrine to send them to pray (+{0}% spell charging each).', Math.round(ECONOMY.shrinePrayerBonus * 100))
+          : tr('Select fighters and right-click the tower to man it. They see farther and hit harder from the top.')}</div>`;
       }
     }
 
@@ -429,10 +430,10 @@ export class SelectionPanel {
       const confirm = performance.now() < this.confirmDemolish;
       const acts: string[] = [];
       if (b.progress >= 1 && trains) {
-        acts.push(`<button type="button" class="tg-btn${this.rallyPick === b.id ? ' on' : ''}" data-a="rally" data-tip="&lt;h4&gt;Rally point&lt;/h4&gt;&lt;p&gt;Click, then click the ground: new ${UNITS[trains].name}s gather there. (Or right-click the ground with the lodge selected.)&lt;/p&gt;">${icon('rally', 14)}${this.rallyPick === b.id ? 'Click the ground…' : 'Rally point'}</button>`);
+        acts.push(`<button type="button" class="tg-btn${this.rallyPick === b.id ? ' on' : ''}" data-a="rally" data-tip="${`&lt;h4&gt;${tr('Rally point')}&lt;/h4&gt;&lt;p&gt;${tr('Click, then click the ground: new {0}s gather there. (Or right-click the ground with the lodge selected.)', UNITS[trains].name)}&lt;/p&gt;`}">${icon('rally', 14)}${this.rallyPick === b.id ? tr('Click the ground…') : tr('Rally point')}</button>`);
       }
-      if (b.garrison.length > 0 && (b.kind === 'tower' || b.kind === 'shrine')) acts.push(`<button type="button" class="tg-btn" data-a="eject">${icon('eject', 14)}Send out</button>`);
-      acts.push(`<button type="button" class="tg-btn danger${confirm ? ' on' : ''}" data-a="demolish" style="margin-left:auto" data-tip="&lt;h4&gt;Demolish &lt;span class='kbd'&gt;${labelFor('demolish')}&lt;/span&gt;&lt;/h4&gt;&lt;p&gt;Tear it down. Half its wood (${Math.floor(def.wood / 2)}) comes back.&lt;/p&gt;">${icon('demolish', 14)}${confirm ? 'Click again to demolish' : 'Demolish'}</button>`);
+      if (b.garrison.length > 0 && (b.kind === 'tower' || b.kind === 'shrine')) acts.push(`<button type="button" class="tg-btn" data-a="eject">${icon('eject', 14)}${tr('Send out')}</button>`);
+      acts.push(`<button type="button" class="tg-btn danger${confirm ? ' on' : ''}" data-a="demolish" style="margin-left:auto" data-tip="${`&lt;h4&gt;${tr('Demolish {0}', `&lt;span class=&quot;kbd&quot;&gt;${labelFor('demolish')}&lt;/span&gt;`)}&lt;/h4&gt;&lt;p&gt;${tr('Tear it down. Half its wood ({0}) comes back.', Math.floor(def.wood / 2))}&lt;/p&gt;`}">${icon('demolish', 14)}${confirm ? tr('Click again to demolish') : tr('Demolish')}</button>`);
       html += `<div class="sp-actions">${acts.join('')}</div>`;
     }
     return html;
@@ -443,25 +444,25 @@ export class SelectionPanel {
     const m = w.monuments[index];
     const s = spellDef(m.spell);
     const avail = w.monumentAvailable(m);
-    let html = this.head(icon('stone', 32), avail ? 'var(--spirit)' : 'var(--rim-strong)', stoneName(m), `Standing stone · tier ${s.tier}`);
+    let html = this.head(icon('stone', 32), avail ? 'var(--spirit)' : 'var(--rim-strong)', stoneName(m), tr('Standing stone · tier {0}', s.tier));
     html += `<div class="sp-spell">${spellIcon(m.spell, 26)}<div><b>${escapeHtml(stoneTerms(m))}</b><div class="sp-spell-blurb">${escapeHtml(s.blurb)}</div></div></div>`;
     let note: string;
     if (m.mode === 'teach') {
       note = avail
-        ? `The first leader to finish a ${ritualSeconds(m)}s ritual here learns ${escapeHtml(s.name)} for good. Damage breaks the ritual.`
-        : m.claimedBy === 'player' ? 'Your tribe learned this spell here.' : `Claimed by ${escapeHtml(tribeLabel(this.ctx, m.claimedBy ?? ''))}.`;
+        ? tr('The first leader to finish a {0}s ritual here learns {1} for good. Damage breaks the ritual.', ritualSeconds(m), escapeHtml(s.name))
+        : m.claimedBy === 'player' ? tr('Your tribe learned this spell here.') : tr('Claimed by {0}.', escapeHtml(tribeLabel(this.ctx, m.claimedBy ?? '')));
     } else {
-      note = `A ${ritualSeconds(m)}s ritual earns ${m.charges ?? 2} free casts, known or not. Then it sleeps for ${m.cooldown ?? 90}s.`;
+      note = tr('A {0}s ritual earns {1} free casts, known or not. Then it sleeps for {2}s.', ritualSeconds(m), m.charges ?? 2, m.cooldown ?? 90);
     }
     html += `<div class="sp-note">${note} <span data-k="sleep" class="sp-warnword"></span></div>`;
     const guards = stoneGuards(m);
     if (guards) html += `<div class="sp-warn soft">${icon('shield', 14)}${escapeHtml(guards)}</div>`;
-    html += `<div class="sp-row" data-k="ritrow"><span class="lbl">Ritual</span><div class="sp-train"><div class="bar mana"><i data-k="rit"></i></div><span data-k="ritt"></span></div></div>`;
+    html += `<div class="sp-row" data-k="ritrow"><span class="lbl">${tr('Ritual')}</span><div class="sp-train"><div class="bar mana"><i data-k="rit"></i></div><span data-k="ritt"></span></div></div>`;
     const leader = w.leaderOf('player');
     if (avail) {
       const verb = orderVerb(settings.leftClickOrders);
-      html += `<div class="sp-note sp-how">${icon('leader', 14)} Select your leader (<span class="kbd">${labelFor('select-leader')}</span>) and ${verb} this stone.</div>` +
-        `<div class="sp-actions"><button type="button" class="tg-btn" data-a="commune" ${leader ? '' : 'disabled'}>${icon('worship', 14)}Send your leader</button></div>`;
+      html += `<div class="sp-note sp-how">${icon('leader', 14)} ${tr('Select your leader ({0}) and {1} this stone.', `<span class="kbd">${labelFor('select-leader')}</span>`, verb)}</div>` +
+        `<div class="sp-actions"><button type="button" class="tg-btn" data-a="commune" ${leader ? '' : 'disabled'}>${icon('worship', 14)}${tr('Send your leader')}</button></div>`;
     } else {
       const why = stoneBlocked(w, m);
       if (why) html += `<div class="sp-note sp-warnword">${escapeHtml(why)}</div>`;

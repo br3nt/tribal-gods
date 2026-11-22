@@ -16,6 +16,7 @@
 import { dist, inside, polar, Terrain, wanderers } from '../terrain-kit';
 import type { ScenarioEvent } from '../../sim/catalog';
 import { CampaignScenario, makeLevel } from './common';
+import { tr } from '../../i18n';
 
 export const LAYOUT = {
   home: { x: 28, z: 74 },
@@ -26,18 +27,18 @@ export const LAYOUT = {
 
 /** Where and when the sea comes in: lowland first, then nearer the hill. */
 export const TIDE: Array<{ at: number; x: number; z: number; say?: string }> = [
-  { at: 150, ...polar(62, 62, 44, 160), say: 'The sea takes the western fields.' },
+  { at: 150, ...polar(62, 62, 44, 160), say: tr('The sea takes the western fields.') },
   { at: 200, ...polar(62, 62, 42, 230) },
   { at: 250, ...polar(62, 62, 44, 110) },
-  { at: 300, ...polar(62, 62, 40, 190), say: 'The water is at the edge of the village.' },
+  { at: 300, ...polar(62, 62, 40, 190), say: tr('The water is at the edge of the village.') },
   { at: 350, ...polar(62, 62, 44, 280) },
   { at: 400, ...polar(62, 62, 42, 60) },
-  { at: 450, x: 28, z: 74, say: 'The old village is going under.' },
+  { at: 450, x: 28, z: 74, say: tr('The old village is going under.') },
   { at: 500, ...polar(62, 62, 34, 140) },
   { at: 560, ...polar(62, 62, 33, 210) },
   { at: 620, ...polar(62, 62, 35, 320) },
   { at: 680, ...polar(62, 62, 32, 90) },
-  { at: 740, ...polar(62, 62, 34, 250), say: 'Only the hills are left.' },
+  { at: 740, ...polar(62, 62, 34, 250), say: tr('Only the hills are left.') },
   { at: 820, ...polar(62, 62, 30, 175) },
   { at: 900, ...polar(62, 62, 30, 40) },
 ];
@@ -45,9 +46,9 @@ export const TIDE: Array<{ at: number; x: number; z: number; say?: string }> = [
 export const scenario: CampaignScenario = {
   id: 'c09_when_the_tide_came',
   chapter: 9,
-  title: 'When the Tide Came',
-  tagline: 'The sea is taking the island. Climb, and hold the top.',
-  teaches: 'Relocating under pressure, holding a point',
+  title: tr('When the Tide Came'),
+  tagline: tr('The sea is taking the island. Climb, and hold the top.'),
+  teaches: tr('Relocating under pressure, holding a point'),
   async build() {
     const t = new Terrain(90909);
     const { home, gold, summit, ward } = LAYOUT;
@@ -67,8 +68,8 @@ export const scenario: CampaignScenario = {
       actions: [{ type: 'strike', spell: 'sink', x: p.x, z: p.z, tribe: 'gold' }],
     }));
     return makeLevel({
-      name: 'When the Tide Came',
-      desc: 'Campaign IX. The sea takes the lowlands. Hold the summit of the Last Hill.',
+      name: tr('When the Tide Came'),
+      desc: tr('Campaign IX. The sea takes the lowlands. Hold the summit of the Last Hill.'),
       terrain: t,
       homes: { player: home, gold },
       civs: { gold: 'dynasty' },
@@ -77,7 +78,7 @@ export const scenario: CampaignScenario = {
       rules: {
         tribes: [
           {
-            id: 'player', name: 'the Lantern-folk', ai: false,
+            id: 'player', name: tr('the Lantern-folk'), ai: false,
             loadout: {
               spells: ['blast', 'convert', 'flatten', 'bloom', 'lightning'],
               buildings: ['hut', 'lumberyard', 'warriorHut', 'fireHut', 'tower', 'shrine'],
@@ -86,7 +87,7 @@ export const scenario: CampaignScenario = {
             },
           },
           {
-            id: 'gold', name: 'the Saltborn', ai: true,
+            id: 'gold', name: tr('the Saltborn'), ai: true,
             personality: { target: 'player', harassAt: 4, assaultAt: 9 },
             loadout: {
               spells: ['blast', 'convert', 'sink', 'lightning'],
@@ -97,24 +98,24 @@ export const scenario: CampaignScenario = {
           },
         ],
         objectives: [
-          { objective: { type: 'holdPoint', x: summit.x, z: summit.z, radius: 6, seconds: 150 }, text: 'Hold the crown of the Last Hill (2½ minutes, uncontested)' },
-          { objective: { type: 'destroyTribe', tribe: 'gold' }, text: 'Drive the Saltborn into the sea', optional: true },
+          { objective: { type: 'holdPoint', x: summit.x, z: summit.z, radius: 6, seconds: 150 }, text: tr('Hold the crown of the Last Hill (2½ minutes, uncontested)') },
+          { objective: { type: 'destroyTribe', tribe: 'gold' }, text: tr('Drive the Saltborn into the sea'), optional: true },
         ],
         fail: [{ type: 'timeLimit', seconds: 1500 }],
         events: [
-          { when: { type: 'time', at: 2 }, message: 'Level a terrace on the Last Hill now, while the lowlands are still dry.', focus: LAYOUT.summit, actions: [] },
+          { when: { type: 'time', at: 2 }, message: tr('Level a terrace on the Last Hill now, while the lowlands are still dry.'), focus: LAYOUT.summit, actions: [] },
           ...tide,
         ],
         briefing: {
-          title: 'When the Tide Came',
+          title: tr('When the Tide Came'),
           body:
-            'It has come. The sea is rising over the island in a slow, grinding swallow, field by field, and our village sits on the first fields it wants. ' +
-            'The Saltborn learned the tide’s own song — Undertow — and they will use it on whatever we build. ' +
-            'In the middle of the island stands the Last Hill. Whoever holds its crown when the water stops holds the island.',
+            tr('It has come. The sea is rising over the island in a slow, grinding swallow, field by field, and our village sits on the first fields it wants. ') +
+            tr('The Saltborn learned the tide’s own song — Undertow — and they will use it on whatever we build. ') +
+            tr('In the middle of the island stands the Last Hill. Whoever holds its crown when the water stops holds the island.'),
           tips: [
-            'Do not wait for the water. Start building on the terraces early — Level makes room on the slopes.',
-            'Holding the crown needs your people on it and no enemy in the circle, for two and a half minutes straight.',
-            'A Watchtower on the top terrace covers the crown.',
+            tr('Do not wait for the water. Start building on the terraces early — Level makes room on the slopes.'),
+            tr('Holding the crown needs your people on it and no enemy in the circle, for two and a half minutes straight.'),
+            tr('A Watchtower on the top terrace covers the crown.'),
           ],
         },
       },

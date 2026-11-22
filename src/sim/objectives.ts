@@ -18,6 +18,7 @@ import { BUILDINGS, FailCondition, Objective, ObjectiveState, ScenarioRules, Tri
 import { wrapDelta } from '../core/util';
 import { WORLD_SIZE } from '../config';
 import type { World } from './world-state';
+import { tr } from '../i18n';
 
 export const ME: TribeId = 'player';
 
@@ -152,14 +153,14 @@ function failReason(world: World, f: FailCondition): string | null {
     case 'tribeDestroyed':
       return null; // checked unconditionally below
     case 'leaderDies':
-      return world.leaderLost(ME) ? 'Your leader has fallen.' : null;
+      return world.leaderLost(ME) ? tr('Your leader has fallen.') : null;
     case 'timeLimit':
-      return world.elapsed >= f.seconds ? 'Time ran out.' : null;
+      return world.elapsed >= f.seconds ? tr('Time ran out.') : null;
     case 'buildingLost':
-      return world.lostBuildingKinds(ME).has(f.kind) ? `Your ${BUILDINGS[f.kind].name} was lost.` : null;
+      return world.lostBuildingKinds(ME).has(f.kind) ? tr('Your {0} was lost.', BUILDINGS[f.kind].name) : null;
     case 'monumentTaken': {
       const m = world.monuments[f.index];
-      return m?.firstClaimer && m.firstClaimer !== ME ? 'A rival reached the stone first.' : null;
+      return m?.firstClaimer && m.firstClaimer !== ME ? tr('A rival reached the stone first.') : null;
     }
   }
 }
@@ -194,7 +195,7 @@ export function tickObjectives(world: World, dt: number): void {
   // Defeat first: a fail on the same tick as the last objective still loses.
   if (me) {
     if (!world.tribeAlive(ME)) {
-      world.endGame('defeat', 'Your tribe has been wiped out.');
+      world.endGame('defeat', tr('Your tribe has been wiped out.'));
       return;
     }
     for (const f of world.rules.fail ?? []) {
@@ -208,6 +209,6 @@ export function tickObjectives(world: World, dt: number): void {
 
   const required = world.objectives.filter((o) => !o.optional);
   if (required.length > 0 && required.every((o) => o.done)) {
-    world.endGame('victory', required.length === 1 ? `${required[0].text} — done.` : 'Every objective complete.');
+    world.endGame('victory', required.length === 1 ? `${required[0].text} — done.` : tr('Every objective complete.'));
   }
 }

@@ -17,6 +17,7 @@
 
 import { dist, inside, Terrain, wanderers } from '../terrain-kit';
 import { CampaignScenario, makeLevel } from './common';
+import { tr } from '../../i18n';
 
 export const OPENS_AT = 240;
 
@@ -32,9 +33,9 @@ export const LAYOUT = {
 export const scenario: CampaignScenario = {
   id: 'c08_firemount_race',
   chapter: 8,
-  title: 'The Firemount Race',
-  tagline: 'The mountain’s stone wakes in the fourth minute. Be there.',
-  teaches: 'Timing, contested stones, a deadline',
+  title: tr('The Firemount Race'),
+  tagline: tr('The mountain’s stone wakes in the fourth minute. Be there.'),
+  teaches: tr('Timing, contested stones, a deadline'),
   async build() {
     const t = new Terrain(80808);
     const { home, red, summit, bay } = LAYOUT;
@@ -53,8 +54,8 @@ export const scenario: CampaignScenario = {
     t.pad(home.x, home.z, 8, 2.4, 5).pad(red.x, red.z, 8, 2.6, 5);
     t.addGrove(home.x + 4, home.z + 16, 10, 0.7).addGrove(home.x + 12, home.z - 6, 8, 0.5).addGrove(red.x - 6, red.z + 16, 10, 0.7);
     return makeLevel({
-      name: 'The Firemount Race',
-      desc: 'Campaign VIII. Twin continents, one mountain, one stone that wakes at minute four.',
+      name: tr('The Firemount Race'),
+      desc: tr('Campaign VIII. Twin continents, one mountain, one stone that wakes at minute four.'),
       terrain: t,
       homes: { player: home, red, violet: summit },
       civs: { red: 'north' },
@@ -71,7 +72,7 @@ export const scenario: CampaignScenario = {
       rules: {
         tribes: [
           {
-            id: 'player', name: 'the Lantern-folk', ai: false,
+            id: 'player', name: tr('the Lantern-folk'), ai: false,
             loadout: {
               spells: ['blast', 'convert', 'flatten', 'bloom', 'ward', 'landbridge'],
               buildings: ['hut', 'lumberyard', 'warriorHut', 'fireHut', 'tower', 'shrine'],
@@ -80,7 +81,7 @@ export const scenario: CampaignScenario = {
             },
           },
           {
-            id: 'red', name: 'the Ashmark', ai: true,
+            id: 'red', name: tr('the Ashmark'), ai: true,
             personality: { target: 'player', harassAt: 5, assaultAt: 11 },
             loadout: {
               spells: ['blast', 'convert', 'ward'],
@@ -88,31 +89,31 @@ export const scenario: CampaignScenario = {
               startUnits: { brave: 8, warrior: 2 },
             },
           },
-          { id: 'violet', name: 'the Keepers', ai: false, loadout: { spells: [], buildings: [], startUnits: { shaman: 0, brave: 0 } } },
+          { id: 'violet', name: tr('the Keepers'), ai: false, loadout: { spells: [], buildings: [], startUnits: { shaman: 0, brave: 0 } } },
         ],
         objectives: [
-          { objective: { type: 'claimMonument', index: 0 }, text: 'Be first to commune at the Firemount' },
-          { objective: { type: 'destroyTribe', tribe: 'red' }, text: 'Break the Ashmark before the half-hour' },
-          { objective: { type: 'destroyTribe', tribe: 'violet' }, text: 'Clear the Keepers from the mountain', optional: true },
+          { objective: { type: 'claimMonument', index: 0 }, text: tr('Be first to commune at the Firemount') },
+          { objective: { type: 'destroyTribe', tribe: 'red' }, text: tr('Break the Ashmark before the half-hour') },
+          { objective: { type: 'destroyTribe', tribe: 'violet' }, text: tr('Clear the Keepers from the mountain'), optional: true },
         ],
         fail: [{ type: 'monumentTaken', index: 0 }, { type: 'timeLimit', seconds: 1800 }],
         events: [
-          { when: { type: 'time', at: 2 }, message: 'Causeway is ready: bridge the mere and the road to the Firemount is half as long.', focus: LAYOUT.bay, actions: [] },
-          { when: { type: 'commune', index: 0, tribe: 'red' }, message: 'The Ashmark leader kneels at the Firemount! Break her ritual — strike her, or put spears in the ring.', focus: LAYOUT.summit, actions: [] },
-          { when: { type: 'commune', index: 0, tribe: 'player' }, message: 'The ritual has begun: thirty-five heartbeats, and the mountain’s fire is ours. Keep every spear away from her.', focus: LAYOUT.summit, actions: [] },
-          { when: { type: 'time', at: OPENS_AT - 30 }, actions: [{ type: 'message', text: 'The Firemount rumbles. Its stone wakes in thirty heartbeats.' }] },
-          { when: { type: 'time', at: OPENS_AT }, actions: [{ type: 'message', text: 'The Firemount stone is awake.' }] },
+          { when: { type: 'time', at: 2 }, message: tr('Causeway is ready: bridge the mere and the road to the Firemount is half as long.'), focus: LAYOUT.bay, actions: [] },
+          { when: { type: 'commune', index: 0, tribe: 'red' }, message: tr('The Ashmark leader kneels at the Firemount! Break her ritual — strike her, or put spears in the ring.'), focus: LAYOUT.summit, actions: [] },
+          { when: { type: 'commune', index: 0, tribe: 'player' }, message: tr('The ritual has begun: thirty-five heartbeats, and the mountain’s fire is ours. Keep every spear away from her.'), focus: LAYOUT.summit, actions: [] },
+          { when: { type: 'time', at: OPENS_AT - 30 }, actions: [{ type: 'message', text: tr('The Firemount rumbles. Its stone wakes in thirty heartbeats.') }] },
+          { when: { type: 'time', at: OPENS_AT }, actions: [{ type: 'message', text: tr('The Firemount stone is awake.') }] },
         ],
         briefing: {
-          title: 'The Firemount Race',
+          title: tr('The Firemount Race'),
           body:
-            'Between the twin lands stands the Firemount, and on its crown a stone that teaches the mountain’s own fire. It sleeps until the fourth minute. ' +
-            'The Ashmark are closer to it than we are. If their leader sits with that stone first, we will not survive what she learns. ' +
-            'The Keepers guard the crown and fight anyone who climbs, and the tide gives us half an hour to finish the Ashmark after.',
+            tr('Between the twin lands stands the Firemount, and on its crown a stone that teaches the mountain’s own fire. It sleeps until the fourth minute. ') +
+            tr('The Ashmark are closer to it than we are. If their leader sits with that stone first, we will not survive what she learns. ') +
+            tr('The Keepers guard the crown and fight anyone who climbs, and the tide gives us half an hour to finish the Ashmark after.'),
           tips: [
-            'The ritual at the crown takes over half a minute, stops while enemy spears stand in the ring, and breaks at a blow. Bring spears.',
-            'Causeway across the mere shortens the walk. It is already in your book.',
-            'With Volcano learned, a single charge can unmake a town. It takes a long time to charge: start early.',
+            tr('The ritual at the crown takes over half a minute, stops while enemy spears stand in the ring, and breaks at a blow. Bring spears.'),
+            tr('Causeway across the mere shortens the walk. It is already in your book.'),
+            tr('With Volcano learned, a single charge can unmake a town. It takes a long time to charge: start early.'),
           ],
         },
       },

@@ -14,6 +14,7 @@
 import { BUILDINGS, Objective, spellDef, SpellId } from '../sim/catalog';
 import type { World } from '../sim/world-state';
 import { ActionId, labelFor, orderVerb } from './hotkeys';
+import { tr } from '../i18n';
 
 const k = (a: ActionId) => {
   const l = labelFor(a);
@@ -45,13 +46,13 @@ export function currentObjective(world: World, activatedAt?: ReadonlyMap<number,
 function spellAdvice(world: World, spell: SpellId, where: string): string {
   const def = spellDef(spell);
   const s = world.spellState('player', spell);
-  if (!s.known && s.gifted === 0) return `${def.name} isn't yours yet — a standing stone or the story will bring it.`;
-  if (!world.leaderOf('player')) return `Your leader casts ${def.name}; they are returning to the home circle.`;
+  if (!s.known && s.gifted === 0) return tr('{0} isn\'t yours yet — a standing stone or the story will bring it.', def.name);
+  if (!world.leaderOf('player')) return tr('Your leader casts {0}; they are returning to the home circle.', def.name);
   if (s.charges + s.gifted === 0) {
-    if (!s.charging) return `${def.name} is not charging: right-click it in the spell book to pour mana in.`;
-    return `${def.name} is gathering power${Number.isFinite(s.eta) ? ` (about ${Math.ceil(s.eta)}s)` : ''}. When its stone glows, press${k(`spell:${spell}`)} and ${where}.`;
+    if (!s.charging) return tr('{0} is not charging: right-click it in the spell book to pour mana in.', def.name);
+    return tr('{0} is gathering power{1}. When its stone glows, press{2} and {3}.', def.name, Number.isFinite(s.eta) ? tr(' (about {0}s)', Math.ceil(s.eta)) : '', k(`spell:${spell}`), where);
   }
-  return `Pick ${def.name}${k(`spell:${spell}`)} and ${where}.`;
+  return tr('Pick {0}{1} and {2}.', def.name, k(`spell:${spell}`), where);
 }
 
 /**
@@ -59,20 +60,20 @@ function spellAdvice(world: World, spell: SpellId, where: string): string {
  * (and this chip) points at it — the lull is for kneeling there; else hold.
  */
 function quietAdvice(world: World, click: string): string {
-  if (world.landings.length) return `Boats are running in — they step ashore in a moment. Be ready to strike them on the sand.`;
+  if (world.landings.length) return tr(`Boats are running in — they step ashore in a moment. Be ready to strike them on the sand.`);
   const kneeling = world.monuments.find((m) => m.communing && m.communer === 'player');
-  if (kneeling) return `None of them ashore yet. Your leader is kneeling at the ${spellDef(kneeling.spell).name} stone — let her finish.`;
+  if (kneeling) return tr('None of them ashore yet. Your leader is kneeling at the {0} stone — let her finish.', spellDef(kneeling.spell).name);
   const open = world.monuments.find((m) => world.monumentAvailable(m) && !(m.mode === 'teach' && m.claimedBy !== null) && !world.tribes.player?.known.has(m.spell));
   if (open && world.leaderOf('player')) {
-    return `None of them ashore yet. Use the time: select your leader${k('select-leader')} and ${click} the ${spellDef(open.spell).name} stone.`;
+    return tr('None of them ashore yet. Use the time: select your leader{0} and {1} the {2} stone.', k('select-leader'), click, spellDef(open.spell).name);
   }
-  return `None of them in sight yet. Keep your fighters near the village and a spell charged.`;
+  return tr(`None of them in sight yet. Keep your fighters near the village and a spell charged.`);
 }
 
 /** The leader is dead and returning: say so (never "select your leader" when there is none). */
 function leaderAway(world: World, then: string): string {
   const back = world.tribeSummary('player').leaderRespawn;
-  return `Your leader has fallen and returns to the home circle${back > 0 ? ` in ${Math.ceil(back)}s` : ''} — ${then}. A broken ritual fades slowly.`;
+  return tr('Your leader has fallen and returns to the home circle{0} — {1}. A broken ritual fades slowly.', back > 0 ? tr(' in {0}s', Math.ceil(back)) : '', then);
 }
 
 /** Strongest first: what to hit a host with when the leader holds it. */
@@ -80,13 +81,13 @@ const STRIKES: SpellId[] = ['volcano', 'emberfall', 'earthquake', 'lightning', '
 
 /** Foes in sight: name the strongest spell in hand (a stone's gift first), then the fighters. */
 function strikeAdvice(world: World, click: string): string {
-  const fighters = `select your fighters (${labelFor('select-army') || ','}) and ${click} an enemy`;
+  const fighters = tr('select your fighters ({0}) and {1} an enemy', labelFor('select-army') || ',', click);
   const ready = world.leaderOf('player') && STRIKES.find((id) => {
     const s = world.spellState('player', id);
     return s.gifted > 0 || (s.known && s.charges > 0);
   });
-  if (!ready) return `${fighters[0].toUpperCase()}${fighters.slice(1)} to attack.`;
-  return `Strike them with ${spellDef(ready).name}${k(`spell:${ready}`)} — or ${fighters}.`;
+  if (!ready) return tr('{0}{1} to attack.', fighters[0].toUpperCase(), fighters.slice(1));
+  return tr('Strike them with {0}{1} — or {2}.', spellDef(ready).name, k(`spell:${ready}`), fighters);
 }
 
 /** The chip's text (HTML) for an objective, or null when there's nothing useful to add. */
@@ -94,57 +95,57 @@ export function objectiveAdvice(world: World, o: Objective, leftClickOrders: boo
   const click = orderVerb(leftClickOrders);
   switch (o.type) {
     case 'castSpell':
-      return spellAdvice(world, o.spell, o.x !== undefined ? 'click the marked place (the narrator points to it; the minimap pings it)' : 'click the world');
+      return spellAdvice(world, o.spell, o.x !== undefined ? tr('click the marked place (the narrator points to it; the minimap pings it)') : tr('click the world'));
     case 'chargeSpell':
-      return `Let ${spellDef(o.spell).name} gather ${o.charges ?? 1} charge${(o.charges ?? 1) === 1 ? '' : 's'}: more people, homes and prayer fill it faster.`;
+      return tr('Let {0} gather {1} charge{2}: more people, homes and prayer fill it faster.', spellDef(o.spell).name, o.charges ?? 1, (o.charges ?? 1) === 1 ? '' : 's');
     case 'convertWanderers':
-      return spellAdvice(world, 'convert', 'click among the wanderers to kindle them');
+      return spellAdvice(world, 'convert', tr('click among the wanderers to kindle them'));
     case 'buildCount': {
       const st = world.buildState('player', o.kind);
       const name = BUILDINGS[o.kind].name;
       if (!st.allowed) return null;
-      if (!st.unlocked || !st.affordable) return `${name}: ${st.reason ?? 'not yet'}. Your villagers fetch wood on their own.`;
-      return `Pick ${name}${k(`build:${o.kind}`)} in the Build panel and click open ground.`;
+      if (!st.unlocked || !st.affordable) return tr('{0}: {1}. Your villagers fetch wood on their own.', name, st.reason ?? tr('not yet'));
+      return tr('Pick {0}{1} in the Build panel and click open ground.', name, k(`build:${o.kind}`));
     }
     case 'reachPopulation':
-      return `Grow the tribe: Dwellings${k('build:hut')} breed villagers while they have room.`;
+      return tr('Grow the tribe: Dwellings{0} breed villagers while they have room.', k('build:hut'));
     case 'claimMonument': {
       const m = world.monuments[o.index];
-      if (!world.leaderOf('player')) return leaderAway(world, 'then send her back to the stone');
+      if (!world.leaderOf('player')) return leaderAway(world, tr('then send her back to the stone'));
       const name = m ? `${spellDef(m.spell).name} ` : '';
       const pct = (p: number | undefined) => `${Math.round((p ?? 0) * 100)}%`;
       if (m?.communing && m.communer === 'player') {
         return m.contested
-          ? `The ritual is held still (${pct(m.communeProgress)}): foes stand in the ring. Drive them off — strike them, or send your fighters.`
-          : `Your leader is kneeling at the ${name}stone (${pct(m.communeProgress)}). Keep foes off her — one blow breaks the ritual.`;
+          ? tr('The ritual is held still ({0}): foes stand in the ring. Drive them off — strike them, or send your fighters.', pct(m.communeProgress))
+          : tr('Your leader is kneeling at the {0}stone ({1}). Keep foes off her — one blow breaks the ritual.', name, pct(m.communeProgress));
       }
       if (m && (m.communeProgress ?? 0) > 0.02 && m.communer !== 'player') {
-        return `The ritual broke at ${pct(m.communeProgress)} and is fading. Select your leader${k('select-leader')} and ${click} the ${name}stone to kneel again.`;
+        return tr('The ritual broke at {0} and is fading. Select your leader{1} and {2} the {3}stone to kneel again.', pct(m.communeProgress), k('select-leader'), click, name);
       }
       const l = world.leaderOf('player')!;
       if (l.hp < l.maxHp * 0.6) {
         const bloom = world.spellState('player', 'bloom');
-        const heal = bloom.gifted > 0 || (bloom.known && bloom.charges > 0) ? ` Bloom${k('spell:bloom')} on her heals her now;` : '';
-        return `Your leader is wounded (${Math.round((l.hp / l.maxHp) * 100)}%), and a kneeling leader takes extra blows.${heal} out of the fight she mends on her own. Then select her${k('select-leader')} and ${click} the ${name}stone.`;
+        const heal = bloom.gifted > 0 || (bloom.known && bloom.charges > 0) ? tr(' Bloom{0} on her heals her now;', k('spell:bloom')) : '';
+        return tr('Your leader is wounded ({0}%), and a kneeling leader takes extra blows.{1} out of the fight she mends on her own. Then select her{2} and {3} the {4}stone.', Math.round((l.hp / l.maxHp) * 100), heal, k('select-leader'), click, name);
       }
-      return `Select your leader${k('select-leader')} and ${click} the ${name}stone. Bring warriors: the ritual breaks if she's hit.`;
+      return tr('Select your leader{0} and {1} the {2}stone. Bring warriors: the ritual breaks if she\'s hit.', k('select-leader'), click, name);
     }
     case 'leaderReach':
-      if (!world.leaderOf('player')) return leaderAway(world, 'then walk her there');
-      return `Select your leader${k('select-leader')} and ${click} the ground where the story points.`;
+      if (!world.leaderOf('player')) return leaderAway(world, tr('then walk her there'));
+      return tr('Select your leader{0} and {1} the ground where the story points.', k('select-leader'), click);
     case 'rescueStranded': {
       const cb = world.spellState('player', 'landbridge');
-      if (cb.known || cb.gifted > 0) return spellAdvice(world, 'landbridge', 'click the land where they stand — the road runs from her feet');
-      return `Your stranded people join when a walking path reaches them — raise land to them.`;
+      if (cb.known || cb.gifted > 0) return spellAdvice(world, 'landbridge', tr('click the land where they stand — the road runs from her feet'));
+      return tr(`Your stranded people join when a walking path reaches them — raise land to them.`);
     }
     case 'holdPoint':
-      return `Keep your people standing on the marked ground until the time is up.`;
+      return tr(`Keep your people standing on the marked ground until the time is up.`);
     case 'killUnits':
       if (!world.units.some((u) => u.tribe === o.tribe && !u.hidden)) return quietAdvice(world, click);
       return strikeAdvice(world, click);
     case 'destroyTribe':
     case 'destroyAll':
-      return `Select your fighters (${labelFor('select-army') || ','}) and ${click} an enemy to attack.`;
+      return tr('Select your fighters ({0}) and {1} an enemy to attack.', labelFor('select-army') || ',', click);
     default:
       return null;
   }

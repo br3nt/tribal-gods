@@ -16,6 +16,7 @@
 
 import { dist, inside, polar, Terrain, wanderers } from '../terrain-kit';
 import { CampaignScenario, makeLevel } from './common';
+import { tr } from '../../i18n';
 
 const C = { x: 64, z: 64 };
 const RING_R = 33;
@@ -39,9 +40,9 @@ export const LAYOUT = {
 export const scenario: CampaignScenario = {
   id: 'c10_the_crown',
   chapter: 10,
-  title: 'The Crown',
-  tagline: 'The last ring of land above the tide. Four peoples. One will remain.',
-  teaches: 'Everything: last tribe standing',
+  title: tr('The Crown'),
+  tagline: tr('The last ring of land above the tide. Four peoples. One will remain.'),
+  teaches: tr('Everything: last tribe standing'),
   async build() {
     const t = new Terrain(101010);
     const { home, red, gold, violet, stones } = LAYOUT;
@@ -69,8 +70,8 @@ export const scenario: CampaignScenario = {
     }
     const S = stones;
     return makeLevel({
-      name: 'The Crown',
-      desc: 'Campaign X. A ring of land around a lagoon, four tribes, the Volcano on the Crown.',
+      name: tr('The Crown'),
+      desc: tr('Campaign X. A ring of land around a lagoon, four tribes, the Volcano on the Crown.'),
       terrain: t,
       homes: { player: home, red, gold, violet },
       civs: { red: 'north', gold: 'dynasty', violet: 'north' },
@@ -89,7 +90,7 @@ export const scenario: CampaignScenario = {
       rules: {
         tribes: [
           {
-            id: 'player', name: 'the Lantern-folk', ai: false,
+            id: 'player', name: tr('the Lantern-folk'), ai: false,
             loadout: {
               spells: ['blast', 'convert', 'flatten', 'bloom', 'ward', 'lightning', 'warsong', 'swamp', 'landbridge'],
               startUnits: { brave: 10 },
@@ -97,39 +98,39 @@ export const scenario: CampaignScenario = {
             },
           },
           {
-            id: 'red', name: 'the Ashmark', ai: true,
+            id: 'red', name: tr('the Ashmark'), ai: true,
             personality: { harassAt: 4, assaultAt: 9 },
             loadout: { spells: ['blast', 'convert', 'lightning', 'warsong'], startUnits: { brave: 9 } },
           },
           {
-            id: 'gold', name: 'the Saltborn', ai: true,
+            id: 'gold', name: tr('the Saltborn'), ai: true,
             personality: { harassAt: 7, assaultAt: 15, prefer: ['warden', 'firewarrior', 'warrior'] },
             loadout: { spells: ['blast', 'convert', 'ward', 'swamp'], startUnits: { brave: 9 } },
           },
           {
-            id: 'violet', name: 'the Unmoored', ai: true,
+            id: 'violet', name: tr('the Unmoored'), ai: true,
             personality: { harassAt: 5, assaultAt: 11, prefer: ['chanter', 'warrior'] },
             loadout: { spells: ['blast', 'convert', 'lightning', 'bloom'], startUnits: { brave: 9 } },
           },
         ],
         objectives: [
-          { objective: { type: 'destroyAll' }, text: 'Be the last tribe standing' },
-          { objective: { type: 'claimMonument', index: 0 }, text: 'Learn Volcano on the Crown', optional: true },
+          { objective: { type: 'destroyAll' }, text: tr('Be the last tribe standing') },
+          { objective: { type: 'claimMonument', index: 0 }, text: tr('Learn Volcano on the Crown'), optional: true },
         ],
         events: [
-          { when: { type: 'time', at: 2 }, message: 'Wanderers on the shore east of the village. Kindle them — then the stones round the ring are waiting, and guarded.', focus: { x: LAYOUT.home.x + 10, z: LAYOUT.home.z - 3 }, actions: [] },
-          { when: { type: 'commune', index: 0 }, message: 'Someone kneels on the Crown. Whoever finishes that ritual holds the mountain’s fire.', focus: LAYOUT.centre, actions: [] },
+          { when: { type: 'time', at: 2 }, message: tr('Wanderers on the shore east of the village. Kindle them — then the stones round the ring are waiting, and guarded.'), focus: { x: LAYOUT.home.x + 10, z: LAYOUT.home.z - 3 }, actions: [] },
+          { when: { type: 'commune', index: 0 }, message: tr('Someone kneels on the Crown. Whoever finishes that ritual holds the mountain’s fire.'), focus: LAYOUT.centre, actions: [] },
         ],
         briefing: {
-          title: 'The Crown',
+          title: tr('The Crown'),
           body:
-            'This is the last ring of land the Long Tide has not taken, and every people that survived it is here: the Ashmark to the west, the Saltborn to the north, the Unmoored to the east. ' +
-            'In the still lagoon stands the Crown, and on it the stone of the mountain’s fire. Around the ring, the stones of quake and storm and undertow wait for whoever walks to them. ' +
-            'Everything we have learned is ours to use. There will be no more shores after this one.',
+            tr('This is the last ring of land the Long Tide has not taken, and every people that survived it is here: the Ashmark to the west, the Saltborn to the north, the Unmoored to the east. ') +
+            tr('In the still lagoon stands the Crown, and on it the stone of the mountain’s fire. Around the ring, the stones of quake and storm and undertow wait for whoever walks to them. ') +
+            tr('Everything we have learned is ours to use. There will be no more shores after this one.'),
           tips: [
-            'The Ashmark will come early. Towers and Warriors first, ambition second.',
-            'Only Causeway reaches the Crown. Volcano from the centre can reach any town on the ring.',
-            'Three rivals fight each other too. Let them, when you can.',
+            tr('The Ashmark will come early. Towers and Warriors first, ambition second.'),
+            tr('Only Causeway reaches the Crown. Volcano from the centre can reach any town on the ring.'),
+            tr('Three rivals fight each other too. Let them, when you can.'),
           ],
         },
       },

@@ -15,6 +15,7 @@
 
 import { dist, inside, Terrain, wanderers } from '../terrain-kit';
 import { CampaignScenario, makeLevel } from './common';
+import { tr } from '../../i18n';
 
 export const LAYOUT = {
   home: { x: 22, z: 64 },
@@ -41,9 +42,9 @@ const SKERRIES = [
 export const scenario: CampaignScenario = {
   id: 'c04_scattered_shallows',
   chapter: 4,
-  title: 'The Scattered Shallows',
-  tagline: 'Three isles, two gaps, and a stone that lends two bridges.',
-  teaches: 'Causeway by gift, Ember Lodge, spending scarce casts',
+  title: tr('The Scattered Shallows'),
+  tagline: tr('Three isles, two gaps, and a stone that lends two bridges.'),
+  teaches: tr('Causeway by gift, Ember Lodge, spending scarce casts'),
   async build() {
     const t = new Terrain(40404);
     const { home, causewayStone, holm, red } = LAYOUT;
@@ -58,8 +59,8 @@ export const scenario: CampaignScenario = {
     t.pad(home.x, home.z, 6, 2.4, 4).pad(red.x, red.z, 8, 2.5, 5).pad(holm.x, holm.z, 3, 2.6, 4);
     t.addGrove(home.x - 2, home.z + 9, 7, 0.9).addGrove(red.x - 4, red.z - 11, 10, 0.7).addGrove(holm.x, holm.z + 6, 5, 0.5);
     return makeLevel({
-      name: 'The Scattered Shallows',
-      desc: 'Campaign IV. Three isles. Causeway is a gift — two casts, then a long sleep.',
+      name: tr('The Scattered Shallows'),
+      desc: tr('Campaign IV. Three isles. Causeway is a gift — two casts, then a long sleep.'),
       terrain: t,
       homes: { player: home, red },
       civs: { red: 'north' },
@@ -72,7 +73,7 @@ export const scenario: CampaignScenario = {
       rules: {
         tribes: [
           {
-            id: 'player', name: 'the Lantern-folk', ai: false,
+            id: 'player', name: tr('the Lantern-folk'), ai: false,
             loadout: {
               spells: ['blast', 'convert', 'bloom', 'flatten'],
               buildings: ['hut', 'lumberyard', 'warriorHut', 'fireHut', 'tower'],
@@ -81,7 +82,7 @@ export const scenario: CampaignScenario = {
             },
           },
           {
-            id: 'red', name: 'the Ashmark', ai: true,
+            id: 'red', name: tr('the Ashmark'), ai: true,
             personality: { passive: true, wakeAt: 540, harassAt: 6, assaultAt: 10, maxArmy: 10, maxDwellings: 6 },
             loadout: {
               spells: ['blast', 'convert', 'lightning'],
@@ -90,24 +91,24 @@ export const scenario: CampaignScenario = {
           },
         ],
         objectives: [
-          { objective: { type: 'claimMonument', index: 1 }, text: 'Learn Stone Ward on the Holm' },
-          { objective: { type: 'destroyTribe', tribe: 'red' }, text: 'Drive the Ashmark from the eastern isle' },
-          { objective: { type: 'reachPopulation', count: 35 }, text: 'Grow the tribe to 35', optional: true },
+          { objective: { type: 'claimMonument', index: 1 }, text: tr('Learn Stone Ward on the Holm') },
+          { objective: { type: 'destroyTribe', tribe: 'red' }, text: tr('Drive the Ashmark from the eastern isle') },
+          { objective: { type: 'reachPopulation', count: 35 }, text: tr('Grow the tribe to 35'), optional: true },
         ],
         events: [
-          { when: { type: 'time', at: 2 }, message: 'The stone on our shore lends Causeway — two roads out of the sea. Kneel there, then bridge to the Holm.', focus: LAYOUT.causewayStone, actions: [] },
-          { when: { type: 'spellCast', spell: 'landbridge' }, message: 'The sea gives way. One road left before the stone sleeps — spend it well.', actions: [] },
+          { when: { type: 'time', at: 2 }, message: tr('The stone on our shore lends Causeway — two roads out of the sea. Kneel there, then bridge to the Holm.'), focus: LAYOUT.causewayStone, actions: [] },
+          { when: { type: 'spellCast', spell: 'landbridge' }, message: tr('The sea gives way. One road left before the stone sleeps — spend it well.'), actions: [] },
         ],
         briefing: {
-          title: 'The Scattered Shallows',
+          title: tr('The Scattered Shallows'),
           body:
-            'The Ashmark fled east over the water and took the biggest isle in the Shallows. We have the smallest. ' +
-            'Between us lies the Holm, with a stone that teaches the ward, and open sea either side of it. ' +
-            'On our own shore stands a stone that lends Causeway — two roads of raised land, and then it sleeps for seven minutes. Choose where each road goes.',
+            tr('The Ashmark fled east over the water and took the biggest isle in the Shallows. We have the smallest. ') +
+            tr('Between us lies the Holm, with a stone that teaches the ward, and open sea either side of it. ') +
+            tr('On our own shore stands a stone that lends Causeway — two roads of raised land, and then it sleeps for seven minutes. Choose where each road goes.'),
           tips: [
-            'Commune at the gift stone: you get two free Causeway casts, known spell or not.',
-            'Causeway runs from your leader to the mark, up to 22 tiles. Stand on the shore, aim at the far shore.',
-            'Emberthrowers from the Ember Lodge outrange Watchtowers. Bring them to a siege.',
+            tr('Commune at the gift stone: you get two free Causeway casts, known spell or not.'),
+            tr('Causeway runs from your leader to the mark, up to 22 tiles. Stand on the shore, aim at the far shore.'),
+            tr('Emberthrowers from the Ember Lodge outrange Watchtowers. Bring them to a siege.'),
           ],
         },
       },

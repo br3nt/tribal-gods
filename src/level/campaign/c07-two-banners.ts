@@ -16,6 +16,7 @@
 
 import { inside, Terrain, wanderers } from '../terrain-kit';
 import { CampaignScenario, makeLevel } from './common';
+import { tr } from '../../i18n';
 
 export const LAYOUT = {
   home: { x: 64, z: 24 },
@@ -37,9 +38,9 @@ export const LAYOUT = {
 export const scenario: CampaignScenario = {
   id: 'c07_two_banners',
   chapter: 7,
-  title: 'Two Banners',
-  tagline: 'The Ashmark and the Saltborn march together now.',
-  teaches: 'Chanters, two fronts, fords',
+  title: tr('Two Banners'),
+  tagline: tr('The Ashmark and the Saltborn march together now.'),
+  teaches: tr('Chanters, two fronts, fords'),
   async build() {
     const t = new Terrain(70707);
     const { home, red, gold, trunk, west, east, fords, wedge, mire } = LAYOUT;
@@ -58,8 +59,8 @@ export const scenario: CampaignScenario = {
     t.addGrove(home.x + 16, home.z + 4, 9, 0.7).addGrove(home.x - 16, home.z + 6, 9, 0.6)
       .addGrove(red.x + 4, red.z + 14, 10, 0.6).addGrove(gold.x - 4, gold.z + 14, 10, 0.6).addGrove(wedge.x, wedge.z + 8, 6, 0.5);
     return makeLevel({
-      name: 'Two Banners',
-      desc: 'Campaign VII. A river delta, two allied rivals, and Chanters.',
+      name: tr('Two Banners'),
+      desc: tr('Campaign VII. A river delta, two allied rivals, and Chanters.'),
       terrain: t,
       homes: { player: home, red, gold },
       civs: { red: 'north', gold: 'dynasty' },
@@ -71,7 +72,7 @@ export const scenario: CampaignScenario = {
       rules: {
         tribes: [
           {
-            id: 'player', name: 'the Lantern-folk', ai: false,
+            id: 'player', name: tr('the Lantern-folk'), ai: false,
             loadout: {
               spells: ['blast', 'convert', 'bloom', 'flatten', 'lightning'],
               buildings: ['hut', 'lumberyard', 'warriorHut', 'fireHut', 'tower', 'shrine', 'chantHall'],
@@ -80,7 +81,7 @@ export const scenario: CampaignScenario = {
             },
           },
           {
-            id: 'red', name: 'the Ashmark', ai: true, allies: ['gold'],
+            id: 'red', name: tr('the Ashmark'), ai: true, allies: ['gold'],
             personality: { target: 'player', harassAt: 5, assaultAt: 10 },
             loadout: {
               spells: ['blast', 'convert', 'lightning'],
@@ -89,7 +90,7 @@ export const scenario: CampaignScenario = {
             },
           },
           {
-            id: 'gold', name: 'the Saltborn', ai: true, allies: ['red'],
+            id: 'gold', name: tr('the Saltborn'), ai: true, allies: ['red'],
             personality: { target: 'player', assaultAt: 12, prefer: ['firewarrior', 'warrior'] },
             loadout: {
               spells: ['blast', 'convert', 'ward'],
@@ -99,29 +100,29 @@ export const scenario: CampaignScenario = {
           },
         ],
         objectives: [
-          { objective: { type: 'destroyAll' }, text: 'Bring down both banners' },
-          { objective: { type: 'buildCount', kind: 'chantHall', count: 1 }, text: 'Raise a Chant Hall', optional: true },
-          { objective: { type: 'claimMonument', index: 0 }, text: 'Learn Warsong in the fen', optional: true },
-          { objective: { type: 'castSpell', spell: 'swamp' }, text: 'Mire a ford under an army', optional: true },
+          { objective: { type: 'destroyAll' }, text: tr('Bring down both banners') },
+          { objective: { type: 'buildCount', kind: 'chantHall', count: 1 }, text: tr('Raise a Chant Hall'), optional: true },
+          { objective: { type: 'claimMonument', index: 0 }, text: tr('Learn Warsong in the fen'), optional: true },
+          { objective: { type: 'castSpell', spell: 'swamp' }, text: tr('Mire a ford under an army'), optional: true },
         ],
         events: [
-          { when: { type: 'time', at: 2 }, message: 'Wanderers on the slope east of the village. Kindle them, then fetch the Mire from the western stone — the fords are where they must cross.', focus: { x: 78, z: 30 }, actions: [] },
+          { when: { type: 'time', at: 2 }, message: tr('Wanderers on the slope east of the village. Kindle them, then fetch the Mire from the western stone — the fords are where they must cross.'), focus: { x: 78, z: 30 }, actions: [] },
           {
             when: { type: 'time', at: 900 },
-            message: 'The Saltborn have had enough of the Ashmark’s war. The alliance is broken — they fight each other now.',
+            message: tr('The Saltborn have had enough of the Ashmark’s war. The alliance is broken — they fight each other now.'),
             actions: [{ type: 'allies', tribe: 'gold', allies: [] }],
           },
         ],
         briefing: {
-          title: 'Two Banners',
+          title: tr('Two Banners'),
           body:
-            'The Ashmark we drove from Twofold have found friends: the Saltborn, patient traders of the delta, who fear us more than they like them. ' +
-            'Their banners fly over both lobes of the Fan, and both armies will come for the delta head where we live. ' +
-            'We cannot out-breed two tribes. But a Chant can stop a spear mid-swing, and a long Chant turns the spear around.',
+            tr('The Ashmark we drove from Twofold have found friends: the Saltborn, patient traders of the delta, who fear us more than they like them. ') +
+            tr('Their banners fly over both lobes of the Fan, and both armies will come for the delta head where we live. ') +
+            tr('We cannot out-breed two tribes. But a Chant can stop a spear mid-swing, and a long Chant turns the spear around.'),
           tips: [
-            'A Chant Hall needs a Shrine first. Chanters stop enemy fighters in earshot and, given time, bring them over.',
-            'Keep Chanters behind Warriors: they are unarmed, and another tribe’s Chanter breaks the spell.',
-            'Allies of convenience fall out. Hold on, and the banners may turn on each other.',
+            tr('A Chant Hall needs a Shrine first. Chanters stop enemy fighters in earshot and, given time, bring them over.'),
+            tr('Keep Chanters behind Warriors: they are unarmed, and another tribe’s Chanter breaks the spell.'),
+            tr('Allies of convenience fall out. Hold on, and the banners may turn on each other.'),
           ],
         },
       },

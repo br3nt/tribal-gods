@@ -32,6 +32,7 @@ import { helpHtml } from './help';
 import { icon, UiIconName } from './icons';
 import { carve } from './lettering';
 import { settingsPanel, SettingsHooks } from './settings-panel';
+import { tr } from '../i18n';
 
 css('menu', `
 .menu { position: fixed; inset: 0; z-index: 30; display: flex; color: var(--text); pointer-events: auto;
@@ -178,8 +179,8 @@ export class Menu {
     const el =
       this.screen === 'title' ? this.titleScreen()
       : this.screen === 'skirmish' ? this.skirmishScreen()
-      : this.screen === 'settings' ? this.card('Settings', settingsPanel(this.settingsHooks), () => this.show(this.backTo))
-      : this.screen === 'help' ? this.card('How to play', h('div', { html: helpHtml() }), () => this.show(this.backTo))
+      : this.screen === 'settings' ? this.card(tr('Settings'), settingsPanel(this.settingsHooks), () => this.show(this.backTo))
+      : this.screen === 'help' ? this.card(tr('How to play'), h('div', { html: helpHtml() }), () => this.show(this.backTo))
       : this.pauseScreen();
     this.overlay.replaceChildren(el);
     el.querySelector<HTMLElement>('.tg-btn.primary, .tg-btn')?.focus({ preventScroll: true });
@@ -196,24 +197,24 @@ export class Menu {
   private titleScreen(): HTMLElement {
     this.backTo = 'title';
     const saved = this.onContinue ? this.continueLabel() : null;
-    const nav = h('nav.menu-nav', { 'aria-label': 'Main menu' },
-      saved ? this.navBtn('Continue', 'play', () => { this.hide(); this.onContinue!(); }, true, saved) : null,
-      this.navBtn('Campaign', 'objective', this.onCampaign ? () => { this.hide(); this.onCampaign!(); } : null, !saved && !!this.onCampaign, this.onCampaign ? '' : 'coming soon'),
-      this.navBtn('Skirmish', 'attack', () => this.show('skirmish'), !this.onCampaign),
-      this.navBtn('Levels', 'book', () => { this.hide(); this.onLevels?.(); }),
-      this.navBtn('Editor', 'hammer', () => { this.hide(); this.onEditor?.(); }),
-      this.navBtn('Settings', 'settings', () => this.show('settings')),
-      this.navBtn('How to play', 'info', () => this.show('help')),
+    const nav = h('nav.menu-nav', { 'aria-label': tr('Main menu') },
+      saved ? this.navBtn(tr('Continue'), 'play', () => { this.hide(); this.onContinue!(); }, true, saved) : null,
+      this.navBtn(tr('Campaign'), 'objective', this.onCampaign ? () => { this.hide(); this.onCampaign!(); } : null, !saved && !!this.onCampaign, this.onCampaign ? '' : tr('coming soon')),
+      this.navBtn(tr('Skirmish'), 'attack', () => this.show('skirmish'), !this.onCampaign),
+      this.navBtn(tr('Levels'), 'book', () => { this.hide(); this.onLevels?.(); }),
+      this.navBtn(tr('Editor'), 'hammer', () => { this.hide(); this.onEditor?.(); }),
+      this.navBtn(tr('Settings'), 'settings', () => this.show('settings')),
+      this.navBtn(tr('How to play'), 'info', () => this.show('help')),
     );
     return h('div.menu-title', {},
-      h('div.menu-logo', { html: `<h1>${carve('Tribal')}${carve('Gods')}</h1><div class="rule cloth"></div><p>A small round world, a tribe that grows, and a leader who speaks with the sky.</p>` }),
+      h('div.menu-logo', { html: `<h1>${carve('Tribal')}${carve('Gods')}</h1><div class="rule cloth"></div><p>${tr('A small round world, a tribe that grows, and a leader who speaks with the sky.')}</p>` }),
       nav,
-      h('div.menu-foot', { text: 'F1 how to play · Esc back' }),
+      h('div.menu-foot', { text: tr('F1 how to play · Esc back') }),
     );
   }
 
   private card(title: string, body: HTMLElement, onBack: () => void, footer: HTMLElement[] = []): HTMLElement {
-    const back = h('button.tg-btn.icon-only', { type: 'button', 'aria-label': 'Back', html: `<span style="display:inline-flex;transform:scaleX(-1)">${icon('arrowRight', 18)}</span>` });
+    const back = h('button.tg-btn.icon-only', { type: 'button', 'aria-label': tr('Back'), html: `<span style="display:inline-flex;transform:scaleX(-1)">${icon('arrowRight', 18)}</span>` });
     back.addEventListener('click', onBack);
     const head = h('header', {}, back, h('h2', { html: carve(title) }), h('span.grow'));
     const card = h('div.menu-card.tg-panel.mat-hide', {}, head, h('div.body', {}, body));
@@ -233,7 +234,7 @@ export class Menu {
       const b = h('button.sk-civ', { type: 'button', role: 'radio', style: `--ac:${ac}` },
         h('span.crest', { html: icon('leader', 26) }),
         h('b', { text: civ.name }),
-        h('span.lead', { text: `led by ${civ.leaderTitle}` }),
+        h('span.lead', { text: tr('led by {0}', civ.leaderTitle) }),
         h('p', { text: civ.blurb }),
       );
       b.dataset.civ = civ.id;
@@ -244,7 +245,7 @@ export class Menu {
       civs.appendChild(b);
     }
     paint();
-    body.appendChild(h('section', {}, h('h3', { text: 'Your people' }), civs));
+    body.appendChild(h('section', {}, h('h3', { text: tr('Your people') }), civs));
 
     // Difficulty + rivals
     const diffDesc = h('div.seg-desc');
@@ -254,7 +255,7 @@ export class Menu {
       diffDesc.textContent = DIFFICULTIES[this.difficulty].label;
     };
     for (const id of Object.keys(DIFFICULTIES) as Difficulty[]) {
-      const b = h('button.tg-btn', { type: 'button', role: 'radio', text: id[0].toUpperCase() + id.slice(1) });
+      const b = h('button.tg-btn', { type: 'button', role: 'radio', text: tr(id[0].toUpperCase() + id.slice(1)) });
       b.dataset.v = id;
       b.addEventListener('click', () => {
         this.difficulty = id;
@@ -268,7 +269,7 @@ export class Menu {
     const rivals = h('div.seg', { role: 'radiogroup' });
     const paintRivals = () => {
       for (const b of rivals.children) b.classList.toggle('on', Number((b as HTMLElement).dataset.v) === this.enemies);
-      rivalsDesc.textContent = this.enemies === 1 ? 'One planet, two gods.' : `One planet, ${this.enemies + 1} gods — they fight each other too.`;
+      rivalsDesc.textContent = this.enemies === 1 ? tr('One planet, two gods.') : tr('One planet, {0} gods — they fight each other too.', this.enemies + 1);
     };
     for (let n = 1; n <= 3; n++) {
       const dots = TRIBE_IDS.slice(1, 1 + n).map((t) => `<i style="background:#${TRIBE_COLORS[t].toString(16).padStart(6, '0')}"></i>`).join('');
@@ -282,29 +283,29 @@ export class Menu {
     }
     paintRivals();
     body.appendChild(h('section', {}, h('div.sk-opts', {},
-      h('div', {}, h('h3', { text: 'Difficulty' }), diff, diffDesc),
-      h('div', {}, h('h3', { text: 'Rival tribes' }), rivals, rivalsDesc),
+      h('div', {}, h('h3', { text: tr('Difficulty') }), diff, diffDesc),
+      h('div', {}, h('h3', { text: tr('Rival tribes') }), rivals, rivalsDesc),
     )));
 
-    const start = h('button.tg-btn.primary', { type: 'button', html: `${icon('play', 16)}<span>Begin</span>` });
+    const start = h('button.tg-btn.primary', { type: 'button', html: `${icon('play', 16)}<span>${tr('Begin')}</span>` });
     start.addEventListener('click', () => {
       this.hide();
       this.onSkirmish?.(this.settings);
     });
-    const card = this.card('Skirmish', body, () => this.show('title'), [start]);
+    const card = this.card(tr('Skirmish'), body, () => this.show('title'), [start]);
     queueMicrotask(() => start.focus());
     return card;
   }
 
   private pauseScreen(): HTMLElement {
     this.backTo = 'pause';
-    const card = h('div.pause-card.tg-panel.mat-hide', {}, h('h2', { html: carve('Paused') }));
+    const card = h('div.pause-card.tg-panel.mat-hide', {}, h('h2', { html: carve(tr('Paused')) }));
     card.append(
-      this.navBtn('Resume', 'play', () => this.onResume?.(), true),
-      this.navBtn('Settings', 'settings', () => this.show('settings')),
-      this.navBtn('How to play', 'info', () => this.show('help')),
-      this.navBtn('Restart', 'arrowRight', () => this.onRestart?.()),
-      this.navBtn('Main menu', 'menu', () => this.onQuit?.()),
+      this.navBtn(tr('Resume'), 'play', () => this.onResume?.(), true),
+      this.navBtn(tr('Settings'), 'settings', () => this.show('settings')),
+      this.navBtn(tr('How to play'), 'info', () => this.show('help')),
+      this.navBtn(tr('Restart'), 'arrowRight', () => this.onRestart?.()),
+      this.navBtn(tr('Main menu'), 'menu', () => this.onQuit?.()),
     );
     return card;
   }

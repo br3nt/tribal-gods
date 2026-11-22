@@ -14,6 +14,7 @@
 
 import { inside, Terrain, wanderers } from '../terrain-kit';
 import { CampaignScenario, makeLevel } from './common';
+import { tr } from '../../i18n';
 
 export const LAYOUT = {
   home: { x: 30, z: 62 },
@@ -26,9 +27,9 @@ export const LAYOUT = {
 export const scenario: CampaignScenario = {
   id: 'c03_smoke_over_the_ridge',
   chapter: 3,
-  title: 'Smoke Over the Ridge',
-  tagline: 'Someone else’s cookfires, just over the rock. The Ashmark.',
-  teaches: 'War Lodge, warriors, holding a pass',
+  title: tr('Smoke Over the Ridge'),
+  tagline: tr('Someone else’s cookfires, just over the rock. The Ashmark.'),
+  teaches: tr('War Lodge, warriors, holding a pass'),
   async build() {
     const t = new Terrain(30303);
     const { home, red, pass, ward } = LAYOUT;
@@ -47,8 +48,8 @@ export const scenario: CampaignScenario = {
     t.pad(home.x, home.z, 8, 2.4, 5).pad(red.x, red.z, 8, 2.6, 5);
     t.addGrove(home.x - 6, home.z + 14, 10, 0.7).addGrove(red.x + 8, red.z - 14, 10, 0.7).addGrove(44, 86, 8, 0.4).addGrove(90, 40, 8, 0.4);
     return makeLevel({
-      name: 'Smoke Over the Ridge',
-      desc: 'Campaign III. One spine of rock, one pass, one rival.',
+      name: tr('Smoke Over the Ridge'),
+      desc: tr('Campaign III. One spine of rock, one pass, one rival.'),
       terrain: t,
       homes: { player: home, red },
       civs: { red: 'north' },
@@ -60,7 +61,7 @@ export const scenario: CampaignScenario = {
       rules: {
         tribes: [
           {
-            id: 'player', name: 'the Lantern-folk', ai: false,
+            id: 'player', name: tr('the Lantern-folk'), ai: false,
             loadout: {
               spells: ['blast', 'convert', 'bloom', 'flatten'],
               buildings: ['hut', 'lumberyard', 'warriorHut', 'tower'],
@@ -69,7 +70,7 @@ export const scenario: CampaignScenario = {
             },
           },
           {
-            id: 'red', name: 'the Ashmark', ai: true,
+            id: 'red', name: tr('the Ashmark'), ai: true,
             personality: { passive: true, wakeAt: 480, harassAt: 4, assaultAt: 8, maxArmy: 8, maxDwellings: 4 },
             loadout: {
               spells: ['blast', 'convert'],
@@ -80,26 +81,26 @@ export const scenario: CampaignScenario = {
           },
         ],
         objectives: [
-          { objective: { type: 'destroyTribe', tribe: 'red' }, text: 'Drive the Ashmark from Twofold' },
-          { objective: { type: 'claimMonument', index: 0 }, text: 'Learn Lightning at the stone in the pass', optional: true },
-          { objective: { type: 'buildCount', kind: 'tower', count: 2 }, text: 'Raise 2 Watchtowers', optional: true },
-          { objective: { type: 'castSpell', spell: 'lightning', count: 3 }, text: 'Call the lightning down three times', optional: true },
+          { objective: { type: 'destroyTribe', tribe: 'red' }, text: tr('Drive the Ashmark from Twofold') },
+          { objective: { type: 'claimMonument', index: 0 }, text: tr('Learn Lightning at the stone in the pass'), optional: true },
+          { objective: { type: 'buildCount', kind: 'tower', count: 2 }, text: tr('Raise 2 Watchtowers'), optional: true },
+          { objective: { type: 'castSpell', spell: 'lightning', count: 3 }, text: tr('Call the lightning down three times'), optional: true },
         ],
         events: [
-          { when: { type: 'time', at: 2 }, message: 'Wanderers by the stream below the village. Kindle them — every pair of hands counts against the Ashmark.', focus: { x: 36, z: 76 }, actions: [] },
-          { when: { type: 'time', at: 40 }, message: 'The stone in the pass teaches the lightning. Kneel there before the Ashmark leader does — she will come with spears.', focus: LAYOUT.pass, actions: [] },
-          { when: { type: 'time', at: 470 }, message: 'Smoke and drums over the ridge. The Ashmark are done hiding.', focus: LAYOUT.red, actions: [] },
+          { when: { type: 'time', at: 2 }, message: tr('Wanderers by the stream below the village. Kindle them — every pair of hands counts against the Ashmark.'), focus: { x: 36, z: 76 }, actions: [] },
+          { when: { type: 'time', at: 40 }, message: tr('The stone in the pass teaches the lightning. Kneel there before the Ashmark leader does — she will come with spears.'), focus: LAYOUT.pass, actions: [] },
+          { when: { type: 'time', at: 470 }, message: tr('Smoke and drums over the ridge. The Ashmark are done hiding.'), focus: LAYOUT.red, actions: [] },
         ],
         briefing: {
-          title: 'Smoke Over the Ridge',
+          title: tr('Smoke Over the Ridge'),
           body:
-            'The far valley smokes in the mornings. The Ashmark came down from their burnt hills a season before us, and they do not share. ' +
-            'Twofold is split by a spine of rock with a single high pass, and a stone in that pass that teaches the lightning. ' +
-            'They are few yet — fewer than us — but that will not last. Build a War Lodge, raise spears, and take the valley before they fill it.',
+            tr('The far valley smokes in the mornings. The Ashmark came down from their burnt hills a season before us, and they do not share. ') +
+            tr('Twofold is split by a spine of rock with a single high pass, and a stone in that pass that teaches the lightning. ') +
+            tr('They are few yet — fewer than us — but that will not last. Build a War Lodge, raise spears, and take the valley before they fill it.'),
           tips: [
-            'A War Lodge turns villagers into Warriors. Queue a few, then rally them where you want them.',
-            'The pass is the short road for both of you; a Watchtower beside it sees them coming.',
-            'Keep enough villagers working — an army is only as big as the wood behind it.',
+            tr('A War Lodge turns villagers into Warriors. Queue a few, then rally them where you want them.'),
+            tr('The pass is the short road for both of you; a Watchtower beside it sees them coming.'),
+            tr('Keep enough villagers working — an army is only as big as the wood behind it.'),
           ],
         },
       },

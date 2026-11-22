@@ -18,6 +18,7 @@ import { arc, dist, inside, polar, Terrain, wanderers } from '../terrain-kit';
 import type { Pt } from '../terrain-kit';
 import type { ScenarioEvent, UnitKind } from '../../sim/catalog';
 import { CampaignScenario, makeLevel, RAIDER_TRIBE } from './common';
+import { tr } from '../../i18n';
 
 const C = { x: 64, z: 64 };
 const RIM_R = 23;
@@ -46,9 +47,9 @@ function wave(at: number, breach: number, units: Partial<Record<UnitKind, number
 export const scenario: CampaignScenario = {
   id: 'c05_vigil_at_the_caldera',
   chapter: 5,
-  title: 'Vigil at the Caldera',
-  tagline: 'Keep the shrine standing until the mountain wakes.',
-  teaches: 'Charging a great spell, the Shrine, defending breaches',
+  title: tr('Vigil at the Caldera'),
+  tagline: tr('Keep the shrine standing until the mountain wakes.'),
+  teaches: tr('Charging a great spell, the Shrine, defending breaches'),
   async build() {
     const t = new Terrain(50505);
     const { home, shrine } = LAYOUT;
@@ -82,8 +83,8 @@ export const scenario: CampaignScenario = {
     t.addGrove(52, 58, 6, 0.8).addGrove(76, 58, 6, 0.8).addGrove(64, 88, 10, 0.3).addGrove(40, 40, 10, 0.4).addGrove(90, 92, 10, 0.4);
     const L = LAYOUT.landings;
     return makeLevel({
-      name: 'Vigil at the Caldera',
-      desc: 'Campaign V. Hold the shrine in the crater while the Volcano charges.',
+      name: tr('Vigil at the Caldera'),
+      desc: tr('Campaign V. Hold the shrine in the crater while the Volcano charges.'),
       terrain: t,
       homes: { player: home, violet: L[0] },
       monuments: [{ x: 70, z: 52, spell: 'lightning', mode: 'gift', charges: 2, cooldown: 180 }],
@@ -97,7 +98,7 @@ export const scenario: CampaignScenario = {
       rules: {
         tribes: [
           {
-            id: 'player', name: 'the Lantern-folk', ai: false,
+            id: 'player', name: tr('the Lantern-folk'), ai: false,
             loadout: {
               spells: ['blast', 'convert', 'ward', 'volcano'],
               chargeCost: { volcano: 32 },
@@ -106,37 +107,37 @@ export const scenario: CampaignScenario = {
               startWood: 16,
             },
           },
-          { id: 'violet', name: 'the Unmoored', ...RAIDER_TRIBE },
+          { id: 'violet', name: tr('the Unmoored'), ...RAIDER_TRIBE },
         ],
         objectives: [
-          { objective: { type: 'chargeSpell', spell: 'volcano' }, text: 'Charge the Volcano' },
-          { objective: { type: 'buildCount', kind: 'tower', count: 3 }, text: 'A Watchtower in every breach', optional: true },
-          { objective: { type: 'reachPopulation', count: 30 }, text: 'Grow the tribe to 30', optional: true },
+          { objective: { type: 'chargeSpell', spell: 'volcano' }, text: tr('Charge the Volcano') },
+          { objective: { type: 'buildCount', kind: 'tower', count: 3 }, text: tr('A Watchtower in every breach'), optional: true },
+          { objective: { type: 'reachPopulation', count: 30 }, text: tr('Grow the tribe to 30'), optional: true },
           // Appended (stars index objectives): the ritual's point is the eruption.
-          { objective: { type: 'castSpell', spell: 'volcano' }, text: 'Wake the mountain on the raiders’ shore', after: 0 },
+          { objective: { type: 'castSpell', spell: 'volcano' }, text: tr('Wake the mountain on the raiders’ shore'), after: 0 },
         ],
         fail: [{ type: 'buildingLost', kind: 'shrine' }],
         events: [
-          { when: { type: 'time', at: 2 }, message: 'Three wanderers in the basin. Kindle them — more hands to pray, more to fight.', focus: LAYOUT.centre, actions: [] },
-          { when: { type: 'objective', index: 0 }, message: 'The mountain is awake in your hands. Cast the Volcano where the raiders land — the crater wall will never be breached there again.', focus: LAYOUT.landings[0], actions: [] },
-          wave(70, 0, { warrior: 2 }, 'Unmoored boats on the northern shore.'),
-          wave(150, 1, { warrior: 3 }, 'They are coming through the south-east breach.'),
-          wave(230, 2, { warrior: 2, firewarrior: 1 }, 'South-west breach — and they carry fire.'),
+          { when: { type: 'time', at: 2 }, message: tr('Three wanderers in the basin. Kindle them — more hands to pray, more to fight.'), focus: LAYOUT.centre, actions: [] },
+          { when: { type: 'objective', index: 0 }, message: tr('The mountain is awake in your hands. Cast the Volcano where the raiders land — the crater wall will never be breached there again.'), focus: LAYOUT.landings[0], actions: [] },
+          wave(70, 0, { warrior: 2 }, tr('Unmoored boats on the northern shore.')),
+          wave(150, 1, { warrior: 3 }, tr('They are coming through the south-east breach.')),
+          wave(230, 2, { warrior: 2, firewarrior: 1 }, tr('South-west breach — and they carry fire.')),
           wave(310, 0, { warrior: 3, firewarrior: 1 }),
           wave(390, 1, { warrior: 3, firewarrior: 1 }, undefined, { every: 160, times: 4 }),
           wave(470, 2, { warrior: 3, firewarrior: 2 }, undefined, { every: 160, times: 4 }),
-          wave(550, 0, { warrior: 4, warden: 1 }, 'A Warden among them. Stone mauls for the shrine.', { every: 160, times: 4 }),
+          wave(550, 0, { warrior: 4, warden: 1 }, tr('A Warden among them. Stone mauls for the shrine.'), { every: 160, times: 4 }),
         ],
         briefing: {
-          title: 'Vigil at the Caldera',
+          title: tr('Vigil at the Caldera'),
           body:
-            'Inside this dead volcano the Unmoored cannot reach us — except through the three breaches in its wall. ' +
-            'The old song says the mountain can be woken, once, by a tribe that prays long enough: our Volcano is known, but this time it will take eight times the mana. ' +
-            'Keep the Shrine standing and keep the prayers going until the charge is full. The raids will not stop until it is.',
+            tr('Inside this dead volcano the Unmoored cannot reach us — except through the three breaches in its wall. ') +
+            tr('The old song says the mountain can be woken, once, by a tribe that prays long enough: our Volcano is known, but this time it will take eight times the mana. ') +
+            tr('Keep the Shrine standing and keep the prayers going until the charge is full. The raids will not stop until it is.'),
           tips: [
-            'Villagers praying in the Shrine speed every spell that is charging. Switch Blast and Ward off to feed only the ritual — and back on when a wave breaks through.',
-            'Each breach is a few tiles wide. A garrisoned Watchtower in each one does most of the fighting.',
-            'If the Shrine falls, the vigil fails. A second Shrine is insurance.',
+            tr('Villagers praying in the Shrine speed every spell that is charging. Switch Blast and Ward off to feed only the ritual — and back on when a wave breaks through.'),
+            tr('Each breach is a few tiles wide. A garrisoned Watchtower in each one does most of the fighting.'),
+            tr('If the Shrine falls, the vigil fails. A second Shrine is insurance.'),
           ],
         },
       },

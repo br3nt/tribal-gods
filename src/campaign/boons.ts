@@ -14,6 +14,7 @@
 
 import { START_BRAVES, START_WOOD } from '../config';
 import type { BuildingKind, Loadout, ScenarioRules, SpellId, UnitKind } from '../sim/catalog';
+import { tr } from '../i18n';
 
 export type BoonId =
   | 'deepWell' | 'kinfolk' | 'secondHearth' | 'stockpile' | 'quickKindle'
@@ -38,15 +39,15 @@ export interface BoonDef {
 }
 
 export const BOONS: Record<BoonId, BoonDef> = {
-  deepWell: { id: 'deepWell', name: 'Deep Well', blurb: 'Blast holds one more charge.', grant: { extraCharges: { blast: 1 } } },
-  kinfolk: { id: 'kinfolk', name: 'Kinfolk', blurb: 'Three more villagers at every landing.', grant: { startUnits: { brave: 3 } } },
-  secondHearth: { id: 'secondHearth', name: 'Second Hearth', blurb: 'Start with a Dwelling already standing.', grant: { startBuildings: ['hut'] } },
-  stockpile: { id: 'stockpile', name: 'Stockpile', blurb: 'Eight more wood at the start.', grant: { startWood: 8 } },
-  quickKindle: { id: 'quickKindle', name: 'Quick Kindle', blurb: 'Kindle charges a third faster and holds one more.', grant: { chargeCost: { convert: 0.75 }, extraCharges: { convert: 1 } } },
-  spearGuard: { id: 'spearGuard', name: 'Spear Guard', blurb: 'Two Warriors walk with your leader from the start.', grant: { startUnits: { warrior: 2 } } },
-  wardstone: { id: 'wardstone', name: 'Wardstone', blurb: 'Begin each scenario with one free Stone Ward.', grant: { gifts: { ward: 1 } } },
-  swiftBlast: { id: 'swiftBlast', name: 'Swift Blast', blurb: 'Blast charges a fifth faster.', grant: { chargeCost: { blast: 0.8 } } },
-  stormCarrier: { id: 'stormCarrier', name: 'Storm Carrier', blurb: 'Lightning holds one more charge.', grant: { extraCharges: { lightning: 1 } } },
+  deepWell: { id: 'deepWell', name: tr('Deep Well'), blurb: tr('Blast holds one more charge.'), grant: { extraCharges: { blast: 1 } } },
+  kinfolk: { id: 'kinfolk', name: tr('Kinfolk'), blurb: tr('Three more villagers at every landing.'), grant: { startUnits: { brave: 3 } } },
+  secondHearth: { id: 'secondHearth', name: tr('Second Hearth'), blurb: tr('Start with a Dwelling already standing.'), grant: { startBuildings: ['hut'] } },
+  stockpile: { id: 'stockpile', name: tr('Stockpile'), blurb: tr('Eight more wood at the start.'), grant: { startWood: 8 } },
+  quickKindle: { id: 'quickKindle', name: tr('Quick Kindle'), blurb: tr('Kindle charges a third faster and holds one more.'), grant: { chargeCost: { convert: 0.75 }, extraCharges: { convert: 1 } } },
+  spearGuard: { id: 'spearGuard', name: tr('Spear Guard'), blurb: tr('Two Warriors walk with your leader from the start.'), grant: { startUnits: { warrior: 2 } } },
+  wardstone: { id: 'wardstone', name: tr('Wardstone'), blurb: tr('Begin each scenario with one free Stone Ward.'), grant: { gifts: { ward: 1 } } },
+  swiftBlast: { id: 'swiftBlast', name: tr('Swift Blast'), blurb: tr('Blast charges a fifth faster.'), grant: { chargeCost: { blast: 0.8 } } },
+  stormCarrier: { id: 'stormCarrier', name: tr('Storm Carrier'), blurb: tr('Lightning holds one more charge.'), grant: { extraCharges: { lightning: 1 } } },
 };
 
 /** Which chapters end with a boon choice, and the three on offer. */

@@ -10,6 +10,7 @@
 import { getVolume, isMuted, setMuted, setVolume, uiClick } from '../core/audio';
 import { css, h } from './dom';
 import { applyUiScale, QualitySetting, saveSettings, setQuality, settings } from './settings';
+import { Lang, LANG, LANGS, setLang, tr } from '../i18n';
 
 css('settings-panel', `
 .set { display: grid; gap: 1.05rem; }
@@ -80,7 +81,7 @@ export function settingsPanel(hooks: SettingsHooks): HTMLDivElement {
 
   // Sound: master volume + mute (core/audio.ts remembers both).
   const pct = h('span.pct');
-  const slider = h('input', { type: 'range', min: '0', max: '100', step: '1', 'aria-label': 'Volume' });
+  const slider = h('input', { type: 'range', min: '0', max: '100', step: '1', 'aria-label': tr('Volume') });
   slider.value = String(Math.round(getVolume() * 100));
   const paintVol = () => (pct.textContent = isMuted() ? 'muted' : `${slider.value}%`);
   slider.addEventListener('input', () => {
@@ -94,52 +95,56 @@ export function settingsPanel(hooks: SettingsHooks): HTMLDivElement {
   const mute = toggle(() => !isMuted(), (on) => {
     setMuted(!on);
     paintVol();
-  }, 'Sound on');
+  }, tr('Sound on'));
   const paintMute = () => {
     mute.classList.toggle('on', !isMuted());
     mute.setAttribute('aria-checked', String(!isMuted()));
   };
   paintVol();
-  row('Sound', h('div.vol', {}, mute, slider, pct), 'Master volume for effects and the quiet ambient bed. The switch mutes everything.');
+  row(tr('Sound'), h('div.vol', {}, mute, slider, pct), tr('Master volume for effects and the quiet ambient bed. The switch mutes everything.'));
 
   const note = h('div.set-note');
   note.hidden = true;
-  row('Graphics', seg<QualitySetting>([['auto', 'Auto'], ['low', 'Low'], ['medium', 'Medium'], ['high', 'High']], () => settings.quality, (q) => {
+  row(tr('Graphics'), seg<QualitySetting>([['auto', tr('Auto')], ['low', tr('Low')], ['medium', tr('Medium')], ['high', tr('High')]], () => settings.quality, (q) => {
     setQuality(q);
     const needsReload = hooks.onQuality?.(q) ?? true;
     note.hidden = !needsReload;
     if (needsReload) {
       note.replaceChildren(
-        h('span', { text: 'Applied. Terrain detail follows the next time the game loads.' }),
+        h('span', { text: tr('Applied. Terrain detail follows the next time the game loads.') }),
       );
     }
-  }), 'Applies at once. Auto starts high and steps down if frames get slow. Low suits older laptops.');
+  }), tr('Applies at once. Auto starts high and steps down if frames get slow. Low suits older laptops.'));
   root.appendChild(note);
 
-  row('Interface size', seg<string>([['auto', 'Auto'], ['0.9', '90%'], ['1', '100%'], ['1.15', '115%'], ['1.3', '130%']], () => String(settings.uiScale), (v) => {
+  row(tr('Interface size'), seg<string>([['auto', tr('Auto')], ['0.9', '90%'], ['1', '100%'], ['1.15', '115%'], ['1.3', '130%']], () => String(settings.uiScale), (v) => {
     settings.uiScale = v === 'auto' ? 'auto' : Number(v);
     saveSettings();
     applyUiScale();
-  }), 'Auto fits the window: smaller on a laptop, larger on a big screen.');
+  }), tr('Auto fits the window: smaller on a laptop, larger on a big screen.'));
 
-  row('Edge panning', toggle(() => settings.edgePan, (v) => {
+  row(tr('Edge panning'), toggle(() => settings.edgePan, (v) => {
     settings.edgePan = v;
     saveSettings();
     hooks.onEdgePan(v);
-  }, 'Edge panning'), 'Move the view when the cursor touches the edge of the window.');
+  }, tr('Edge panning')), tr('Move the view when the cursor touches the edge of the window.'));
 
-  row('Left-click orders', toggle(() => settings.leftClickOrders, (v) => {
+  row(tr('Left-click orders'), toggle(() => settings.leftClickOrders, (v) => {
     settings.leftClickOrders = v;
     saveSettings();
-  }, 'Left-click orders'), 'With your people selected, clicking the ground (or an enemy, a stone, your tower) sends them, like a right-click. Clicking your own people or buildings still selects them.');
+  }, tr('Left-click orders')), tr('With your people selected, clicking the ground (or an enemy, a stone, your tower) sends them, like a right-click. Clicking your own people or buildings still selects them.'));
 
   const hintsRow = h('div', { style: 'display:flex;gap:0.75rem;align-items:center' },
     toggle(() => settings.hints, (v) => {
       settings.hints = v;
       saveSettings();
-    }, 'Hints'),
-    h('button.tg-btn', { type: 'button', text: 'Show all hints again', onclick: () => hooks.onResetHints() }),
+    }, tr('Hints')),
+    h('button.tg-btn', { type: 'button', text: tr('Show all hints again'), onclick: () => hooks.onResetHints() }),
   );
-  row('Hints', hintsRow, 'Small tips during your first games.');
+  row(tr('Hints'), hintsRow, tr('Small tips during your first games.'));
+
+  row(tr('Language'), seg<Lang>((Object.keys(LANGS) as Lang[]).map((l) => [l, LANGS[l]]), () => LANG, (l) => {
+    if (l !== LANG) setLang(l);
+  }), tr('Switching reloads the page; a game in progress resumes from its autosave.'));
   return root;
 }
